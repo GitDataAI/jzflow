@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow =  "1.0.86"
+serde = {version ="1.0.203", features = ["derive"]}
+serde_json = {version = "1.0.117"}
+bimap = "0.6.3"
+uuid = {version="1.8.0", features = ["v4","serde"]}
