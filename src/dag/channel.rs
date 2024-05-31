@@ -1,17 +1,17 @@
-use super::base::{BaseNode, NodeType};
+use super::base::{BaseUnit, UnitType};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Channel {
+pub struct ChannelUnit {
     pub id: uuid::Uuid,
     pub name: String,
 
     pub(crate) dependency: Vec<Uuid>,
-    pub(crate) node_type: NodeType,
+    pub(crate) node_type: UnitType,
 }
 
-impl BaseNode for Channel {
+impl BaseUnit for ChannelUnit {
     fn id(&self) -> Uuid {
         self.id
     }

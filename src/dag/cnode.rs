@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::base::{BaseNode, NodeType};
+use super::base::{BaseUnit, UnitType};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ComputeUnit {
@@ -11,10 +11,10 @@ pub struct ComputeUnit {
     pub cmd: Vec<String>,
 
     pub(crate) dependency: Vec<Uuid>,
-    pub(crate) node_type: NodeType,
+    pub(crate) node_type: UnitType,
 }
 
-impl BaseNode for ComputeUnit {
+impl BaseUnit for ComputeUnit {
     fn id(&self) -> Uuid {
         self.id
     }

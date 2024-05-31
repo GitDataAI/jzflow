@@ -1,35 +1,9 @@
 mod dag;
 mod utils;
 
-use dag::BaseNode;
+use dag::BaseUnit;
 use dag::Dag;
 use uuid::Uuid;
-
-struct DataStruct<T> {
-    inner: Box<[T]>,
-}
-
-pub struct IterMut<'a, T> {
-    obj: &'a mut DataStruct<T>,
-    cursor: usize,
-}
-
-impl<T> DataStruct<T> {
-    fn iter_mut(&mut self) -> IterMut<T> {
-        IterMut { obj: self, cursor: 0 }
-    }
-}
-
-impl<'a, T> Iterator for IterMut<'a, T> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let i = f(self.cursor);
-        self.cursor += 1;
-        self.obj.inner.get_mut(i)
-    }
-}
-
 
 fn main() {
     let json_str = r#"
