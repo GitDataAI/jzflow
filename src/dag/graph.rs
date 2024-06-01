@@ -1,25 +1,25 @@
 /*!
-Task Graph
+node Graph
 
 # Graph stores dependency relations.
 
-[`Graph`] represents a series of tasks with dependencies, and stored in an adjacency
-list. It must be a directed acyclic graph, that is, the dependencies of the task
-cannot form a loop, otherwise the engine will not be able to execute the task successfully.
+[`Graph`] represents a series of nodes with dependencies, and stored in an adjacency
+list. It must be a directed acyclic graph, that is, the dependencies of the node
+cannot form a loop, otherwise the engine will not be able to execute the node successfully.
 It has some useful methods for building graphs, such as: adding edges, nodes, etc.
 And the most important of which is the `topo_sort` function, which uses topological
-sorting to generate the execution sequence of tasks.
+sorting to generate the execution sequence of nodes.
 
 # An example of a directed acyclic graph
 
-task1 -→ task3 ---→ task6 ----
+node1 -→ node3 ---→ node6 ----
  |   ↗   ↓          ↓         ↘
- |  /   task5 ---→ task7 ---→ task9
+ |  /   node5 ---→ node7 ---→ node9
  ↓ /      ↑          ↓         ↗
-task2 -→ task4 ---→ task8 ----
+node2 -→ node4 ---→ node8 ----
 
-The task execution sequence can be as follows:
-task1->task2->task3->task4->task5->task6->task7->task8->task9
+The node execution sequence can be as follows:
+node1->node2->node3->node4->node5->node6->node7->node8->node9
 
 */
 
@@ -80,7 +80,7 @@ where
 
     /// Add an edge into the graph.
     /// Above operation adds a arrow from node 0 to node 1,
-    /// which means task 0 shall be executed before task 1.
+    /// which means node 0 shall be executed before node 1.
     pub(crate) fn add_edge(&mut self, from: ID, to: ID) {
         match self.adj.get_mut(&from) {
             Some(v) => {
@@ -119,10 +119,10 @@ where
     ///
     /// 2. Each time we start from a node with zero in-degree, name it N0, and N0 can be executed since it has no dependency.
     ///
-    /// 3. And then we decrease the in-degree of N0's children (those tasks depend on N0), this would create some new zero in-degree nodes.
+    /// 3. And then we decrease the in-degree of N0's children (those nodes depend on N0), this would create some new zero in-degree nodes.
     ///
     /// 4. Just repeat step 2, 3 until no more zero degree nodes can be generated.
-    ///    If all tasks have been executed, then it's a DAG, or there must be a loop in the graph.
+    ///    If all nodes have been executed, then it's a DAG, or there must be a loop in the graph.
     pub(crate) fn topo_sort(&self) -> Vec<ID> {
         let mut queue = self
             .in_degree
@@ -136,11 +136,11 @@ where
         while let Some(v) = queue.pop_front() {
             sequence.push(v.clone());
 
-            for index in self.adj[v].iter() {
-                let ins = in_degree.get_mut(index).expect("in node must exit");
+            for id in self.adj[v].iter() {
+                let ins = in_degree.get_mut(id).expect("in node must exit");
                 ins.retain(|p| v != p);
                 if ins.is_empty() {
-                    queue.push_back(index)
+                    queue.push_back(id)
                 }
             }
         }
@@ -151,7 +151,7 @@ where
     /// Get the out degree of a node.
     pub(crate) fn get_out_degree(&self, id: &ID) -> usize {
         match self.adj.get(id) {
-            Some(index) => index.len(),
+            Some(id) => id.len(),
             None => 0,
         }
     }
@@ -159,7 +159,7 @@ where
     /// Get the out degree of a node.
     pub(crate) fn get_in_degree(&self, id: &ID) -> usize {
         match self.in_degree.get(id) {
-            Some(index) => index.len(),
+            Some(id) => id.len(),
             None => 0,
         }
     }
@@ -182,12 +182,12 @@ where
                 while !stack.is_empty() {
                     let v = stack.remove(0);
                     if let Some(out_degress) = self.adj.get(&v) {
-                        for index in out_degress.iter() {
-                            if !visited.contains(index) {
+                        for id in out_degress.iter() {
+                            if !visited.contains(id) {
                                 // if not visited, mark it as visited and collect it
-                                visited.insert(index);
-                                successors.push(*index);
-                                stack.push(index);
+                                visited.insert(id);
+                                successors.push(*id);
+                                stack.push(id);
                             }
                         }
                     }
