@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use uuid::Uuid;
 
 pub trait IntoAnyhowResult<T> {
     fn anyhow(self, msg: impl ToString) -> Result<T>;

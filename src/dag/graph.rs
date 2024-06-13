@@ -23,6 +23,7 @@ node1->node2->node3->node4->node5->node6->node7->node8->node9
 
 */
 
+use crate::core::GID;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::Hash,
@@ -33,7 +34,7 @@ use std::{
 /// Graph Struct
 pub(crate) struct Graph<ID>
 where
-    ID: Eq + Clone + Copy + Hash,
+    ID: GID,
 {
     nodes: HashSet<ID>,
     nodes_count: usize,
@@ -45,7 +46,7 @@ where
 
 impl<ID> Graph<ID>
 where
-    ID: Eq + Clone + Copy + Hash,
+    ID: GID,
 {
     /// Allocate an empty graph
     pub(crate) fn new() -> Self {
@@ -81,26 +82,26 @@ where
     /// Add an edge into the graph.
     /// Above operation adds a arrow from node 0 to node 1,
     /// which means node 0 shall be executed before node 1.
-    pub(crate) fn add_edge(&mut self, from: ID, to: ID) {
+    pub(crate) fn add_edge(&mut self, from: &ID, to: &ID) {
         match self.adj.get_mut(&from) {
             Some(v) => {
                 if !v.contains(&from) {
-                    v.push(to);
+                    v.push(to.clone());
                 }
             }
             None => {
-                self.adj.insert(from, vec![to]);
+                self.adj.insert(from.clone(), vec![to.clone()]);
             }
         }
 
         match self.in_degree.get_mut(&to) {
             Some(v) => {
                 if !v.contains(&to) {
-                    v.push(from);
+                    v.push(from.clone());
                 }
             }
             None => {
-                self.in_degree.insert(to, vec![from]);
+                self.in_degree.insert(to.clone(), vec![from.clone()]);
             }
         }
     }
@@ -202,7 +203,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
+    use arrayvec::ArrayString;
+    use serde::{Deserialize, Serialize};
+
+    type StringID = ArrayString<5>;
 
     #[test]
     fn test_simple() {
@@ -210,13 +217,19 @@ mod tests {
         // "a" => "c"
         // "b" => "d"
         // "b" => "d"
-        let mut graph = Graph::with_nodes(["a", "b", "c", "d"].as_slice());
-        graph.add_edge("a", "b");
-        graph.add_edge("a", "c");
-        graph.add_edge("b", "d");
-        graph.add_edge("c", "d");
+        let a = StringID::from_str("a").unwrap();
+        let b = StringID::from_str("b").unwrap();
+        let c = StringID::from_str("c").unwrap();
+        let d = StringID::from_str("d").unwrap();
 
-        let sequence = graph.topo_sort();
+        let mut graph = Graph::with_nodes([a, b, c, d].as_slice());
+        graph.add_edge(&a, &b);
+        graph.add_edge(&a, &c);
+        graph.add_edge(&b, &d);
+        graph.add_edge(&c, &d);
+
+        let topo_ids = graph.topo_sort();
+        let sequence: Vec<&str> = topo_ids.iter().map(|id| id.as_str()).collect();
         assert_eq!(["a", "b", "c", "d"], sequence.as_slice());
     }
 
@@ -226,18 +239,26 @@ mod tests {
         // "a" => "c"
         // "b" => "d"
         // "b" => "d"
-        let mut graph = Graph::with_nodes(["a", "b", "c", "d", "e", "f", "g"].as_slice());
-        graph.add_edge("a", "b");
-        graph.add_edge("a", "c");
-        graph.add_edge("b", "d");
-        graph.add_edge("c", "d");
-        graph.add_edge("a", "e");
-        graph.add_edge("e", "f");
-        graph.add_edge("f", "g");
-        graph.add_edge("d", "g");
+        let a = StringID::from_str("a").unwrap();
+        let b = StringID::from_str("b").unwrap();
+        let c = StringID::from_str("c").unwrap();
+        let d = StringID::from_str("d").unwrap();
+        let e = StringID::from_str("e").unwrap();
+        let f = StringID::from_str("f").unwrap();
+        let g = StringID::from_str("g").unwrap();
 
-        let sequence = graph.topo_sort();
-        println!("{:?}", sequence);
+        let mut graph = Graph::with_nodes([a, b, c, d, e, f, g].as_slice());
+        graph.add_edge(&a, &b);
+        graph.add_edge(&a, &c);
+        graph.add_edge(&b, &d);
+        graph.add_edge(&c, &d);
+        graph.add_edge(&a, &e);
+        graph.add_edge(&e, &f);
+        graph.add_edge(&f, &g);
+        graph.add_edge(&d, &g);
+
+        let topo_ids = graph.topo_sort();
+        let sequence: Vec<&str> = topo_ids.iter().map(|id| id.as_str()).collect();
         assert_eq!(["a", "b", "c", "e", "d", "f", "g"], sequence.as_slice());
     }
 
@@ -247,33 +268,42 @@ mod tests {
         // "a" => "c"
         // "b" => "d"
         // "b" => "d"
-        let mut graph = Graph::with_nodes(["a", "b", "c", "d", "e", "f", "g"].as_slice());
-        graph.add_edge("a", "b");
-        graph.add_edge("a", "c");
-        graph.add_edge("b", "d");
-        graph.add_edge("c", "d");
-        graph.add_edge("a", "e");
-        graph.add_edge("e", "f");
-        graph.add_edge("f", "g");
-        graph.add_edge("d", "g");
+        let a = StringID::from_str("a").unwrap();
+        let b = StringID::from_str("b").unwrap();
+        let c = StringID::from_str("c").unwrap();
+        let d = StringID::from_str("d").unwrap();
+        let e = StringID::from_str("e").unwrap();
+        let f = StringID::from_str("f").unwrap();
+        let g = StringID::from_str("g").unwrap();
 
-        let sequence = graph.get_node_successors(&"c");
+        let mut graph = Graph::with_nodes([a, b, c, d, e, f, g].as_slice());
+        graph.add_edge(&a, &b);
+        graph.add_edge(&a, &c);
+        graph.add_edge(&b, &d);
+        graph.add_edge(&c, &d);
+        graph.add_edge(&a, &e);
+        graph.add_edge(&e, &f);
+        graph.add_edge(&f, &g);
+        graph.add_edge(&d, &g);
+
+        let sequence = graph.get_node_successors(&c);
+        let sequence: Vec<&str> = sequence.iter().map(|id| id.as_str()).collect();
         assert_eq!(["c", "d", "g"], sequence.as_slice());
 
-        assert_eq!(0, graph.get_in_degree(&"a"));
-        assert_eq!(1, graph.get_in_degree(&"b"));
-        assert_eq!(1, graph.get_in_degree(&"c"));
-        assert_eq!(2, graph.get_in_degree(&"d"));
-        assert_eq!(1, graph.get_in_degree(&"e"));
-        assert_eq!(1, graph.get_in_degree(&"f"));
-        assert_eq!(2, graph.get_in_degree(&"g"));
+        assert_eq!(0, graph.get_in_degree(&a));
+        assert_eq!(1, graph.get_in_degree(&b));
+        assert_eq!(1, graph.get_in_degree(&c));
+        assert_eq!(2, graph.get_in_degree(&d));
+        assert_eq!(1, graph.get_in_degree(&e));
+        assert_eq!(1, graph.get_in_degree(&f));
+        assert_eq!(2, graph.get_in_degree(&g));
 
-        assert_eq!(3, graph.get_out_degree(&"a"));
-        assert_eq!(1, graph.get_out_degree(&"b"));
-        assert_eq!(1, graph.get_out_degree(&"c"));
-        assert_eq!(1, graph.get_out_degree(&"d"));
-        assert_eq!(1, graph.get_out_degree(&"e"));
-        assert_eq!(1, graph.get_out_degree(&"f"));
-        assert_eq!(0, graph.get_out_degree(&"g"));
+        assert_eq!(3, graph.get_out_degree(&a));
+        assert_eq!(1, graph.get_out_degree(&b));
+        assert_eq!(1, graph.get_out_degree(&c));
+        assert_eq!(1, graph.get_out_degree(&d));
+        assert_eq!(1, graph.get_out_degree(&e));
+        assert_eq!(1, graph.get_out_degree(&f));
+        assert_eq!(0, graph.get_out_degree(&g));
     }
 }
