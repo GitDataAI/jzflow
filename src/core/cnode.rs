@@ -33,34 +33,30 @@ mod tests {
 
     #[test]
     fn test_from_str() {
-        xxx();
-    }
-
-    fn xxx() -> ComputeUnit<Uuid> {
         let json_str = r#"
-{
-  "id": "5c42b900-a87f-45e3-ba06-c40d94ad5ba2",
-  "name": "ComputeUnit1",
-  "dependency": [
-    
-  ],
-  "spec": {
-    "cmd": [
-      "ls"
-    ],
-    "image": ""
-  },
-  "channel": {
-    "spec": {
-      "cmd": [
-        "ls"
-      ],
-      "image": ""
-    }
-  }
-}
-        "#
+      {
+        "id": "5c42b900-a87f-45e3-ba06-c40d94ad5ba2",
+        "name": "ComputeUnit1",
+        "dependency": [
+          
+        ],
+        "spec": {
+          "cmd": [
+            "ls"
+          ],
+          "image": ""
+        },
+        "channel": {
+          "spec": {
+            "cmd": [
+              "ls"
+            ],
+            "image": ""
+          }
+        }
+      }
+              "#
         .to_owned();
-        serde_json::from_str::<ComputeUnit<Uuid>>(&json_str).unwrap()
+        serde_json::from_str::<ComputeUnit<Uuid>>(&json_str).unwrap();
     }
 }

@@ -207,7 +207,6 @@ mod tests {
 
     use super::*;
     use arrayvec::ArrayString;
-    use serde::{Deserialize, Serialize};
 
     type StringID = ArrayString<5>;
 

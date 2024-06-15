@@ -8,6 +8,7 @@ pub struct Dag<ID>
 where
     ID: GID,
 {
+    id: ID,
     name: String,
     nodes: HashMap<ID, ComputeUnit<ID>>,
     /// Store dependency relations.
@@ -17,6 +18,7 @@ where
 impl<ID: GID> Dag<ID> {
     pub fn new() -> Self {
         Dag {
+            id: ID::default(),
             name: String::new(),
             nodes: HashMap::new(),
             rely_graph: Graph::new(),
@@ -49,6 +51,12 @@ impl<ID: GID> Dag<ID> {
     // from_json build graph from json string
     pub fn from_json<'a>(json: &'a str) -> Result<Self> {
         let value: serde_json::Value = serde_json::from_str(json)?;
+
+        let id: ID = value
+            .get("id")
+            .anyhow("id must exit")
+            .map(|v| serde_json::from_value::<ID>(v.clone()))??;
+
         let dag_name: &str = value
             .get("name")
             .anyhow("name must exit")
@@ -72,6 +80,7 @@ impl<ID: GID> Dag<ID> {
         let nodes_map: HashMap<ID, ComputeUnit<ID>> =
             nodes.into_iter().map(|node| (node.id, node)).collect();
         Ok(Dag {
+            id: id,
             name: dag_name.to_string(),
             nodes: nodes_map,
             rely_graph: rely_graph,
