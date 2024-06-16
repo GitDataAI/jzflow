@@ -5,7 +5,7 @@
     "name": "{{{name}}}-channel-deployment",
     "id": "{{{id}}}",
     "labels": {
-      "exec_type": "channel"
+      "exec-type": "channel"
     }
   },
   "spec": {

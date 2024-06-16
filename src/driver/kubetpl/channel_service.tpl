@@ -3,7 +3,7 @@
   "kind": "Service",
   "metadata": {
       "name": "{{{name}}}-channel-service",
-      "exec_type": "channel"
+      "exec-type": "channel"
   },
   "spec": {
     "selector": {
@@ -15,7 +15,7 @@
         "protocol": "TCP",
         "port": 80,
         "targetPort": 80
-      },
+      }
     ]
   }
 }

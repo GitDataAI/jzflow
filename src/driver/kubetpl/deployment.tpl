@@ -5,7 +5,7 @@
     "name": "{{{name}}}-deployment",
     "id": "{{{id}}}",
     "labels": {
-      "exec_type": "compute_unit"
+      "exec-type": "compute-unit"
     }
   },
   "spec": {
@@ -24,7 +24,7 @@
       "spec": {
         "containers": [
           {
-            "name": "compute_unit",
+            "name": "compute-unit",
             "image": "{{{spec.image}}}",
             "command": [ "sleep" ],
             "args": [ "infinity" ],

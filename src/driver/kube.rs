@@ -2,16 +2,19 @@ use super::{ChannelHandler, Driver, PipelineController, UnitHandler};
 use crate::core::GID;
 use crate::utils::IntoAnyhowResult;
 use crate::Dag;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use handlebars::Handlebars;
 use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::api::core::v1::Service;
-use kube::api::PostParams;
+use k8s_openapi::api::core::v1::{Service, Namespace};
+use kube::api::{DeleteParams, PostParams};
 use kube::{Api, Client};
 use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
+use tracing::debug;
+use tokio_retry::Retry;
+use tokio_retry::strategy::ExponentialBackoff;
 pub struct KubeChannelHander<ID>
 where
     ID: GID,
@@ -136,13 +139,34 @@ where
 {
     _id: std::marker::PhantomData<ID>,
     reg: Handlebars<'reg>,
+    client: Client,
 }
 
 impl<'reg, ID> KubeDriver<'reg, ID>
 where
     ID: GID,
 {
-    pub fn new() -> Result<KubeDriver<'reg, ID>> {
+    pub async fn default() -> Result<KubeDriver<'reg, ID>> {
+        let mut reg = Handlebars::new();
+        reg.register_template_string("deployment", include_str!("kubetpl/deployment.tpl"))?;
+        reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
+        reg.register_template_string(
+            "channel_deployment",
+            include_str!("kubetpl/channel_deployment.tpl"),
+        )?;
+        reg.register_template_string(
+            "channel_service",
+            include_str!("kubetpl/channel_service.tpl"),
+        )?;
+        let client  = Client::try_default().await?;
+        Ok(KubeDriver {
+            _id: std::marker::PhantomData,
+            reg: reg,
+            client:client
+        })
+    }
+
+    pub async fn from_k8s_client(client: Client) -> Result<KubeDriver<'reg, ID>> {
         let mut reg = Handlebars::new();
         reg.register_template_string("deployment", include_str!("kubetpl/deployment.tpl"))?;
         reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
@@ -157,7 +181,55 @@ where
         Ok(KubeDriver {
             _id: std::marker::PhantomData,
             reg: reg,
+            client:client
         })
+    }
+
+    async fn retry_get_ns_state(namespaces: Api<Namespace>, ns: &str) -> Result<()> {
+        match namespaces.get(ns).await {
+            Ok(v)=> {
+                Err(anyhow!("expect deleted"))
+            },
+            Err(e) => {
+                if e.to_string().contains("not") {
+                    Ok(())
+                } else {
+                    Err(anyhow!("expect deleted"))
+                }
+            }
+        }
+    }
+
+     async  fn ensure_namespace_exit_and_clean(client: &Client, ns: &str) -> Result<()>{
+        let namespace = Namespace {
+            metadata: kube::api::ObjectMeta {
+                name: Some(ns.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let namespaces: Api<Namespace> = Api::all(client.clone());
+        // Create the namespace
+        if namespaces.get(ns).await.is_ok() {
+            let _ = namespaces.delete(ns, &DeleteParams::default()).await.map(|_|()).map_err(|e|anyhow!("{}", e.to_string()));
+            let retry_strategy = ExponentialBackoff::from_millis(1000).take(20);  
+            let _ = Retry::spawn(retry_strategy, || async {
+                match namespaces.get(ns).await {
+                    Ok(v)=> {
+                        Err(anyhow!("expect deleted"))
+                    },
+                    Err(e) => {
+                        if e.to_string().contains("not found") {
+                            Ok(())
+                        } else {
+                            Err(anyhow!("retry"))
+                        }
+                    }
+                }
+            }).await?;
+        } 
+        namespaces.create(&PostParams::default(), &namespace).await.map(|_|()).map_err(|e|anyhow!("{}", e.to_string()))
     }
 }
 
@@ -166,34 +238,49 @@ where
     ID: GID,
 {
     #[allow(refining_impl_trait)]
-    async fn deploy(&self, namespace: &str, graph: &Dag<ID>) -> Result<KubePipelineController<ID>> {
+    async fn deploy(&self, ns: &str, graph: &Dag<ID>) -> Result<KubePipelineController<ID>> {
         let client: Client = Client::try_default().await?;
-        let deployment_api: Api<Deployment> = Api::namespaced(client.clone(), namespace);
-        let service_api: Api<Service> = Api::namespaced(client, namespace);
+        Self::ensure_namespace_exit_and_clean(&client, ns).await?;
+
+        let deployment_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
+
+        let service_api: Api<Service> = Api::namespaced(client, ns);
 
         let mut pipeline_ctl = KubePipelineController::<ID>::default();
         for node in graph.iter() {
+            let deployment_string = self.reg.render("deployment", node)?;
+            debug!("rendered unit deploy string {}", deployment_string);
+
             let unit_deployment: Deployment =
-                serde_json::from_str(self.reg.render("deployment", node)?.as_str())?;
+                serde_json::from_str(&deployment_string)?;
             let unit_deployment = deployment_api
                 .create(&PostParams::default(), &unit_deployment)
                 .await?;
 
+            let service_string  = self.reg.render("service", node)?;
+            debug!("rendered unit service config {}", service_string);
+
             let unit_service: Service =
-                serde_json::from_str(self.reg.render("service", node)?.as_str())?;
+                serde_json::from_str(service_string.as_str())?;
             let unit_service = service_api
                 .create(&PostParams::default(), &unit_service)
                 .await?;
 
             let channel_handler = if node.channel.is_some() {
+                let channel_deployment_string = self.reg.render("channel_deployment", node)?;
+                debug!("rendered channel deployment string {}", deployment_string);
+
                 let channel_deployment: Deployment =
-                    serde_json::from_str(self.reg.render("channel_deployment", node)?.as_str())?;
+                    serde_json::from_str(channel_deployment_string.as_str())?;
                 let channel_deployment = deployment_api
                     .create(&PostParams::default(), &channel_deployment)
                     .await?;
 
+                let channel_service_string = self.reg.render("channel_service", node)?;
+                debug!("rendered channel service string {}", deployment_string);
+
                 let channel_service: Service =
-                    serde_json::from_str(self.reg.render("channel_service", node)?.as_str())?;
+                    serde_json::from_str(channel_service_string.as_str())?;
                 let channel_service = service_api
                     .create(&PostParams::default(), &channel_service)
                     .await?;
@@ -223,18 +310,29 @@ where
         todo!()
     }
 
-    async fn clean(&self, namespace: &str) -> Result<()> {
-        todo!()
+    async fn clean(&self, ns: &str) -> Result<()> {
+        let client: Client = Client::try_default().await?;
+        let namespaces: Api<Namespace> = Api::all(client.clone());
+        if namespaces.get(ns).await.is_ok() {
+            let _ = namespaces.delete(ns, &DeleteParams::default()).await.map(|_|()).map_err(|e|anyhow!("{}", e.to_string()))?;
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use super::*;
     use uuid::Uuid;
+    use tracing_subscriber;
 
     #[tokio::test]
     async fn test_render() {
+        env::set_var("RUST_LOG", "DEBUG");
+        tracing_subscriber::fmt::init();
+
         let json_str = r#"
         {
           "id":"5c42b900-a87f-45e3-ba06-c40d94ad5ba2",
@@ -243,7 +341,7 @@ mod tests {
           "dag": [
             {
               "id": "5c42b900-a87f-45e3-ba06-c40d94ad5ba2",
-              "name": "ComputeUnit1",
+              "name": "computeunit1",
               "dependency": [
                 
               ],
@@ -251,7 +349,7 @@ mod tests {
                 "cmd": [
                   "ls"
                 ],
-                "image": "",
+                "image": "ubuntu:22.04",
                 "replicas":1
               },
               "channel": {
@@ -260,14 +358,14 @@ mod tests {
                     "bufsize",
                     "1024"
                   ],
-                  "image": "jiaozifs:",
+                  "image": "ubuntu:22.04",
                   "replicas":1
                 }
               }
             },
             {
               "id": "353fc5bf-697e-4221-8487-6ab91915e2a1",
-              "name": "ComputeUnit2",
+              "name": "computeunit2",
               "node_type": "ComputeUnit",
               "dependency": [
                 "5c42b900-a87f-45e3-ba06-c40d94ad5ba2"
@@ -277,14 +375,15 @@ mod tests {
                   "ls"
                 ],
                 "replicas":1,
-                "image": ""
+                "image": "ubuntu:22.04"
               }
             }
           ]
         }
                         "#;
         let dag = Dag::<Uuid>::from_json(json_str).unwrap();
-        let kube_driver = KubeDriver::<Uuid>::new().unwrap();
-        kube_driver.deploy("namespace", &dag).await.unwrap();
+        let kube_driver = KubeDriver::<Uuid>::default().await.unwrap();
+        kube_driver.deploy("ntest", &dag).await.unwrap();
+        kube_driver.clean("ntest").await.unwrap();
     }
 }

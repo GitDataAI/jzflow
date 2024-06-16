@@ -3,7 +3,7 @@
   "kind": "Service",
   "metadata": {
     "name": "{{{name}}}-service",
-    "exec_type": "compute_unit"
+    "exec-type": "compute-unit"
   },
   "spec": {
     "selector": {
@@ -15,7 +15,7 @@
         "protocol": "TCP",
         "port": 80,
         "targetPort": 80
-      },
+      }
     ]
   }
 }

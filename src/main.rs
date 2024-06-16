@@ -1,4 +1,5 @@
 #![feature(trait_alias)]
+#![feature(async_closure)]
 
 mod core;
 mod dag;
