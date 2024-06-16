@@ -1,5 +1,5 @@
 use crate::core::GID;
-use crate::Dag;
+use crate::dag::Dag;
 use anyhow::Result;
 use std::{
     future::Future,

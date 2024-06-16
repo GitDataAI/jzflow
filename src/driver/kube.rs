@@ -1,20 +1,20 @@
 use super::{ChannelHandler, Driver, PipelineController, UnitHandler};
 use crate::core::GID;
+use crate::dag::Dag;
 use crate::utils::IntoAnyhowResult;
-use crate::Dag;
 use anyhow::{anyhow, Result};
 use handlebars::Handlebars;
 use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::api::core::v1::{Service, Namespace};
+use k8s_openapi::api::core::v1::{Namespace, Service};
 use kube::api::{DeleteParams, PostParams};
 use kube::{Api, Client};
 use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
-use tracing::debug;
-use tokio_retry::Retry;
 use tokio_retry::strategy::ExponentialBackoff;
+use tokio_retry::Retry;
+use tracing::debug;
 pub struct KubeChannelHander<ID>
 where
     ID: GID,
@@ -158,11 +158,11 @@ where
             "channel_service",
             include_str!("kubetpl/channel_service.tpl"),
         )?;
-        let client  = Client::try_default().await?;
+        let client = Client::try_default().await?;
         Ok(KubeDriver {
             _id: std::marker::PhantomData,
             reg: reg,
-            client:client
+            client: client,
         })
     }
 
@@ -181,26 +181,11 @@ where
         Ok(KubeDriver {
             _id: std::marker::PhantomData,
             reg: reg,
-            client:client
+            client: client,
         })
     }
 
-    async fn retry_get_ns_state(namespaces: Api<Namespace>, ns: &str) -> Result<()> {
-        match namespaces.get(ns).await {
-            Ok(v)=> {
-                Err(anyhow!("expect deleted"))
-            },
-            Err(e) => {
-                if e.to_string().contains("not") {
-                    Ok(())
-                } else {
-                    Err(anyhow!("expect deleted"))
-                }
-            }
-        }
-    }
-
-     async  fn ensure_namespace_exit_and_clean(client: &Client, ns: &str) -> Result<()>{
+    async fn ensure_namespace_exit_and_clean(client: &Client, ns: &str) -> Result<()> {
         let namespace = Namespace {
             metadata: kube::api::ObjectMeta {
                 name: Some(ns.to_string()),
@@ -212,13 +197,15 @@ where
         let namespaces: Api<Namespace> = Api::all(client.clone());
         // Create the namespace
         if namespaces.get(ns).await.is_ok() {
-            let _ = namespaces.delete(ns, &DeleteParams::default()).await.map(|_|()).map_err(|e|anyhow!("{}", e.to_string()));
-            let retry_strategy = ExponentialBackoff::from_millis(1000).take(20);  
+            let _ = namespaces
+                .delete(ns, &DeleteParams::default())
+                .await
+                .map(|_| ())
+                .map_err(|e| anyhow!("{}", e.to_string()));
+            let retry_strategy = ExponentialBackoff::from_millis(1000).take(20);
             let _ = Retry::spawn(retry_strategy, || async {
                 match namespaces.get(ns).await {
-                    Ok(v)=> {
-                        Err(anyhow!("expect deleted"))
-                    },
+                    Ok(_) => Err(anyhow!("expect deleted")),
                     Err(e) => {
                         if e.to_string().contains("not found") {
                             Ok(())
@@ -227,9 +214,14 @@ where
                         }
                     }
                 }
-            }).await?;
-        } 
-        namespaces.create(&PostParams::default(), &namespace).await.map(|_|()).map_err(|e|anyhow!("{}", e.to_string()))
+            })
+            .await?;
+        }
+        namespaces
+            .create(&PostParams::default(), &namespace)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow!("{}", e.to_string()))
     }
 }
 
@@ -239,29 +231,26 @@ where
 {
     #[allow(refining_impl_trait)]
     async fn deploy(&self, ns: &str, graph: &Dag<ID>) -> Result<KubePipelineController<ID>> {
-        let client: Client = Client::try_default().await?;
-        Self::ensure_namespace_exit_and_clean(&client, ns).await?;
+        Self::ensure_namespace_exit_and_clean(&self.client, ns).await?;
 
-        let deployment_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
+        let deployment_api: Api<Deployment> = Api::namespaced(self.client.clone(), ns);
 
-        let service_api: Api<Service> = Api::namespaced(client, ns);
+        let service_api: Api<Service> = Api::namespaced(self.client.clone(), ns);
 
         let mut pipeline_ctl = KubePipelineController::<ID>::default();
         for node in graph.iter() {
             let deployment_string = self.reg.render("deployment", node)?;
             debug!("rendered unit deploy string {}", deployment_string);
 
-            let unit_deployment: Deployment =
-                serde_json::from_str(&deployment_string)?;
+            let unit_deployment: Deployment = serde_json::from_str(&deployment_string)?;
             let unit_deployment = deployment_api
                 .create(&PostParams::default(), &unit_deployment)
                 .await?;
 
-            let service_string  = self.reg.render("service", node)?;
+            let service_string = self.reg.render("service", node)?;
             debug!("rendered unit service config {}", service_string);
 
-            let unit_service: Service =
-                serde_json::from_str(service_string.as_str())?;
+            let unit_service: Service = serde_json::from_str(service_string.as_str())?;
             let unit_service = service_api
                 .create(&PostParams::default(), &unit_service)
                 .await?;
@@ -306,7 +295,11 @@ where
     }
 
     #[allow(refining_impl_trait)]
-    async fn attach(&self, namespace: &str, graph: &Dag<ID>) -> Result<KubePipelineController<ID>> {
+    async fn attach(
+        &self,
+        _namespace: &str,
+        _graph: &Dag<ID>,
+    ) -> Result<KubePipelineController<ID>> {
         todo!()
     }
 
@@ -314,7 +307,11 @@ where
         let client: Client = Client::try_default().await?;
         let namespaces: Api<Namespace> = Api::all(client.clone());
         if namespaces.get(ns).await.is_ok() {
-            let _ = namespaces.delete(ns, &DeleteParams::default()).await.map(|_|()).map_err(|e|anyhow!("{}", e.to_string()))?;
+            let _ = namespaces
+                .delete(ns, &DeleteParams::default())
+                .await
+                .map(|_| ())
+                .map_err(|e| anyhow!("{}", e.to_string()))?;
         }
         Ok(())
     }
@@ -325,8 +322,8 @@ mod tests {
     use std::env;
 
     use super::*;
-    use uuid::Uuid;
     use tracing_subscriber;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_render() {

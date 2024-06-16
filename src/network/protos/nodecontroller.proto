@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package nodecontroller;
+
+import "common.proto";
+
+service NodeController {
+  rpc pause(common.Empty) returns(common.Empty) {}
+  rpc restart(common.Empty) returns(common.Empty) {}
+  rpc stop(common.Empty) returns(common.Empty) {}
+}

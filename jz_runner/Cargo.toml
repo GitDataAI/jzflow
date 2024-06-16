@@ -1,0 +1,18 @@
+[package]
+name = "jz_runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jz_action = { path = "../"}
+
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-retry = {workspace = true}
+tokio-stream = {workspace = true}
+anyhow =  {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = {workspace = true}
+tonic = {workspace = true}
+
+clap = {version="4.5.7", features=["derive"]}
+

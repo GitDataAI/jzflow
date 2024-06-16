@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package datatransfer;
+
+import "common.proto";
+
+service DataStream {
+  rpc subscribe_new_data(common.Empty) returns (stream DataBatch) {}
+}
+
+message DataBatch {
+    uint32 size = 1;
+    repeated bytes data = 2;
+}
+  
