@@ -5,10 +5,10 @@ package datatransfer;
 import "common.proto";
 
 service DataStream {
-  rpc subscribe_new_data(common.Empty) returns (stream DataBatch) {}
+  rpc subscribe_new_data(common.Empty) returns (stream DataBatchResponse) {}
 }
 
-message DataBatch {
+message DataBatchResponse {
     uint32 size = 1;
     repeated bytes data = 2;
 }

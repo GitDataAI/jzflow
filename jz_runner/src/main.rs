@@ -1,15 +1,19 @@
 mod unit;
 
-use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
+use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, Level};
+use unit::DataNodeControllerServer;
+use tokio::sync::mpsc;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::select;
 
-use unit::{DataNodeControllerServer, UnitDataStrean};
 #[derive(Debug, Parser)]
 #[command(
     name = "jz_runner",
@@ -25,23 +29,50 @@ struct Args {
     host_port: String,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     let args = Args::parse();
     tracing_subscriber::fmt()
         .with_max_level(Level::from_str(&args.log_level)?)
         .try_init()
-        .map_err(|e| anyhow!("{}", e))?;
+        .anyhow()?;
 
     let addr = args.host_port.parse()?;
-    let node_controller = DataNodeControllerServer::default();
-    let unit_data_stream = UnitDataStrean::default();
+    let node_controller = DataNodeControllerServer{
+        child: Arc::new(Mutex::new(None)),
+    };
 
-    Server::builder()
-        .add_service(NodeControllerServer::new(node_controller))
-        .add_service(DataStreamServer::new(unit_data_stream))
-        .serve(addr)
-        .await?;
-    info!("node listening on {}", addr);
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
+    {
+        //listen port
+        let shutdown_tx_arc =  shutdown_tx.clone();
+        let _ = tokio::spawn(async move {
+            if let Err(e) = Server::builder()
+            .add_service(NodeControllerServer::new(node_controller))
+            .serve(addr)
+            .await
+            .anyhow(){
+                let _ = shutdown_tx_arc.send(Err(e)).await;
+            }
+        });
+        
+        info!("node listening on {}", addr);
+    }
+
+    {
+        //catch signal
+        let _ = tokio::spawn(async move {      
+            let mut sig_term = signal(SignalKind::terminate()).unwrap();
+            let mut sig_int = signal(SignalKind::interrupt()).unwrap();
+            select! {
+                _ = sig_term.recv() => info!("Recieve SIGTERM"),
+                _ = sig_int.recv() => info!("Recieve SIGTINT"),
+            };
+            let _ =  shutdown_tx.send(Err(anyhow!("cancel by signal"))).await;
+       });
+    }
+
+    shutdown_rx.recv().await;
+    info!("gracefully shutdown");
     Ok(())
 }
