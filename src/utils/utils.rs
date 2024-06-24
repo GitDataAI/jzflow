@@ -20,8 +20,9 @@ pub trait StdIntoAnyhowResult<T> {
     fn anyhow(self) -> Result<T>;
 }
 
-impl<R,E> StdIntoAnyhowResult<R> for std::result::Result<R,E> 
-where E: fmt::Display
+impl<R, E> StdIntoAnyhowResult<R> for std::result::Result<R, E>
+where
+    E: fmt::Display,
 {
     fn anyhow(self) -> Result<R> {
         match self {
@@ -31,18 +32,15 @@ where E: fmt::Display
     }
 }
 
-
-
 pub trait AnyhowToGrpc<R> {
     fn to_rpc(self, code: Code) -> std::result::Result<R, Status>;
 }
 
-impl<R> AnyhowToGrpc<R> for Result<R> 
-{
-    fn to_rpc(self, code:Code) -> std::result::Result<R, Status> {
+impl<R> AnyhowToGrpc<R> for Result<R> {
+    fn to_rpc(self, code: Code) -> std::result::Result<R, Status> {
         match self {
             Ok(v) => Ok(v),
-            Err(e) => Err( Status::new(code, e.to_string())),
+            Err(e) => Err(Status::new(code, e.to_string())),
         }
     }
 }
