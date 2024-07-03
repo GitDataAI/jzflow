@@ -1,5 +1,7 @@
 #![feature(trait_alias)]
 #![feature(async_closure)]
+#![feature(future_join)]
+
 
 pub mod core;
 pub mod dag;

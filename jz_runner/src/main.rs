@@ -1,18 +1,27 @@
+
+#![feature(future_join)]
+
+mod program;
 mod unit;
 
+
 use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
+use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use program::BatchProgram;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::select;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, Level};
 use unit::DataNodeControllerServer;
+use unit::UnitDataStream;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -38,7 +47,15 @@ async fn main() -> Result<()> {
         .anyhow()?;
 
     let addr = args.host_port.parse()?;
-    let node_controller = DataNodeControllerServer::new();
+    let program = BatchProgram::new();
+    let program_safe =  Arc::new(Mutex::new(program));
+    let node_controller = DataNodeControllerServer{
+        program:program_safe.clone(),
+    };
+
+    let data_stream = UnitDataStream{
+        program: program_safe,
+    };
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
@@ -47,6 +64,7 @@ async fn main() -> Result<()> {
         let _ = tokio::spawn(async move {
             if let Err(e) = Server::builder()
                 .add_service(NodeControllerServer::new(node_controller))
+                .add_service(DataStreamServer::new(data_stream))
                 .serve(addr)
                 .await
                 .anyhow()

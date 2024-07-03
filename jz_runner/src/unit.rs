@@ -8,8 +8,9 @@ use jz_action::{network::common::Empty, utils::StdIntoAnyhowResult};
 use std::process::Command;
 use std::{
     os::unix::process::CommandExt,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
+use tokio::sync::Mutex;
 use tokio::select;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
@@ -17,59 +18,12 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status};
 use tracing::error;
 
-#[derive(Debug)]
-pub(crate) enum ProgramState {
-    Init,
-    Ready,
-    Success,
-    Pending,
-    Stop,
-    Fail,
-}
+use super::program::{BatchProgram, ProgramState};
 
-pub(crate) struct BatchProgram {
-    pub(crate) state: ProgramState,
-    pub(crate) script: Option<String>,
-
-    pub(crate) tx: broadcast::Sender<DataBatchResponse>, //receive data from upstream and send it to program with this
-}
-
-impl BatchProgram {
-    fn new() -> Self {
-        let tx= broadcast::Sender::new(128);
-        BatchProgram {
-            state: ProgramState::Init,
-            script: None,
-            tx: tx,
-        }
-    }
-
-    fn run_one_batch(&self) -> Result<()> {
-        if self.script.is_none() {
-            return Err(anyhow!("script not found"));
-        }
-
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(self.script.clone().unwrap())
-            .output()?;
-        if !output.status.success() {
-            return Err(anyhow!("{}", String::from_utf8_lossy(&output.stderr)));
-        }
-        Ok(())
-    }
-}
 pub(crate) struct DataNodeControllerServer {
     pub(crate) program: Arc<Mutex<BatchProgram>>,
 }
 
-impl DataNodeControllerServer {
-    pub(crate) fn new() -> Self {
-        DataNodeControllerServer {
-            program: Arc::new(Mutex::new(BatchProgram::new())),
-        }
-    }
-}
 
 #[tonic::async_trait]
 impl NodeController for DataNodeControllerServer {
@@ -78,9 +32,13 @@ impl NodeController for DataNodeControllerServer {
         request: Request<StartRequest>,
     ) -> std::result::Result<Response<Empty>, Status> {
         let request = request.into_inner();
-        let mut program_guard = self.program.lock().anyhow().to_rpc(Code::Aborted)?;
+        let mut program_guard = self.program.lock().await;
         program_guard.state = ProgramState::Ready;
+        program_guard.upstreams = Some(request.upstreams);
         program_guard.script = Some(request.script);
+        
+        program_guard.fetch_data().await.to_rpc(Code::Internal)?;
+
         Ok(Response::new(Empty {}))
     }
 
@@ -88,7 +46,7 @@ impl NodeController for DataNodeControllerServer {
         &self,
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Empty>, Status> {
-        let mut program_guard = self.program.lock().anyhow().to_rpc(Code::Aborted)?;
+        let mut program_guard = self.program.lock().await;
         program_guard.state = ProgramState::Pending;
         Ok(Response::new(Empty {}))
     }
@@ -97,28 +55,20 @@ impl NodeController for DataNodeControllerServer {
         &self,
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Empty>, Status> {
-        let mut program_guard = self.program.lock().anyhow().to_rpc(Code::Aborted)?;
+        let mut program_guard = self.program.lock().await;
         program_guard.state = ProgramState::Ready;
         Ok(Response::new(Empty {}))
     }
 
     async fn stop(&self, _request: Request<Empty>) -> std::result::Result<Response<Empty>, Status> {
-        let mut program_guard = self.program.lock().anyhow().to_rpc(Code::Aborted)?;
-        program_guard.state = ProgramState::Stop;
+        let mut program_guard = self.program.lock().await;
+        program_guard.state = ProgramState::Stopped;
         Ok(Response::new(Empty {}))
     }
 }
 
 pub(crate) struct UnitDataStream {
     pub(crate) program: Arc<Mutex<BatchProgram>>,
-}
-
-impl UnitDataStream {
-    pub(crate) fn new() -> Self {
-        UnitDataStream {
-            program: Arc::new(Mutex::new(BatchProgram::new())),
-        }
-    }
 }
 
 #[tonic::async_trait]
@@ -132,7 +82,7 @@ impl DataStream for UnitDataStream {
         println!("recieve new data request {:?}", request);
 
         let (tx, rx) = mpsc::channel(4);
-        let program_guard = self.program.lock().anyhow().to_rpc(Code::Aborted)?;
+        let program_guard = self.program.lock().await;
         let mut data_rx = program_guard.tx.subscribe();
         tokio::spawn(async move {
             loop {

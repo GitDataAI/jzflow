@@ -12,5 +12,6 @@ service NodeController {
 }
 
 message StartRequest {
-  string script = 1;
+  repeated string upstreams = 21;
+  string script = 2;
 }
