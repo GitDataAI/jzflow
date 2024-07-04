@@ -1,6 +1,7 @@
 [workspace]
 members = [
-  "jz_runner",
+  "runner/dc_runner",
+  "runner/compute_runner",
 ]
 
 [workspace.package]

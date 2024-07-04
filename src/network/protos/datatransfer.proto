@@ -8,8 +8,16 @@ service DataStream {
   rpc subscribe_new_data(common.Empty) returns (stream DataBatchResponse) {}
 }
 
+message DataCell {
+  map<string, string> meta = 1;
+  int32 size = 2;
+  string path = 3;
+  string name = 4;
+  bytes data = 5;
+}
+
 message DataBatchResponse {
     uint32 size = 1;
-    repeated bytes data = 2;
+    repeated DataCell cells = 2;
 }
   

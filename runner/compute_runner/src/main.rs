@@ -1,12 +1,10 @@
-
 #![feature(future_join)]
 
 mod program;
 mod unit;
 
-
-use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
+use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
 use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
@@ -14,10 +12,10 @@ use clap::Parser;
 use program::BatchProgram;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::select;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, Level};
 use unit::DataNodeControllerServer;
@@ -25,7 +23,7 @@ use unit::UnitDataStream;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "jz_runner",
+    name = "compute_runner",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
     about = "embed in k8s images"
@@ -48,12 +46,12 @@ async fn main() -> Result<()> {
 
     let addr = args.host_port.parse()?;
     let program = BatchProgram::new();
-    let program_safe =  Arc::new(Mutex::new(program));
-    let node_controller = DataNodeControllerServer{
-        program:program_safe.clone(),
+    let program_safe = Arc::new(Mutex::new(program));
+    let node_controller = DataNodeControllerServer {
+        program: program_safe.clone(),
     };
 
-    let data_stream = UnitDataStream{
+    let data_stream = UnitDataStream {
         program: program_safe,
     };
 

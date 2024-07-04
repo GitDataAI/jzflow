@@ -1,10 +1,10 @@
 [package]
-name = "jz_runner"
+name = "compute_runner"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-jz_action = { path = "../"}
+jz_action = { path = "../../"}
 
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tokio-retry = {workspace = true}

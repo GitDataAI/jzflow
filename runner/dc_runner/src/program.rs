@@ -2,16 +2,15 @@ use anyhow::{anyhow, Ok, Result};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::DataBatchResponse;
-use std::process::Command;
-use std::{
-    os::unix::process::CommandExt,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 use tokio::select;
-use tokio::sync::broadcast;
-use tokio::sync::mpsc;
-use tokio_stream::{Stream, StreamExt};
-use tracing::error;
+use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio_stream::{Stream, StreamExt, StreamMap};
+use tonic::Status;
+use tracing::{error, info};
+use tracing_subscriber::registry::Data;
+
+use crate::mprc;
 
 #[derive(Debug)]
 pub(crate) enum ProgramState {
@@ -29,17 +28,16 @@ pub(crate) struct BatchProgram {
 
     pub(crate) script: Option<String>,
 
-    pub(crate) tx: broadcast::Sender<DataBatchResponse>, //receive data from upstream and send it to program with this
+    pub receivers: Arc<Mutex<mprc::Mprs<String, mpsc::Sender<Result<DataBatchResponse, Status>>>>>,
 }
 
 impl BatchProgram {
     pub(crate) fn new() -> Self {
-        let tx = broadcast::Sender::new(128);
         BatchProgram {
             state: ProgramState::Init,
             upstreams: None,
             script: None,
-            tx: tx,
+            receivers: Arc::new(Mutex::new(mprc::Mprs::new())),
         }
     }
 
@@ -64,37 +62,27 @@ impl BatchProgram {
                 error!("unable read data from stream");
                 Ok(())
             });
+
+            info!("listen data from upstream {}", upstream);
         }
 
-        let tx = self.tx.clone();
-        let _ = tokio::spawn(async move {
+        let receivers = self.receivers.clone();
+        tokio::spawn(async move {
             loop {
                 select! {
                  data_batch = rx.recv() => {
-                    if let Some(v) = data_batch {
-                        if let Err(e) = tx.send(v) {
-                            error!("send data {}", e);
-                        }
+                    let sender = {
+                         let mut guard = receivers.lock().await;
+                         guard.get_random().unwrap().clone()
+                    };
+
+                    if let Err(e) = sender.send(std::result::Result::Ok(data_batch.unwrap())).await{
+                        error!("unable send data to downstream {e}");
                     }
                  },
                 }
             }
         });
-        Ok(())
-    }
-
-    fn run_one_batch(&self) -> Result<()> {
-        if self.script.is_none() {
-            return Err(anyhow!("script not found"));
-        }
-
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(self.script.clone().unwrap())
-            .output()?;
-        if !output.status.success() {
-            return Err(anyhow!("{}", String::from_utf8_lossy(&output.stderr)));
-        }
         Ok(())
     }
 }
