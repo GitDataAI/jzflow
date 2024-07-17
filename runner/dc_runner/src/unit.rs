@@ -17,7 +17,6 @@ use tracing::error;
 
 use super::program::{BatchProgram, ProgramState};
 
-
 pub(crate) struct DataNodeControllerServer {
     pub(crate) program: Arc<Mutex<BatchProgram>>,
 }
@@ -63,7 +62,6 @@ impl NodeController for DataNodeControllerServer {
     }
 }
 
-
 pub(crate) struct UnitDataStream {
     pub(crate) program: Arc<Mutex<BatchProgram>>,
 }
@@ -82,7 +80,7 @@ impl DataStream for UnitDataStream {
             .anyhow("remove addr missing")
             .to_rpc(Code::InvalidArgument)?
             .to_string();
-        
+
         let (tx, rx) = mpsc::channel(4);
         let program_guard = self.program.lock().await;
         let _ = program_guard.receivers.lock().await.insert(remote_addr, tx);

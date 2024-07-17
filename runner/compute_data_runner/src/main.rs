@@ -1,5 +1,6 @@
 #![feature(future_join)]
 
+mod ipc;
 mod program;
 mod unit;
 
@@ -10,6 +11,7 @@ use jz_action::utils::StdIntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use program::BatchProgram;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::select;
@@ -45,8 +47,9 @@ async fn main() -> Result<()> {
         .anyhow()?;
 
     let addr = args.host_port.parse()?;
-    let program = BatchProgram::new();
+    let program = BatchProgram::new(PathBuf::new());
     let program_safe = Arc::new(Mutex::new(program));
+
     let node_controller = DataNodeControllerServer {
         program: program_safe.clone(),
     };

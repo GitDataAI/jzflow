@@ -33,7 +33,10 @@ impl NodeController for DataNodeControllerServer {
         program_guard.upstreams = Some(request.upstreams);
         program_guard.script = Some(request.script);
 
-        program_guard.fetch_data().await.to_rpc(Code::Internal)?;
+        program_guard
+            .process_data_cmd()
+            .await
+            .to_rpc(Code::Internal)?;
 
         Ok(Response::new(Empty {}))
     }
@@ -85,6 +88,7 @@ impl DataStream for UnitDataStream {
                 select! {
                  data_batch = data_rx.recv() => {
                     if let Err(e) = tx.send(data_batch.anyhow().to_rpc(Code::Internal)).await {
+                        //todo handle disconnect
                         error!("send data {}", e);
                         return
                     }

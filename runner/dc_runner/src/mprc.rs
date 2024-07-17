@@ -71,7 +71,6 @@ mod tests {
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::sleep;
-    fn assert_send_sync<T: Send + Sync>() {}
 
     #[tokio::test]
     async fn test_mprs_insert_remove() {
@@ -98,7 +97,7 @@ mod tests {
             let counter = counter.clone();
             mprs.insert("A".to_string(), tx);
             let _ = tokio::spawn(async move {
-                while let Some(item) = rx.recv().await {
+                while let Some(_) = rx.recv().await {
                     counter.fetch_add(1, Ordering::SeqCst);
                     println!("A receive");
                 }
@@ -110,7 +109,7 @@ mod tests {
             mprs.insert("B".to_string(), tx);
             let counter = counter.clone();
             let _ = tokio::spawn(async move {
-                while let Some(item) = rx.recv().await {
+                while let Some(_) = rx.recv().await {
                     counter.fetch_add(1, Ordering::SeqCst);
                     println!("B receive");
                 }

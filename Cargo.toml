@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "runner/dc_runner",
-  "runner/compute_runner",
+  "runner/compute_data_runner",
 ]
 
 [workspace.package]
@@ -24,7 +24,9 @@ tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread"] }
 tokio-retry = "0.3"
 tokio-stream = "0.1.15"
 tonic = "0.11.0"
-
+serde_json = {version = "1.0.117"}
+serde = {version ="1.0.203", features = ["derive"]}
+uuid = {version="1.8.0", features = ["v4","serde"]}
 
 [package]
 name = "jz_action"
@@ -32,10 +34,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = {version ="1.0.203", features = ["derive"]}
-serde_json = {version = "1.0.117"}
+
 bimap = "0.6.3"
-uuid = {version="1.8.0", features = ["v4","serde"]}
 kube = { version = "0.91.0", features = ["runtime", "derive"] }
 k8s-openapi = { version = "0.22.0", features = ["latest"] }
 handlebars = "5.1.2"
@@ -44,10 +44,13 @@ prost = "0.12.6"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tokio-retry = {workspace = true}
 tokio-stream = {workspace = true}
+uuid =  {workspace = true}
 anyhow =  {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 tonic = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
 
 [dev-dependencies]
 arrayvec = {version="0.7.4", features= ["serde"]}

@@ -9,11 +9,9 @@ service DataStream {
 }
 
 message DataCell {
-  map<string, string> meta = 1;
-  int32 size = 2;
-  string path = 3;
-  string name = 4;
-  bytes data = 5;
+  int32 size = 1;
+  string path = 2;
+  bytes data = 3;
 }
 
 message DataBatchResponse {
