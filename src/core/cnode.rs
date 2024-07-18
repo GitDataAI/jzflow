@@ -1,9 +1,9 @@
 use super::{MachineSpec, GID};
 use serde::{Deserialize, Serialize};
 
-// Channel use to definite data transfer channel
+// DataPoint use to definite data transfer channel
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Channel {
+pub struct DataPoint {
     pub spec: MachineSpec,
 }
 
@@ -20,7 +20,7 @@ where
 
     pub spec: MachineSpec,
 
-    pub channel: Option<Channel>,
+    pub channel: Option<DataPoint>,
 
     #[serde(bound(deserialize = ""))]
     pub(crate) dependency: Vec<ID>,

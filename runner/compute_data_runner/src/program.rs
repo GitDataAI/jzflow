@@ -1,5 +1,5 @@
 use crate::ipc::{DataResponse, SubmitResultReq};
-use anyhow::{anyhow, Ok, Result};
+use anyhow::{anyhow, Result};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::{DataBatchResponse, DataCell};
@@ -90,7 +90,7 @@ impl BatchProgram {
                     }
 
                     error!("unable read data from stream");
-                    Ok(())
+                    anyhow::Ok(())
                 });
 
                 info!("listen data from upstream {}", upstream);
@@ -160,11 +160,11 @@ impl BatchProgram {
                     let mut entry_count = 0 ;
                     for entry in WalkDir::new(tmp_out_path) {
                         match entry {
-                           std::result::Result::Ok(entry) => {
+                           Ok(entry) => {
                                 if entry.file_type().is_file() {
                                     let path  = entry.path();
                                     match fs::read(path) {
-                                        std::result::Result::Ok(content) => {
+                                       Ok(content) => {
                                             new_batch.cells.push(DataCell{
                                                 size: content.len() as i32,
                                                 path: path.to_str().unwrap().to_string(),
@@ -174,7 +174,7 @@ impl BatchProgram {
                                         }
                                         Err(e) => error!("read file({:?}) fail {}", path, e),
                                     }
-                                    
+
                                     println!("{}", entry.path().display());
                                 }
                             }
@@ -182,7 +182,7 @@ impl BatchProgram {
                         }
                     }
                     new_batch.size  = entry_count;
-                  
+
                     //write another
                     if new_batch.size >0 {
                         if let Err(e) = out_going_tx.send(new_batch) {

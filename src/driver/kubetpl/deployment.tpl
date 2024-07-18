@@ -24,7 +24,7 @@
       "spec": {
         "containers": [
           {
-            "name": "compute-unit",
+            "name": "compute-data-unit",
             "image": "{{{spec.image}}}",
             "command": [ "sleep" ],
             "args": [ "infinity" ],
@@ -33,6 +33,14 @@
                 "containerPort": 80
               }
             ]
+          }
+        ]
+        "containers": [
+          {
+            "name": "compute-user-unit",
+            "image": "{{{spec.image}}}",
+            "command": [ "sleep" ],
+            "args": [ "infinity" ]
           }
         ]
       }

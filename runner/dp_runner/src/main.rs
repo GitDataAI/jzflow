@@ -23,7 +23,7 @@ use unit::UnitDataStream;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "dc_runner",
+    name = "dp_runner",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
     about = "embed in k8s images"

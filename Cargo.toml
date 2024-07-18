@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "runner/dc_runner",
+  "runner/dp_runner",
   "runner/compute_data_runner",
 ]
 
