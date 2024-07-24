@@ -10,12 +10,12 @@ use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct DataResponse {
-    pub(crate) path: String,
+    pub(crate) id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct SubmitResultReq {
-    pub(crate) path: String,
+    pub(crate) id: String,
 }
 
 async fn process_data_request(program_mutex: web::Data<Arc<Mutex<BatchProgram>>>) -> HttpResponse {

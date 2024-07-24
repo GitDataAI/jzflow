@@ -5,17 +5,48 @@ package datatransfer;
 import "common.proto";
 
 service DataStream {
-  rpc subscribe_new_data(common.Empty) returns (stream DataBatchResponse) {}
+  rpc subscribe_media_data(common.Empty) returns (stream MediaDataBatchResponse) {}
+  rpc subscribe_tabular_data(common.Empty) returns (stream TabularDataBatchResponse) {}
 }
 
-message DataCell {
+message MediaDataCell {
   int32 size = 1;
   string path = 2;
   bytes data = 3;
 }
 
-message DataBatchResponse {
+
+message MediaDataBatchResponse {
     uint32 size = 1;
-    repeated DataCell cells = 2;
+    repeated MediaDataCell cells = 2;
 }
-  
+
+
+// Tabular
+
+enum DataType {
+    STRING = 0;
+    INT32 = 1;
+}
+
+message Column {
+  string name = 1;
+  DataType data_type = 2; 
+}
+
+message DataValue {
+  oneof value {
+    int32 int_value = 1;
+    string string_value = 2;
+  }
+}
+
+message Row {
+  repeated DataValue values = 1;
+}
+
+message TabularDataBatchResponse {
+  int32 size = 1;
+  repeated Column columns = 2;
+  repeated Row rows = 3;
+}

@@ -1,6 +1,6 @@
 use core::fmt;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use tonic::{Code, Status};
 
 pub trait IntoAnyhowResult<T> {

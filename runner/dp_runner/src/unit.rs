@@ -1,19 +1,15 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use jz_action::network::datatransfer::data_stream_server::DataStream;
-use jz_action::network::datatransfer::DataBatchResponse;
+use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
 use jz_action::network::nodecontroller::node_controller_server::NodeController;
 use jz_action::network::nodecontroller::StartRequest;
 use jz_action::utils::{AnyhowToGrpc, IntoAnyhowResult};
-use jz_action::{network::common::Empty, utils::StdIntoAnyhowResult};
-use std::process::Command;
-use std::{os::unix::process::CommandExt, sync::Arc};
-use tokio::select;
-use tokio::sync::broadcast;
+use jz_action::network::common::Empty;
+use std:: sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status};
-use tracing::error;
 
 use super::program::{BatchProgram, ProgramState};
 
@@ -68,12 +64,12 @@ pub(crate) struct UnitDataStream {
 
 #[tonic::async_trait]
 impl DataStream for UnitDataStream {
-    type subscribe_new_dataStream = ReceiverStream<Result<DataBatchResponse, Status>>;
+    type subscribe_media_dataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
 
-    async fn subscribe_new_data(
+    async fn subscribe_media_data(
         &self,
         request: Request<Empty>,
-    ) -> Result<Response<Self::subscribe_new_dataStream>, Status> {
+    ) -> Result<Response<Self::subscribe_media_dataStream>, Status> {
         println!("recieve new data request {:?}", request);
         let remote_addr = request
             .remote_addr()
@@ -85,5 +81,14 @@ impl DataStream for UnitDataStream {
         let program_guard = self.program.lock().await;
         let _ = program_guard.receivers.lock().await.insert(remote_addr, tx);
         Ok(Response::new(ReceiverStream::new(rx)))
+    }
+
+    type subscribe_tabular_dataStream = ReceiverStream<Result<TabularDataBatchResponse, Status>>;
+
+    async fn subscribe_tabular_data(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<Self::subscribe_tabular_dataStream>, Status> {
+            todo!()
     }
 }

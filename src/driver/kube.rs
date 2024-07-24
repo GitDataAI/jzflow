@@ -242,7 +242,7 @@ where
 }
 
 #[derive(Serialize)]
-struct claimRenderParams {
+struct ClaimRenderParams {
     name: String
 }
 
@@ -260,7 +260,7 @@ where
 
         let mut pipeline_ctl = KubePipelineController::<ID>::default();
         for node in graph.iter() {
-            let claim_string = self.reg.render("claim", &claimRenderParams{
+            let claim_string = self.reg.render("claim", &ClaimRenderParams{
                 name: node.name.clone()+"-node-claim"
             })?;
             debug!("rendered clam string {}", claim_string);
@@ -286,7 +286,7 @@ where
                 .await?;
 
             let channel_handler = if node.channel.is_some() {
-                let claim_string = self.reg.render("claim", &claimRenderParams{
+                let claim_string = self.reg.render("claim", &ClaimRenderParams{
                     name: node.name.clone()+"-channel-claim"
                 })?;
                 debug!("rendered channel claim string {}", claim_string);

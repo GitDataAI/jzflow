@@ -11,7 +11,14 @@ service NodeController {
   rpc stop(common.Empty) returns(common.Empty) {}
 }
 
+enum NodeType {
+  INPUT = 0;
+  INPUT_OUTPUT = 1;
+  OUTPUT = 2;
+}
+
 message StartRequest {
-  repeated string upstreams = 21;
-  string script = 2;
+  NodeType node_type = 1;
+  repeated string upstreams = 2;
+  string script = 3;
 }

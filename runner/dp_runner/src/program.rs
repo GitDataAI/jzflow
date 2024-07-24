@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Ok, Result};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
-use jz_action::network::datatransfer::DataBatchResponse;
+use jz_action::network::datatransfer::MediaDataBatchResponse;
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc, Mutex};
@@ -28,7 +28,7 @@ pub(crate) struct BatchProgram {
 
     pub(crate) script: Option<String>,
 
-    pub receivers: Arc<Mutex<mprc::Mprs<String, mpsc::Sender<Result<DataBatchResponse, Status>>>>>,
+    pub receivers: Arc<Mutex<mprc::Mprs<String, mpsc::Sender<Result<MediaDataBatchResponse, Status>>>>>,
 }
 
 impl BatchProgram {
@@ -53,7 +53,7 @@ impl BatchProgram {
             let tx_clone = tx.clone();
             let _ = tokio::spawn(async move {
                 let mut client = DataStreamClient::connect(upstream_clone).await?;
-                let mut stream = client.subscribe_new_data(Empty {}).await?.into_inner();
+                let mut stream = client.subscribe_media_data(Empty {}).await?.into_inner();
 
                 while let Some(item) = stream.next().await {
                     tx_clone.send(item.unwrap()).await.unwrap();
