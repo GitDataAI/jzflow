@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use jz_action::network::datatransfer::data_stream_server::DataStream;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
 use jz_action::network::nodecontroller::node_controller_server::NodeController;
@@ -13,10 +13,10 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status};
 use tracing::error;
 
-use super::program::{BatchProgram, ProgramState};
+use super::media_data_tracker::{MediaDataTracker, TrackerState};
 
 pub(crate) struct DataNodeControllerServer {
-    pub(crate) program: Arc<Mutex<BatchProgram>>,
+    pub(crate) program: Arc<Mutex<MediaDataTracker>>,
 }
 
 #[tonic::async_trait]
@@ -27,8 +27,10 @@ impl NodeController for DataNodeControllerServer {
     ) -> std::result::Result<Response<Empty>, Status> {
         let request = request.into_inner();
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Ready;
-        program_guard.node_type = NodeType::try_from(request.node_type).anyhow().to_rpc(Code::InvalidArgument)?;
+        program_guard.state = TrackerState::Ready;
+        program_guard.node_type = NodeType::try_from(request.node_type)
+            .anyhow()
+            .to_rpc(Code::InvalidArgument)?;
         program_guard.upstreams = Some(request.upstreams);
         program_guard.script = Some(request.script);
 
@@ -45,7 +47,7 @@ impl NodeController for DataNodeControllerServer {
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Empty>, Status> {
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Pending;
+        program_guard.state = TrackerState::Pending;
         Ok(Response::new(Empty {}))
     }
 
@@ -54,19 +56,19 @@ impl NodeController for DataNodeControllerServer {
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Empty>, Status> {
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Ready;
+        program_guard.state = TrackerState::Ready;
         Ok(Response::new(Empty {}))
     }
 
     async fn stop(&self, _request: Request<Empty>) -> std::result::Result<Response<Empty>, Status> {
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Stopped;
+        program_guard.state = TrackerState::Stopped;
         Ok(Response::new(Empty {}))
     }
 }
 
 pub(crate) struct UnitDataStream {
-    pub(crate) program: Arc<Mutex<BatchProgram>>,
+    pub(crate) program: Arc<Mutex<MediaDataTracker>>,
 }
 
 #[tonic::async_trait]
@@ -99,13 +101,12 @@ impl DataStream for UnitDataStream {
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 
-
     type subscribe_tabular_dataStream = ReceiverStream<Result<TabularDataBatchResponse, Status>>;
 
     async fn subscribe_tabular_data(
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::subscribe_tabular_dataStream>, Status> {
-            todo!()
+        todo!()
     }
 }

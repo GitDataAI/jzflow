@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "runner/dp_runner",
-  "runner/compute_data_runner",
+  "runner/compute_unit_runner",
 ]
 
 [workspace.package]

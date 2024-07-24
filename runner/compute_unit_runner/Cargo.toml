@@ -1,5 +1,5 @@
 [package]
-name = "compute_data_runner"
+name = "compute_unit_runner"
 version = "0.1.0"
 edition = "2021"
 

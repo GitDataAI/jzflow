@@ -1,7 +1,7 @@
 #![feature(future_join)]
 
 mod ipc;
-mod program;
+mod media_data_tracker;
 mod unit;
 
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
@@ -10,7 +10,7 @@ use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
-use program::BatchProgram;
+use media_data_tracker::MediaDataTracker;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -25,7 +25,7 @@ use unit::UnitDataStream;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "compute_runner",
+    name = "compute_unit_runner",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
     about = "embed in k8s images"
@@ -37,7 +37,7 @@ struct Args {
     #[arg(short, long, default_value = "/app/tmp")]
     tmp_path: String,
 
-    #[arg(short, long, default_value = "/unix_socket/compute_data_runner_d")]
+    #[arg(short, long, default_value = "/unix_socket/compute_unit_runner_d")]
     unix_socket_addr: String,
 
     #[arg(long, default_value = "[::1]:25431")]
@@ -53,9 +53,8 @@ async fn main() -> Result<()> {
         .anyhow()?;
 
     let addr = args.host_port.parse()?;
-    let program = BatchProgram::new(PathBuf::from_str(args.tmp_path.as_str())?);
+    let program = MediaDataTracker::new(PathBuf::from_str(args.tmp_path.as_str())?);
     let program_safe = Arc::new(Mutex::new(program));
-
 
     let node_controller = DataNodeControllerServer {
         program: program_safe.clone(),
@@ -77,7 +76,9 @@ async fn main() -> Result<()> {
                 .await
                 .anyhow()
             {
-                let _ = shutdown_tx_arc.send(Err(anyhow!("start data controller {e}"))).await;
+                let _ = shutdown_tx_arc
+                    .send(Err(anyhow!("start data controller {e}")))
+                    .await;
             }
         });
 
@@ -90,8 +91,10 @@ async fn main() -> Result<()> {
         let program = program_safe.clone();
         let shutdown_tx_arc = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
-            if let Err(e) = ipc::start_ipc_server(unix_socket_addr, program)  {
-                let _ = shutdown_tx_arc.send(Err(anyhow!("start unix socket server {e}"))).await;
+            if let Err(e) = ipc::start_ipc_server(unix_socket_addr, program) {
+                let _ = shutdown_tx_arc
+                    .send(Err(anyhow!("start unix socket server {e}")))
+                    .await;
             }
         });
     }

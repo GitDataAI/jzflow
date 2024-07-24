@@ -25,9 +25,9 @@
         "containers": [
           {
             "name": "compute-data-unit",
-            "image": "jz-action/compute_data_runner:latest",
+            "image": "jz-action/compute_unit_runner:latest",
             "command": [
-              "/compute_data_runner"
+              "/compute_unit_runner"
             ],
             "imagePullPolicy":"IfNotPresent",
             "ports": [

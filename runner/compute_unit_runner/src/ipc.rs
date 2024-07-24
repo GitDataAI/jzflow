@@ -1,8 +1,6 @@
-use anyhow::Result;
-
+use crate::media_data_tracker::MediaDataTracker;
 use actix_web::{web, App, HttpResponse, HttpServer};
-
-use crate::program::BatchProgram;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -18,7 +16,9 @@ pub(crate) struct SubmitResultReq {
     pub(crate) id: String,
 }
 
-async fn process_data_request(program_mutex: web::Data<Arc<Mutex<BatchProgram>>>) -> HttpResponse {
+async fn process_data_request(
+    program_mutex: web::Data<Arc<Mutex<MediaDataTracker>>>,
+) -> HttpResponse {
     let (tx, mut rx) = oneshot::channel::<DataResponse>();
     let program = program_mutex.lock().await;
     program
@@ -36,7 +36,7 @@ async fn process_data_request(program_mutex: web::Data<Arc<Mutex<BatchProgram>>>
 }
 
 async fn process_submit_result_request(
-    program_mutex: web::Data<Arc<Mutex<BatchProgram>>>,
+    program_mutex: web::Data<Arc<Mutex<MediaDataTracker>>>,
     data: web::Json<SubmitResultReq>,
 ) -> HttpResponse {
     let (tx, mut rx) = oneshot::channel::<()>();
@@ -60,7 +60,7 @@ async fn process_submit_result_request(
 
 pub(crate) fn start_ipc_server(
     unix_socket_addr: String,
-    program: Arc<Mutex<BatchProgram>>,
+    program: Arc<Mutex<MediaDataTracker>>,
 ) -> Result<()> {
     HttpServer::new(move || {
         App::new()

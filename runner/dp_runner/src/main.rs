@@ -1,7 +1,7 @@
 #![feature(future_join)]
 
+mod channel_tracker;
 mod mprc;
-mod program;
 mod unit;
 
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
@@ -9,8 +9,8 @@ use jz_action::network::nodecontroller::node_controller_server::NodeControllerSe
 use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
+use channel_tracker::ChannelTracker;
 use clap::Parser;
-use program::BatchProgram;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::select;
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
         .anyhow()?;
 
     let addr = args.host_port.parse()?;
-    let program = BatchProgram::new();
+    let program = ChannelTracker::new();
     let program_safe = Arc::new(Mutex::new(program));
     let data_stream = UnitDataStream {
         program: program_safe,

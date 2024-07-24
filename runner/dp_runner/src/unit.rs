@@ -1,20 +1,20 @@
 use anyhow::Result;
+use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_server::DataStream;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
 use jz_action::network::nodecontroller::node_controller_server::NodeController;
 use jz_action::network::nodecontroller::StartRequest;
 use jz_action::utils::{AnyhowToGrpc, IntoAnyhowResult};
-use jz_action::network::common::Empty;
-use std:: sync::Arc;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status};
 
-use super::program::{BatchProgram, ProgramState};
+use super::channel_tracker::{ChannelState, ChannelTracker};
 
 pub(crate) struct DataNodeControllerServer {
-    pub(crate) program: Arc<Mutex<BatchProgram>>,
+    pub(crate) program: Arc<Mutex<ChannelTracker>>,
 }
 
 #[tonic::async_trait]
@@ -25,7 +25,7 @@ impl NodeController for DataNodeControllerServer {
     ) -> std::result::Result<Response<Empty>, Status> {
         let request = request.into_inner();
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Ready;
+        program_guard.state = ChannelState::Ready;
         program_guard.upstreams = Some(request.upstreams);
         program_guard.script = Some(request.script);
 
@@ -38,7 +38,7 @@ impl NodeController for DataNodeControllerServer {
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Empty>, Status> {
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Pending;
+        program_guard.state = ChannelState::Pending;
         Ok(Response::new(Empty {}))
     }
 
@@ -47,19 +47,19 @@ impl NodeController for DataNodeControllerServer {
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Empty>, Status> {
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Ready;
+        program_guard.state = ChannelState::Ready;
         Ok(Response::new(Empty {}))
     }
 
     async fn stop(&self, _request: Request<Empty>) -> std::result::Result<Response<Empty>, Status> {
         let mut program_guard = self.program.lock().await;
-        program_guard.state = ProgramState::Stopped;
+        program_guard.state = ChannelState::Stopped;
         Ok(Response::new(Empty {}))
     }
 }
 
 pub(crate) struct UnitDataStream {
-    pub(crate) program: Arc<Mutex<BatchProgram>>,
+    pub(crate) program: Arc<Mutex<ChannelTracker>>,
 }
 
 #[tonic::async_trait]
@@ -89,6 +89,6 @@ impl DataStream for UnitDataStream {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::subscribe_tabular_dataStream>, Status> {
-            todo!()
+        todo!()
     }
 }

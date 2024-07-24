@@ -1,24 +1,22 @@
 use crate::ipc::{DataResponse, SubmitResultReq};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
-use jz_action::network::datatransfer::{MediaDataBatchResponse, MediaDataCell, TabularDataBatchResponse};
+use jz_action::network::datatransfer::{MediaDataBatchResponse, MediaDataCell};
 use jz_action::network::nodecontroller::NodeType;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::mpsc::Receiver;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::{broadcast, oneshot};
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::StreamExt;
 use tracing::{error, info};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
 #[derive(Debug)]
-pub(crate) enum ProgramState {
+pub(crate) enum TrackerState {
     Init,
     Ready,
     Pending,
@@ -27,7 +25,7 @@ pub(crate) enum ProgramState {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum StateEnum {
+pub(crate) enum DataStateEnum {
     Received,
     Assigned,
     Processed,
@@ -36,13 +34,13 @@ pub(crate) enum StateEnum {
 
 #[derive(Debug)]
 pub(crate) struct BatchState {
-    pub(crate) state: StateEnum,
+    pub(crate) state: DataStateEnum,
 }
 
-pub(crate) struct BatchProgram {
+pub(crate) struct MediaDataTracker {
     pub(crate) tmp_store: PathBuf,
 
-    pub(crate) state: ProgramState,
+    pub(crate) state: TrackerState,
 
     pub(crate) node_type: NodeType,
 
@@ -56,14 +54,14 @@ pub(crate) struct BatchProgram {
     pub(crate) out_going_tx: broadcast::Sender<MediaDataBatchResponse>, //receive data from upstream and send it to program with this
 }
 
-impl BatchProgram {
+impl MediaDataTracker {
     pub(crate) fn new(tmp_store: PathBuf) -> Self {
         let out_going_tx = broadcast::Sender::new(128);
 
-        BatchProgram {
+        MediaDataTracker {
             tmp_store,
             node_type: NodeType::Input,
-            state: ProgramState::Init,
+            state: TrackerState::Init,
             upstreams: None,
             script: None,
             ipc_process_submit_result_tx: None,
@@ -74,13 +72,13 @@ impl BatchProgram {
 
     pub(crate) async fn process_data_cmd(&mut self) -> Result<()> {
         match self.node_type {
-            NodeType::Input=>self.track_input_data().await,
-            NodeType::InputOutput=>self.track_input_output_data().await,
-            NodeType::Output=>self.track_output_data().await,
+            NodeType::Input => self.track_input_data().await,
+            NodeType::InputOutput => self.track_input_output_data().await,
+            NodeType::Output => self.track_output_data().await,
         }
     }
 
-    pub(crate) async fn track_input_data(&mut self) ->Result<()> {
+    pub(crate) async fn track_input_data(&mut self) -> Result<()> {
         let (ipc_process_submit_result_tx, mut ipc_process_submit_result_rx) = mpsc::channel(1024);
         self.ipc_process_submit_result_tx = Some(ipc_process_submit_result_tx);
 
@@ -95,7 +93,7 @@ impl BatchProgram {
                 select! {
                  Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
                     state_map.insert(req.id.clone(), BatchState{
-                        state: StateEnum::Processed,
+                        state: DataStateEnum::Processed,
                     });
 
                     // respose with nothing
@@ -139,7 +137,7 @@ impl BatchProgram {
 
                         let entry = state_map.get_mut(&req.id)
                         .expect("this value has been inserted before");
-                        entry.state = StateEnum::Sent;
+                        entry.state = DataStateEnum::Sent;
                     }
                     let _ = state_map.remove(&req.id);
                 },
@@ -149,8 +147,11 @@ impl BatchProgram {
         Ok(())
     }
 
-    pub(crate) async fn track_input_output_data(&mut self) ->Result<()> {
-        let upstreams = self.upstreams.as_ref().expect("input output node must have incoming nodes");
+    pub(crate) async fn track_input_output_data(&mut self) -> Result<()> {
+        let upstreams = self
+            .upstreams
+            .as_ref()
+            .expect("input output node must have incoming nodes");
 
         let (incoming_data_tx, mut incoming_data_rx) = mpsc::channel(1024);
 
@@ -168,18 +169,17 @@ impl BatchProgram {
                     //todo handle network disconnect
                     let mut client = DataStreamClient::connect(upstream.clone()).await?;
                     let mut stream = client.subscribe_media_data(Empty {}).await?.into_inner();
-    
+
                     while let Some(item) = stream.next().await {
                         tx_clone.send(item.unwrap()).await.unwrap();
                     }
-    
+
                     error!("unable read data from stream");
                     anyhow::Ok(())
                 });
             }
             info!("listen data from upstream {}", upstream);
         }
-    
 
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
@@ -193,17 +193,17 @@ impl BatchProgram {
                     if let Some(data_batch) = data_batch_result {
                         //create input directory
                         let id = Uuid::new_v4().to_string();
-                        let tmp_in_path = tmp_store.join(id.clone()+"-input");    
+                        let tmp_in_path = tmp_store.join(id.clone()+"-input");
                         if let Err(e) = fs::create_dir_all(&tmp_in_path) {
                             error!("create input dir {:?} fail {}", tmp_in_path, e);
-                            return 
+                            return
                         }
 
                         //create output directory at the same time
-                        let tmp_out_path = tmp_store.join(id.clone()+"-output");  
+                        let tmp_out_path = tmp_store.join(id.clone()+"-output");
                         if let Err(e) = fs::create_dir_all(&tmp_out_path) {
                             error!("create output dir {:?} fail {}", tmp_out_path, e);
-                            return 
+                            return
                         }
                         //write batch files
                         for entry in  data_batch.cells.iter() {
@@ -213,19 +213,19 @@ impl BatchProgram {
                             }
                         }
                         state_map.insert(id, BatchState{
-                            state: StateEnum::Received,
+                            state: DataStateEnum::Received,
                         });
                     }
                  },
                  Some((_, resp)) = ipc_process_data_req_rx.recv() => {
                         //select a unassgined data
                         for (key, v ) in  state_map.iter_mut() {
-                            if v.state == StateEnum::Received {
+                            if v.state == DataStateEnum::Received {
                                 //response this data's position
                                 resp.send(DataResponse{
                                     id:   key.clone(),
                                 }).expect("channel only read once");
-                                v.state = StateEnum::Assigned ;
+                                v.state = DataStateEnum::Assigned ;
                                 break;
                             }
                         }
@@ -234,7 +234,7 @@ impl BatchProgram {
                     //mark this data as completed
                     match state_map.get_mut(&req.id) {
                         Some(state)=>{
-                            state.state = StateEnum::Processed;
+                            state.state = DataStateEnum::Processed;
                         },
                         None=>error!("id({:?}) not found", &req.id)
                     }
@@ -280,7 +280,7 @@ impl BatchProgram {
                         }
                         let entry = state_map.get_mut(&req.id)
                         .expect("this value has been inserted before");
-                        entry.state = StateEnum::Sent;
+                        entry.state = DataStateEnum::Sent;
                     }
 
                     //remove data
@@ -296,8 +296,11 @@ impl BatchProgram {
         Ok(())
     }
 
-    pub(crate) async fn track_output_data(&mut self) ->Result<()> {
-        let upstreams = self.upstreams.as_ref().expect("input output node must have incoming nodes");
+    pub(crate) async fn track_output_data(&mut self) -> Result<()> {
+        let upstreams = self
+            .upstreams
+            .as_ref()
+            .expect("input output node must have incoming nodes");
 
         let (incoming_data_tx, mut incoming_data_rx) = mpsc::channel(1024);
 
@@ -315,18 +318,17 @@ impl BatchProgram {
                     //todo handle network disconnect
                     let mut client = DataStreamClient::connect(upstream.clone()).await?;
                     let mut stream = client.subscribe_media_data(Empty {}).await?.into_inner();
-    
+
                     while let Some(item) = stream.next().await {
                         tx_clone.send(item.unwrap()).await.unwrap();
                     }
-    
+
                     error!("unable read data from stream");
                     anyhow::Ok(())
                 });
             }
             info!("listen data from upstream {}", upstream);
         }
-    
 
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
@@ -339,17 +341,17 @@ impl BatchProgram {
                     if let Some(data_batch) = data_batch_result {
                         //create input directory
                         let id = Uuid::new_v4().to_string();
-                        let tmp_in_path = tmp_store.join(id.clone()+"-input");    
+                        let tmp_in_path = tmp_store.join(id.clone()+"-input");
                         if let Err(e) = fs::create_dir_all(&tmp_in_path) {
                             error!("create input dir {:?} fail {}", tmp_in_path, e);
-                            return 
+                            return
                         }
 
                         //create output directory at the same time
-                        let tmp_out_path = tmp_store.join(id.clone()+"-output");  
+                        let tmp_out_path = tmp_store.join(id.clone()+"-output");
                         if let Err(e) = fs::create_dir_all(&tmp_out_path) {
                             error!("create output dir {:?} fail {}", tmp_out_path, e);
-                            return 
+                            return
                         }
                         //write batch files
                         for entry in  data_batch.cells.iter() {
@@ -359,19 +361,19 @@ impl BatchProgram {
                             }
                         }
                         state_map.insert(id, BatchState{
-                            state: StateEnum::Received,
+                            state: DataStateEnum::Received,
                         });
                     }
                  },
                  Some((_, resp)) = ipc_process_data_req_rx.recv() => {
                         //select a unassgined data
                         for (key, v ) in  state_map.iter_mut() {
-                            if v.state == StateEnum::Received {
+                            if v.state == DataStateEnum::Received {
                                 //response this data's position
                                 resp.send(DataResponse{
                                     id:   key.clone(),
                                 }).expect("channel only read once");
-                                v.state = StateEnum::Assigned ;
+                                v.state = DataStateEnum::Assigned ;
                                 break;
                             }
                         }
@@ -380,7 +382,7 @@ impl BatchProgram {
                     //mark this data as completed
                     match state_map.get_mut(&req.id) {
                         Some(state)=>{
-                            state.state = StateEnum::Processed;
+                            state.state = DataStateEnum::Processed;
                         },
                         None=>error!("id({:?}) not found", &req.id)
                     }

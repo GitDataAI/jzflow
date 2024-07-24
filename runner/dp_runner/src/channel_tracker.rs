@@ -4,16 +4,15 @@ use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::MediaDataBatchResponse;
 use std::sync::Arc;
 use tokio::select;
-use tokio::sync::{broadcast, mpsc, Mutex};
-use tokio_stream::{Stream, StreamExt, StreamMap};
+use tokio::sync::{mpsc, Mutex};
+use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::{error, info};
-use tracing_subscriber::registry::Data;
 
 use crate::mprc;
 
 #[derive(Debug)]
-pub(crate) enum ProgramState {
+pub(crate) enum ChannelState {
     Init,
     Ready,
     Pending,
@@ -21,20 +20,18 @@ pub(crate) enum ProgramState {
     Stopped,
 }
 
-pub(crate) struct BatchProgram {
-    pub(crate) state: ProgramState,
-
+pub(crate) struct ChannelTracker {
+    pub(crate) state: ChannelState,
     pub(crate) upstreams: Option<Vec<String>>,
-
     pub(crate) script: Option<String>,
-
-    pub receivers: Arc<Mutex<mprc::Mprs<String, mpsc::Sender<Result<MediaDataBatchResponse, Status>>>>>,
+    pub receivers:
+        Arc<Mutex<mprc::Mprs<String, mpsc::Sender<Result<MediaDataBatchResponse, Status>>>>>,
 }
 
-impl BatchProgram {
+impl ChannelTracker {
     pub(crate) fn new() -> Self {
-        BatchProgram {
-            state: ProgramState::Init,
+        ChannelTracker {
+            state: ChannelState::Init,
             upstreams: None,
             script: None,
             receivers: Arc::new(Mutex::new(mprc::Mprs::new())),
