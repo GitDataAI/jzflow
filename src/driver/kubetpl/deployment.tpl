@@ -9,7 +9,7 @@
     }
   },
   "spec": {
-    "replicas": {{{spec.replicas}}},
+    "replicas": {{spec.replicas}},
     "selector": {
       "matchLabels": {
         "app": "{{{name}}}-pod"
@@ -25,22 +25,58 @@
         "containers": [
           {
             "name": "compute-data-unit",
-            "image": "{{{spec.image}}}",
-            "command": [ "sleep" ],
-            "args": [ "infinity" ],
+            "image": "jz-action/compute_data_runner:latest",
+            "command": [
+              "/compute_data_runner"
+            ],
+            "imagePullPolicy":"IfNotPresent",
             "ports": [
               {
                 "containerPort": 80
               }
+            ],
+            "volumeMounts": [
+              {
+                "mountPath": "/unix_socket",
+                "name": "unix-socket"
+              },
+              {
+                "mountPath": "/app/tmp",
+                "name": "tmpstore"
+              }
             ]
-          }
-        ]
-        "containers": [
+          },
           {
             "name": "compute-user-unit",
             "image": "{{{spec.image}}}",
-            "command": [ "sleep" ],
-            "args": [ "infinity" ]
+            "command": [
+              "sleep"
+            ],
+            "args": [
+              "infinity"
+            ],
+            "volumeMounts": [
+              {
+                "mountPath": "/unix_socket",
+                "name": "unix-socket"
+              },
+              {
+                "mountPath": "/app/tmp",
+                "name": "tmpstore"
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "unix-socket",
+            "emptyDir": {}
+          },
+          {
+            "name": "tmpstore",
+            "persistentVolumeClaim": {
+              "claimName":"{{name}}-node-claim"
+            }
           }
         ]
       }

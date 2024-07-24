@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jz-action-fs-provisioner
+  labels:
+    app: jz-action-fs-provisioner
+  # replace with namespace where provisioner is deployed
+  namespace: default
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: jz-action-fs-provisioner
+  template:
+    metadata:
+      labels:
+        app: jz-action-fs-provisioner
+    spec:
+      serviceAccountName: jz-action-fs-provisioner
+      containers:
+        - name: jz-action-fs-provisioner
+          image: eipwork/nfs-subdir-external-provisioner:v4.0.2
+          volumeMounts:
+            - name: jz-action-fs-root
+              mountPath: /persistentvolumes
+          env:
+            - name: PROVISIONER_NAME
+              value: jzaction/nfs-provisioner
+            - name: NFS_SERVER
+              value: 192.168.3.163
+            - name: NFS_PATH
+              value: /hdd1/testdir
+      volumes:
+        - name: jz-action-fs-root
+          nfs:
+            server: 192.168.3.163
+            path: /hdd1/testdir

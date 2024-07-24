@@ -1,0 +1,12 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: test-claim
+  namespace: default
+spec:
+  storageClassName: jz-action-fs
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Mi

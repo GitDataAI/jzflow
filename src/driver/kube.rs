@@ -5,9 +5,10 @@ use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use handlebars::Handlebars;
 use k8s_openapi::api::apps::v1::Deployment;
-use k8s_openapi::api::core::v1::{Namespace, Service};
+use k8s_openapi::api::core::v1::{Namespace, PersistentVolumeClaim, Service};
 use kube::api::{DeleteParams, PostParams};
 use kube::{Api, Client};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
@@ -21,6 +22,7 @@ where
 {
     _id: PhantomData<ID>,
     pub deployment: Deployment,
+    pub claim: PersistentVolumeClaim,
     pub service: Service,
 }
 
@@ -32,6 +34,7 @@ where
         Self {
             _id: PhantomData,
             deployment: Default::default(),
+            claim: PersistentVolumeClaim::default(),
             service: Default::default(),
         }
     }
@@ -60,6 +63,7 @@ where
 {
     _id: PhantomData<ID>,
     pub deployment: Deployment,
+    pub claim: PersistentVolumeClaim,
     pub service: Service,
     pub channel: Option<KubeChannelHander<ID>>,
 }
@@ -72,6 +76,7 @@ where
         Self {
             _id: PhantomData,
             deployment: Default::default(),
+            claim: PersistentVolumeClaim::default(),
             service: Default::default(),
             channel: None,
         }
@@ -148,6 +153,11 @@ where
 {
     pub async fn default() -> Result<KubeDriver<'reg, ID>> {
         let mut reg = Handlebars::new();
+        reg.register_template_string(
+            "claim",
+            include_str!("kubetpl/claim.tpl"),
+        )?;
+
         reg.register_template_string("deployment", include_str!("kubetpl/deployment.tpl"))?;
         reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
         reg.register_template_string(
@@ -158,6 +168,7 @@ where
             "channel_service",
             include_str!("kubetpl/channel_service.tpl"),
         )?;
+
         let client = Client::try_default().await?;
         Ok(KubeDriver {
             _id: std::marker::PhantomData,
@@ -168,6 +179,11 @@ where
 
     pub async fn from_k8s_client(client: Client) -> Result<KubeDriver<'reg, ID>> {
         let mut reg = Handlebars::new();
+        reg.register_template_string(
+            "claim",
+            include_str!("kubetpl/claim.tpl"),
+        )?;
+
         reg.register_template_string("deployment", include_str!("kubetpl/deployment.tpl"))?;
         reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
         reg.register_template_string(
@@ -225,6 +241,11 @@ where
     }
 }
 
+#[derive(Serialize)]
+struct claimRenderParams {
+    name: String
+}
+
 impl<ID> Driver<ID> for KubeDriver<'_, ID>
 where
     ID: GID,
@@ -234,13 +255,22 @@ where
         Self::ensure_namespace_exit_and_clean(&self.client, ns).await?;
 
         let deployment_api: Api<Deployment> = Api::namespaced(self.client.clone(), ns);
-
+        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), ns);
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), ns);
 
         let mut pipeline_ctl = KubePipelineController::<ID>::default();
         for node in graph.iter() {
+            let claim_string = self.reg.render("claim", &claimRenderParams{
+                name: node.name.clone()+"-node-claim"
+            })?;
+            debug!("rendered clam string {}", claim_string);
+            let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
+            let claim_deployment = claim_api
+                .create(&PostParams::default(), &claim)
+                .await?;
+
             let deployment_string = self.reg.render("deployment", node)?;
-            debug!("rendered unit deploy string {}", deployment_string);
+            debug!("rendered unit clam string {}", deployment_string);
 
             let unit_deployment: Deployment = serde_json::from_str(&deployment_string)?;
             let unit_deployment = deployment_api
@@ -256,11 +286,23 @@ where
                 .await?;
 
             let channel_handler = if node.channel.is_some() {
-                let channel_deployment_string = self.reg.render("channel_deployment", node)?;
-                debug!("rendered channel deployment string {}", deployment_string);
+                let claim_string = self.reg.render("claim", &claimRenderParams{
+                    name: node.name.clone()+"-channel-claim"
+                })?;
+                debug!("rendered channel claim string {}", claim_string);
+                let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
+                let claim_deployment = claim_api
+                    .create(&PostParams::default(), &claim)
+                    .await?;
 
+                let tmp  = self.reg.get_template("channel_deployment").unwrap();
+                debug!("xxxx {:?}",tmp);
+                let channel_deployment_string = self.reg.render("channel_deployment", node)?;
+                debug!("rendered channel deployment string {}", channel_deployment_string);
+                debug!("ggggggggggggggggggg");
                 let channel_deployment: Deployment =
                     serde_json::from_str(channel_deployment_string.as_str())?;
+                    debug!("xxxxaasdasd");
                 let channel_deployment = deployment_api
                     .create(&PostParams::default(), &channel_deployment)
                     .await?;
@@ -275,6 +317,7 @@ where
                     .await?;
                 Some(KubeChannelHander {
                     _id: std::marker::PhantomData,
+                    claim: claim_deployment,
                     deployment: channel_deployment,
                     service: channel_service,
                 })
@@ -284,6 +327,7 @@ where
 
             let handler = KubeHandler {
                 _id: std::marker::PhantomData,
+                claim: claim_deployment,
                 deployment: unit_deployment,
                 service: unit_service,
                 channel: channel_handler,
@@ -381,6 +425,6 @@ mod tests {
         let dag = Dag::<Uuid>::from_json(json_str).unwrap();
         let kube_driver = KubeDriver::<Uuid>::default().await.unwrap();
         kube_driver.deploy("ntest", &dag).await.unwrap();
-        kube_driver.clean("ntest").await.unwrap();
+    //    kube_driver.clean("ntest").await.unwrap();
     }
 }

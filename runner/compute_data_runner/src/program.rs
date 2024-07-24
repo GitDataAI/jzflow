@@ -108,11 +108,23 @@ impl BatchProgram {
                 select! {
                  data_batch_result = incoming_data_rx.recv() => {
                     if let Some(data_batch) = data_batch_result {
-                        //write fs
+                        //create input directory
                         let id = Uuid::new_v4().to_string();
-                        let tmp_path = tmp_store.join(id.clone()+"-input");
+                        let tmp_in_path = tmp_store.join(id.clone()+"-input");    
+                        if let Err(e) = fs::create_dir_all(&tmp_in_path) {
+                            error!("create input dir {:?} fail {}", tmp_in_path, e);
+                            return 
+                        }
+
+                        //create output directory at the same time
+                        let tmp_out_path = tmp_store.join(id.clone()+"-input");  
+                        if let Err(e) = fs::create_dir_all(&tmp_out_path) {
+                            error!("create output dir {:?} fail {}", tmp_out_path, e);
+                            return 
+                        }
+                        //write batch files
                         for entry in  data_batch.cells.iter() {
-                            let entry_path = tmp_path.join(entry.path.clone());
+                            let entry_path = tmp_in_path.join(entry.path.clone());
                             if let Err(e) = fs::write(entry_path.clone(), &entry.data) {
                                 error!("write file {:?} fail {}", entry_path, e);
                             }

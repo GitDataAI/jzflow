@@ -37,7 +37,7 @@ struct Args {
     #[arg(short, long, default_value = "/app/tmp")]
     tmp_path: String,
 
-    #[arg(short, long, default_value = "")]
+    #[arg(short, long, default_value = "/unix_socket/compute_data_runner_d")]
     unix_socket_addr: String,
 
     #[arg(long, default_value = "[::1]:25431")]

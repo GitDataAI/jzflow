@@ -22,5 +22,13 @@ docker_dp: build-dp
 
 docker: docker_cd docker_dp
 
+minikube-env:
+	@echo "Setting up Docker environment for Minikube"
+	@eval $(minikube -p minikube docker-env)
+
+minikube-docker: minikube-env docker
+	docker push jz-action/compute_data_runner:latest
+	docker push jz-action/dp_runner:latest
+
 clean:
 	rm -rf $(OUTPUT) target

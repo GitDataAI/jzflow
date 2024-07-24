@@ -25,14 +25,30 @@
         "containers": [
           {
             "name": "channel",
-            "image": "{{{channel.spec.image}}}",
-            "command": [ "sleep" ],
-            "args": [ "infinity" ],
+            "image": "jz-action/dp_runner:latest",
+            "imagePullPolicy":"IfNotPresent",
+            "command": [
+              "/dp_runner"
+            ],
             "ports": [
               {
-                "containerPort": 90
+                "containerPort": 80
+              }
+            ],
+            "volumeMounts": [
+              {
+                "mountPath": "/app/tmp",
+                "name": "tmpstore"
               }
             ]
+          }
+        ],
+        "volumes": [
+             {
+            "name": "tmpstore",
+            "persistentVolumeClaim": {
+              "claimName":"{{name}}-channel-claim"
+            }
           }
         ]
       }

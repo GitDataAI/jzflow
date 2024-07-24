@@ -4,6 +4,4 @@ RUN mkdir -p /app
 
 WORKDIR /app
 
-ADD dist/compute_data_runner /app/compute_data_runner
-
-CMD ["compute_data_runner"]
+ADD dist/compute_data_runner /compute_data_runner
