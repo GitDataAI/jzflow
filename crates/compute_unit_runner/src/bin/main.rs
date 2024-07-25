@@ -1,9 +1,4 @@
-#![feature(future_join)]
-
-mod ipc;
-mod media_data_tracker;
-mod unit;
-
+use compute_unit_runner::{ipc, media_data_tracker, unit};
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
 use jz_action::utils::StdIntoAnyhowResult;
@@ -67,7 +62,7 @@ async fn main() -> Result<()> {
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
         //listen port
-        let shutdown_tx_arc = shutdown_tx.clone();
+        let shutdown_tx = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
             if let Err(e) = Server::builder()
                 .add_service(NodeControllerServer::new(node_controller))
@@ -76,7 +71,7 @@ async fn main() -> Result<()> {
                 .await
                 .anyhow()
             {
-                let _ = shutdown_tx_arc
+                let _ = shutdown_tx
                     .send(Err(anyhow!("start data controller {e}")))
                     .await;
             }
@@ -89,10 +84,10 @@ async fn main() -> Result<()> {
         //listen unix socket
         let unix_socket_addr = args.unix_socket_addr.clone();
         let program = program_safe.clone();
-        let shutdown_tx_arc = shutdown_tx.clone();
+        let shutdown_tx = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
             if let Err(e) = ipc::start_ipc_server(unix_socket_addr, program) {
-                let _ = shutdown_tx_arc
+                let _ = shutdown_tx
                     .send(Err(anyhow!("start unix socket server {e}")))
                     .await;
             }

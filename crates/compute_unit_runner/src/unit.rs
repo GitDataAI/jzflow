@@ -15,8 +15,8 @@ use tracing::error;
 
 use super::media_data_tracker::{MediaDataTracker, TrackerState};
 
-pub(crate) struct DataNodeControllerServer {
-    pub(crate) program: Arc<Mutex<MediaDataTracker>>,
+pub struct DataNodeControllerServer {
+    pub program: Arc<Mutex<MediaDataTracker>>,
 }
 
 #[tonic::async_trait]
@@ -67,8 +67,8 @@ impl NodeController for DataNodeControllerServer {
     }
 }
 
-pub(crate) struct UnitDataStream {
-    pub(crate) program: Arc<Mutex<MediaDataTracker>>,
+pub struct UnitDataStream {
+    pub program: Arc<Mutex<MediaDataTracker>>,
 }
 
 #[tonic::async_trait]

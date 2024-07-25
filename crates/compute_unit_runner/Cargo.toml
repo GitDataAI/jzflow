@@ -19,4 +19,8 @@ uuid =  {workspace = true}
 
 clap = {version="4.5.7", features=["derive"]}
 actix-web = "4.8.0"
+hyperlocal = "0.9.1"
+hyper = "1.4.1"
+hyper-util = "0.1.6"
+http-body-util = "0.1.2"
 walkdir = "2.5.0"

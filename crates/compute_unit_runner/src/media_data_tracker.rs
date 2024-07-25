@@ -1,4 +1,4 @@
-use crate::ipc::{DataResponse, SubmitResultReq};
+use crate::ipc::{AvaiableDataResponse, SubmitResultReq};
 use anyhow::Result;
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
@@ -16,7 +16,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 #[derive(Debug)]
-pub(crate) enum TrackerState {
+pub enum TrackerState {
     Init,
     Ready,
     Pending,
@@ -25,7 +25,7 @@ pub(crate) enum TrackerState {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum DataStateEnum {
+pub enum DataStateEnum {
     Received,
     Assigned,
     Processed,
@@ -33,11 +33,11 @@ pub(crate) enum DataStateEnum {
 }
 
 #[derive(Debug)]
-pub(crate) struct BatchState {
+pub struct BatchState {
     pub(crate) state: DataStateEnum,
 }
 
-pub(crate) struct MediaDataTracker {
+pub struct MediaDataTracker {
     pub(crate) tmp_store: PathBuf,
 
     pub(crate) state: TrackerState,
@@ -50,12 +50,13 @@ pub(crate) struct MediaDataTracker {
 
     pub(crate) ipc_process_submit_result_tx:
         Option<mpsc::Sender<(SubmitResultReq, oneshot::Sender<()>)>>,
-    pub(crate) ipc_process_data_req_tx: Option<mpsc::Sender<((), oneshot::Sender<DataResponse>)>>,
+    pub(crate) ipc_process_data_req_tx:
+        Option<mpsc::Sender<((), oneshot::Sender<AvaiableDataResponse>)>>,
     pub(crate) out_going_tx: broadcast::Sender<MediaDataBatchResponse>, //receive data from upstream and send it to program with this
 }
 
 impl MediaDataTracker {
-    pub(crate) fn new(tmp_store: PathBuf) -> Self {
+    pub fn new(tmp_store: PathBuf) -> Self {
         let out_going_tx = broadcast::Sender::new(128);
 
         MediaDataTracker {
@@ -222,7 +223,7 @@ impl MediaDataTracker {
                         for (key, v ) in  state_map.iter_mut() {
                             if v.state == DataStateEnum::Received {
                                 //response this data's position
-                                resp.send(DataResponse{
+                                resp.send(AvaiableDataResponse{
                                     id:   key.clone(),
                                 }).expect("channel only read once");
                                 v.state = DataStateEnum::Assigned ;
@@ -370,7 +371,7 @@ impl MediaDataTracker {
                         for (key, v ) in  state_map.iter_mut() {
                             if v.state == DataStateEnum::Received {
                                 //response this data's position
-                                resp.send(DataResponse{
+                                resp.send(AvaiableDataResponse{
                                     id:   key.clone(),
                                 }).expect("channel only read once");
                                 v.state = DataStateEnum::Assigned ;
@@ -378,7 +379,7 @@ impl MediaDataTracker {
                             }
                         }
                  },
-                 Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
+                 Some((req, _resp))  = ipc_process_submit_result_rx.recv() => {
                     //mark this data as completed
                     match state_map.get_mut(&req.id) {
                         Some(state)=>{

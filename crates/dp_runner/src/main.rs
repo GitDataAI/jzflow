@@ -1,5 +1,3 @@
-#![feature(future_join)]
-
 mod channel_tracker;
 mod mprc;
 mod unit;

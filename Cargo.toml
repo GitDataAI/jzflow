@@ -2,7 +2,7 @@
 members = [
   "crates/dp_runner",
   "crates/compute_unit_runner",
-  "crates/jiaozifs_client_rs",
+  "crates/jiaozifs_client_rs", "nodes/jz_reader", "nodes/jz_writer",
 ]
 
 [workspace.package]
