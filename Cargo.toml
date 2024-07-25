@@ -1,7 +1,8 @@
 [workspace]
 members = [
-  "runner/dp_runner",
-  "runner/compute_unit_runner",
+  "crates/dp_runner",
+  "crates/compute_unit_runner",
+  "crates/jiaozifs_client_rs",
 ]
 
 [workspace.package]

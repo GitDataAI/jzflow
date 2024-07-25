@@ -32,3 +32,10 @@ minikube-docker: minikube-env docker
 
 clean:
 	rm -rf $(OUTPUT) target
+
+
+docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate \
+    -i /local/swagger.yml \
+    -g rust \
+	--skip-validate-spec \
+    -o /local/dist
