@@ -45,16 +45,14 @@ async fn main() -> Result<()> {
     let addr = args.host_port.parse()?;
     let program = ChannelTracker::new();
     let program_safe = Arc::new(Mutex::new(program));
-    
+
     let node_controller = DataNodeControllerServer {
         program: program_safe.clone(),
     };
 
-
     let data_stream = UnitDataStream {
         program: program_safe,
     };
-
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {

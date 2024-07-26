@@ -1,4 +1,5 @@
 use compute_unit_runner::{ipc, media_data_tracker, unit};
+use jz_action::dbrepo::mongo::MongoRepo;
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
 use jz_action::utils::StdIntoAnyhowResult;
@@ -15,7 +16,6 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tracing::{info, Level};
-use unit::DataNodeControllerServer;
 use unit::UnitDataStream;
 
 #[derive(Debug, Parser)]
@@ -32,6 +32,15 @@ struct Args {
     #[arg(short, long, default_value = "/app/tmp")]
     tmp_path: String,
 
+    #[arg(short, long)]
+    node_name: String,
+
+    #[arg(short, long)]
+    mongo_url: String,
+
+    #[arg(short, long)]
+    database: String,
+
     #[arg(short, long, default_value = "/unix_socket/compute_unit_runner_d")]
     unix_socket_addr: String,
 
@@ -47,25 +56,25 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let addr = args.host_port.parse()?;
-    let program = MediaDataTracker::new(PathBuf::from_str(args.tmp_path.as_str())?);
+    let db_repo = MongoRepo::new(&args.mongo_url, &args.database).await?;
+
+    let program = MediaDataTracker::new(
+        db_repo,
+        &args.node_name,
+        PathBuf::from_str(args.tmp_path.as_str())?,
+    );
+
     let program_safe = Arc::new(Mutex::new(program));
 
-    let node_controller = DataNodeControllerServer {
-        program: program_safe.clone(),
-    };
-
-    let data_stream = UnitDataStream {
-        program: program_safe.clone(),
-    };
+    let data_stream = UnitDataStream::<MongoRepo>::new(program_safe.clone());
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
+        let addr = args.host_port.parse()?;
         //listen port
         let shutdown_tx = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
             if let Err(e) = Server::builder()
-                .add_service(NodeControllerServer::new(node_controller))
                 .add_service(DataStreamServer::new(data_stream))
                 .serve(addr)
                 .await

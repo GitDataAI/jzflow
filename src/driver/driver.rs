@@ -4,8 +4,7 @@ use std::{
     future::Future,
     sync::{Arc, Mutex},
 };
-pub trait UnitHandler
-{
+pub trait UnitHandler {
     //pause graph running for now
     fn pause(&mut self) -> impl Future<Output = Result<()>> + Send;
 
@@ -21,8 +20,7 @@ pub trait UnitHandler
     ) -> impl Future<Output = Result<Option<Arc<Mutex<impl ChannelHandler>>>>> + Send;
 }
 
-pub trait ChannelHandler
-{
+pub trait ChannelHandler {
     //pause graph running for now
     fn pause(&mut self) -> impl Future<Output = Result<()>> + Send;
 
@@ -33,8 +31,7 @@ pub trait ChannelHandler
     fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
 }
 
-pub trait PipelineController
-{
+pub trait PipelineController {
     fn get_node<'a>(
         &'a self,
         id: &'a String,
@@ -46,8 +43,7 @@ pub trait PipelineController
     ) -> impl std::future::Future<Output = Result<&'a mut impl UnitHandler>> + Send;
 }
 
-pub trait Driver
-{
+pub trait Driver {
     //deploy graph to cluster
     fn deploy(
         &self,

@@ -14,15 +14,13 @@ use std::sync::{Arc, Mutex};
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::Retry;
 use tracing::debug;
-pub struct KubeChannelHander
-{
+pub struct KubeChannelHander {
     pub deployment: Deployment,
     pub claim: PersistentVolumeClaim,
     pub service: Service,
 }
 
-impl Default for KubeChannelHander
-{
+impl Default for KubeChannelHander {
     fn default() -> Self {
         Self {
             deployment: Default::default(),
@@ -32,8 +30,7 @@ impl Default for KubeChannelHander
     }
 }
 
-impl ChannelHandler for KubeChannelHander
-{
+impl ChannelHandler for KubeChannelHander {
     async fn pause(&mut self) -> Result<()> {
         todo!()
     }
@@ -47,16 +44,14 @@ impl ChannelHandler for KubeChannelHander
     }
 }
 
-pub struct KubeHandler
-{
+pub struct KubeHandler {
     pub deployment: Deployment,
     pub claim: PersistentVolumeClaim,
     pub service: Service,
     pub channel: Option<KubeChannelHander>,
 }
 
-impl Default for KubeHandler
-{
+impl Default for KubeHandler {
     fn default() -> Self {
         Self {
             deployment: Default::default(),
@@ -67,8 +62,7 @@ impl Default for KubeHandler
     }
 }
 
-impl UnitHandler for KubeHandler
-{
+impl UnitHandler for KubeHandler {
     async fn pause(&mut self) -> Result<()> {
         todo!()
     }
@@ -87,13 +81,11 @@ impl UnitHandler for KubeHandler
     }
 }
 
-pub struct KubePipelineController
-{
+pub struct KubePipelineController {
     handlers: HashMap<String, KubeHandler>,
 }
 
-impl<'a> Default for KubePipelineController
-{
+impl<'a> Default for KubePipelineController {
     fn default() -> Self {
         Self {
             handlers: Default::default(),
@@ -101,8 +93,7 @@ impl<'a> Default for KubePipelineController
     }
 }
 
-impl PipelineController for KubePipelineController
-{
+impl PipelineController for KubePipelineController {
     async fn get_node<'a>(&'a self, id: &'a String) -> Result<&'a impl UnitHandler> {
         self.handlers.get(id).anyhow("id not found")
     }
@@ -112,14 +103,12 @@ impl PipelineController for KubePipelineController
     }
 }
 
-pub struct KubeDriver<'reg>
-{
+pub struct KubeDriver<'reg> {
     reg: Handlebars<'reg>,
     client: Client,
 }
 
-impl<'reg> KubeDriver<'reg>
-{
+impl<'reg> KubeDriver<'reg> {
     pub async fn default() -> Result<KubeDriver<'reg>> {
         let mut reg = Handlebars::new();
         reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
@@ -207,8 +196,7 @@ struct ClaimRenderParams {
     name: String,
 }
 
-impl Driver for KubeDriver<'_>
-{
+impl Driver for KubeDriver<'_> {
     #[allow(refining_impl_trait)]
     async fn deploy(&self, ns: &str, graph: &Dag) -> Result<KubePipelineController> {
         Self::ensure_namespace_exit_and_clean(&self.client, ns).await?;
@@ -298,11 +286,7 @@ impl Driver for KubeDriver<'_>
     }
 
     #[allow(refining_impl_trait)]
-    async fn attach(
-        &self,
-        _namespace: &str,
-        _graph: &Dag,
-    ) -> Result<KubePipelineController> {
+    async fn attach(&self, _namespace: &str, _graph: &Dag) -> Result<KubePipelineController> {
         todo!()
     }
 

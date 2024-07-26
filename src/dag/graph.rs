@@ -30,8 +30,7 @@ use std::{
 
 #[derive(Debug, Clone)]
 /// Graph Struct
-pub(crate) struct Graph
-{
+pub(crate) struct Graph {
     nodes: HashSet<String>,
     nodes_count: usize,
     /// Adjacency list of graph (stored as a vector of vector of indices)
@@ -40,8 +39,7 @@ pub(crate) struct Graph
     in_degree: HashMap<String, Vec<String>>,
 }
 
-impl Graph
-{
+impl Graph {
     /// Allocate an empty graph
     pub(crate) fn new() -> Self {
         Graph {
@@ -95,7 +93,8 @@ impl Graph
                 }
             }
             None => {
-                self.in_degree.insert(to.to_string(), vec![from.to_string()]);
+                self.in_degree
+                    .insert(to.to_string(), vec![from.to_string()]);
             }
         }
     }
@@ -165,7 +164,7 @@ impl Graph
         match self.adj.get(id) {
             Some(outs) => {
                 // initialize a vector to store successors with max possible size
-                let mut successors:Vec<String> = Vec::with_capacity(outs.len());
+                let mut successors: Vec<String> = Vec::with_capacity(outs.len());
 
                 // create a visited array to avoid visiting a node more than once
                 let mut visited = HashSet::new();
@@ -235,7 +234,18 @@ mod tests {
         let f = "f".to_string();
         let g = "g".to_string();
 
-        let mut graph = Graph::with_nodes([a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), g.clone()].as_slice());
+        let mut graph = Graph::with_nodes(
+            [
+                a.clone(),
+                b.clone(),
+                c.clone(),
+                d.clone(),
+                e.clone(),
+                f.clone(),
+                g.clone(),
+            ]
+            .as_slice(),
+        );
         graph.add_edge(&a, &b);
         graph.add_edge(&a, &c);
         graph.add_edge(&b, &d);
@@ -264,7 +274,18 @@ mod tests {
         let f = "f".to_string();
         let g = "g".to_string();
 
-        let mut graph = Graph::with_nodes([a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), g.clone()].as_slice());
+        let mut graph = Graph::with_nodes(
+            [
+                a.clone(),
+                b.clone(),
+                c.clone(),
+                d.clone(),
+                e.clone(),
+                f.clone(),
+                g.clone(),
+            ]
+            .as_slice(),
+        );
         graph.add_edge(&a, &b);
         graph.add_edge(&a, &c);
         graph.add_edge(&b, &d);

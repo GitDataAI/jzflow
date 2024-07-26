@@ -3,6 +3,7 @@ use actix_web::{web, App, HttpResponse, HttpServer};
 use anyhow::anyhow;
 use anyhow::Result;
 use http_body_util::Collected;
+use jz_action::core::models::NodeRepo;
 use jz_action::utils::StdIntoAnyhowResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -31,9 +32,12 @@ impl SubmitResultReq {
     }
 }
 
-async fn process_data_request(
-    program_mutex: web::Data<Arc<Mutex<MediaDataTracker>>>,
-) -> HttpResponse {
+async fn process_data_request<R>(
+    program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
+) -> HttpResponse
+where
+    R: NodeRepo,
+{
     let (tx, mut rx) = oneshot::channel::<AvaiableDataResponse>();
     let program = program_mutex.lock().await;
     program
@@ -50,10 +54,13 @@ async fn process_data_request(
     }
 }
 
-async fn process_submit_result_request(
-    program_mutex: web::Data<Arc<Mutex<MediaDataTracker>>>,
+async fn process_submit_result_request<R>(
+    program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
     data: web::Json<SubmitResultReq>,
-) -> HttpResponse {
+) -> HttpResponse
+where
+    R: NodeRepo,
+{
     let (tx, mut rx) = oneshot::channel::<()>();
     let program = program_mutex.lock().await;
     //read request
@@ -73,15 +80,18 @@ async fn process_submit_result_request(
     }
 }
 
-pub fn start_ipc_server(
+pub fn start_ipc_server<R>(
     unix_socket_addr: String,
-    program: Arc<Mutex<MediaDataTracker>>,
-) -> Result<()> {
+    program: Arc<Mutex<MediaDataTracker<R>>>,
+) -> Result<()>
+where
+    R: NodeRepo + Send + Sync + 'static,
+{
     HttpServer::new(move || {
         App::new()
             .app_data(program.clone())
-            .service(web::resource("/api/v1/data").get(process_data_request))
-            .service(web::resource("/api/v1/submit").post(process_submit_result_request))
+            .service(web::resource("/api/v1/data").get(process_data_request::<R>))
+            .service(web::resource("/api/v1/submit").post(process_submit_result_request::<R>))
     })
     .bind_uds(unix_socket_addr)
     .unwrap();

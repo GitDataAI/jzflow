@@ -9,11 +9,10 @@ compute_unit_runner = {path  = "../../crates/compute_unit_runner"}
 jiaozifs_client_rs = {path  = "../../crates/jiaozifs_client_rs"}
 
 uuid =  {workspace = true}
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true}
 tokio-retry = {workspace = true}
 tokio-stream = {workspace = true}
 anyhow =  {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
-
 clap = {version="4.5.7", features=["derive"]}

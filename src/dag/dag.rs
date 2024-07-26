@@ -4,8 +4,7 @@ use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Ok, Result};
 use std::collections::HashMap;
 
-pub struct Dag
-{
+pub struct Dag {
     name: String,
     nodes: HashMap<String, ComputeUnit>,
     /// Store dependency relations.
@@ -68,8 +67,10 @@ impl Dag {
             });
         }
 
-        let nodes_map: HashMap<String, ComputeUnit> =
-            nodes.into_iter().map(|node| (node.name.clone(), node)).collect();
+        let nodes_map: HashMap<String, ComputeUnit> = nodes
+            .into_iter()
+            .map(|node| (node.name.clone(), node))
+            .collect();
         Ok(Dag {
             name: dag_name.to_string(),
             nodes: nodes_map,
@@ -104,8 +105,7 @@ impl Dag {
     }
 }
 
-pub struct GraphIter<'a>
-{
+pub struct GraphIter<'a> {
     index: usize,
     data: &'a HashMap<String, ComputeUnit>,
     toped_graph: Vec<String>,
@@ -125,8 +125,7 @@ impl<'a> Iterator for GraphIter<'a> {
     }
 }
 
-pub struct GraphIterMut<'a>
-{
+pub struct GraphIterMut<'a> {
     index: usize,
     data: &'a mut HashMap<String, ComputeUnit>,
     toped_graph: Vec<String>,

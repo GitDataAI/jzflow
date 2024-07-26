@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 jz_action = { path = "../../"}
 
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true }
 tokio-retry = {workspace = true}
 tokio-stream = {workspace = true}
 anyhow =  {workspace = true}

@@ -9,8 +9,7 @@ pub struct DataPoint {
 
 // ComputeUnit used to define logic for data generation, transformer, ouput.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ComputeUnit
-{
+pub struct ComputeUnit {
     pub name: String,
 
     pub spec: MachineSpec,

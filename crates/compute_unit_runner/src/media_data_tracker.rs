@@ -1,28 +1,28 @@
 use crate::ipc::{AvaiableDataResponse, SubmitResultReq};
 use anyhow::Result;
+use jz_action::core::models::{Node, NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, MediaDataCell};
 use jz_action::network::nodecontroller::NodeType;
+use mongodb::bson::doc;
+use mongodb::{Collection, Database};
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
-use tokio::select;
-use tokio::sync::mpsc;
-use tokio::sync::{broadcast, oneshot};
-use tokio_stream::StreamExt;
+use std::sync::Arc;
 use tracing::{error, info};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-#[derive(Debug)]
-pub enum TrackerState {
-    Init,
-    Ready,
-    Pending,
-    Finish,
-    Stopped,
-}
+use tokio::fs;
+use tokio::select;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio::sync::{broadcast, oneshot};
+use tokio::time;
+use tokio_stream::StreamExt;
+
+use jz_action::utils::StdIntoAnyhowResult;
 
 #[derive(Debug, PartialEq)]
 pub enum DataStateEnum {
@@ -37,16 +37,21 @@ pub struct BatchState {
     pub(crate) state: DataStateEnum,
 }
 
-pub struct MediaDataTracker {
+pub struct MediaDataTracker<R>
+where
+    R: NodeRepo,
+{
+    pub(crate) name: String,
+
     pub(crate) tmp_store: PathBuf,
 
-    pub(crate) state: TrackerState,
+    pub(crate) repo: R,
+
+    pub(crate) local_state: TrackerState,
 
     pub(crate) node_type: NodeType,
 
     pub(crate) upstreams: Option<Vec<String>>,
-
-    pub(crate) script: Option<String>,
 
     pub(crate) ipc_process_submit_result_tx:
         Option<mpsc::Sender<(SubmitResultReq, oneshot::Sender<()>)>>,
@@ -55,16 +60,20 @@ pub struct MediaDataTracker {
     pub(crate) out_going_tx: broadcast::Sender<MediaDataBatchResponse>, //receive data from upstream and send it to program with this
 }
 
-impl MediaDataTracker {
-    pub fn new(tmp_store: PathBuf) -> Self {
+impl<R> MediaDataTracker<R>
+where
+    R: NodeRepo,
+{
+    pub fn new(repo: R, name: &str, tmp_store: PathBuf) -> Self {
         let out_going_tx = broadcast::Sender::new(128);
 
         MediaDataTracker {
             tmp_store,
+            name: name.to_string(),
+            repo,
             node_type: NodeType::Input,
-            state: TrackerState::Init,
+            local_state: TrackerState::Init,
             upstreams: None,
-            script: None,
             ipc_process_submit_result_tx: None,
             ipc_process_data_req_tx: None,
             out_going_tx: out_going_tx,
@@ -109,7 +118,7 @@ impl MediaDataTracker {
                            Ok(entry) => {
                                 if entry.file_type().is_file() {
                                     let path  = entry.path();
-                                    match fs::read(path) {
+                                    match fs::read(path).await {
                                        Ok(content) => {
                                             new_batch.cells.push(MediaDataCell{
                                                 size: content.len() as i32,
@@ -195,21 +204,21 @@ impl MediaDataTracker {
                         //create input directory
                         let id = Uuid::new_v4().to_string();
                         let tmp_in_path = tmp_store.join(id.clone()+"-input");
-                        if let Err(e) = fs::create_dir_all(&tmp_in_path) {
+                        if let Err(e) = fs::create_dir_all(&tmp_in_path).await {
                             error!("create input dir {:?} fail {}", tmp_in_path, e);
                             return
                         }
 
                         //create output directory at the same time
                         let tmp_out_path = tmp_store.join(id.clone()+"-output");
-                        if let Err(e) = fs::create_dir_all(&tmp_out_path) {
+                        if let Err(e) = fs::create_dir_all(&tmp_out_path).await {
                             error!("create output dir {:?} fail {}", tmp_out_path, e);
                             return
                         }
                         //write batch files
                         for entry in  data_batch.cells.iter() {
                             let entry_path = tmp_in_path.join(entry.path.clone());
-                            if let Err(e) = fs::write(entry_path.clone(), &entry.data) {
+                            if let Err(e) = fs::write(entry_path.clone(), &entry.data).await {
                                 error!("write file {:?} fail {}", entry_path, e);
                             }
                         }
@@ -253,7 +262,7 @@ impl MediaDataTracker {
                            Ok(entry) => {
                                 if entry.file_type().is_file() {
                                     let path  = entry.path();
-                                    match fs::read(path) {
+                                    match fs::read(path).await {
                                        Ok(content) => {
                                             new_batch.cells.push(MediaDataCell{
                                                 size: content.len() as i32,
@@ -286,7 +295,7 @@ impl MediaDataTracker {
 
                     //remove data
                     let tmp_path = tmp_store.join(req.id.clone()+"-input");
-                    if let Err(e) = fs::remove_dir(&tmp_path) {
+                    if let Err(e) = fs::remove_dir(&tmp_path).await {
                         error!("remove tmp dir{:?} fail {}", tmp_path, e);
                     }
                     let _ = state_map.remove(&req.id);
@@ -344,21 +353,21 @@ impl MediaDataTracker {
                         //create input directory
                         let id = Uuid::new_v4().to_string();
                         let tmp_in_path = tmp_store.join(id.clone()+"-input");
-                        if let Err(e) = fs::create_dir_all(&tmp_in_path) {
+                        if let Err(e) = fs::create_dir_all(&tmp_in_path).await {
                             error!("create input dir {:?} fail {}", tmp_in_path, e);
                             return
                         }
 
                         //create output directory at the same time
                         let tmp_out_path = tmp_store.join(id.clone()+"-output");
-                        if let Err(e) = fs::create_dir_all(&tmp_out_path) {
+                        if let Err(e) = fs::create_dir_all(&tmp_out_path).await {
                             error!("create output dir {:?} fail {}", tmp_out_path, e);
                             return
                         }
                         //write batch files
                         for entry in  data_batch.cells.iter() {
                             let entry_path = tmp_in_path.join(entry.path.clone());
-                            if let Err(e) = fs::write(entry_path.clone(), &entry.data) {
+                            if let Err(e) = fs::write(entry_path.clone(), &entry.data).await {
                                 error!("write file {:?} fail {}", entry_path, e);
                             }
                         }
@@ -390,7 +399,7 @@ impl MediaDataTracker {
                     }
                     //remove data
                     let tmp_path = tmp_store.join(req.id.clone()+"-input");
-                    if let Err(e) = fs::remove_dir(&tmp_path) {
+                    if let Err(e) = fs::remove_dir(&tmp_path).await {
                         error!("remove tmp dir{:?} fail {}", tmp_path, e);
                     }
                     //remove state
@@ -399,6 +408,41 @@ impl MediaDataTracker {
                 }
             }
         });
+        Ok(())
+    }
+
+    pub(crate) async fn pool_state(
+        database: mongodb::Database,
+        name: &str,
+        program: Arc<Mutex<MediaDataTracker<R>>>,
+    ) -> Result<()> {
+        let col: Collection<Node> = database.collection("node_state");
+        let mut interval = time::interval(time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            let record = col
+                .find_one(doc! { "name": name })
+                .await?
+                .expect("record has inserted in controller");
+            match record.state {
+                TrackerState::Ready => {
+                    let mut program_guard = program.lock().await;
+
+                    if matches!(program_guard.local_state, TrackerState::Init) {
+                        //start
+                        program_guard.local_state = TrackerState::Ready;
+                        program_guard.node_type =
+                            NodeType::try_from(record.input_output_type).anyhow()?;
+                        program_guard.upstreams = Some(record.upstreams);
+                        program_guard.process_data_cmd().await?;
+                    }
+                }
+                TrackerState::Stop => {
+                    todo!()
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
 }

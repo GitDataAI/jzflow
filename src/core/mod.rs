@@ -1,4 +1,5 @@
 mod cnode;
+pub mod models;
 mod spec;
 
 pub use cnode::*;

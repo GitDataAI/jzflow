@@ -120,8 +120,8 @@ async fn write_jz_fs(args: Args) -> Result<()> {
     loop {
         let id = client.request_avaiable_data().await?;
         let path_str = args.tmp_path.clone() + "/" + &id + "-input";
-        let root_input_dir =  Path::new(&path_str);
-       
+        let root_input_dir = Path::new(&path_str);
+
         for entry in WalkDir::new(root_input_dir) {
             let entry = entry?;
             if entry.file_type().is_file() {
@@ -136,7 +136,8 @@ async fn write_jz_fs(args: Args) -> Result<()> {
                     rel_path.to_str().anyhow("path must be validate")?,
                     Some(true),
                     Some(content),
-                ).await?;
+                )
+                .await?;
             }
         }
         client.submit_result(&id).await?;
