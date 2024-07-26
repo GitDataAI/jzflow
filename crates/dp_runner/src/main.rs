@@ -15,9 +15,9 @@ use tokio::select;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::transport::Server;
 use tracing::{info, Level};
-use unit::UnitDataStream;
+use unit::{DataNodeControllerServer, UnitDataStream};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -45,9 +45,16 @@ async fn main() -> Result<()> {
     let addr = args.host_port.parse()?;
     let program = ChannelTracker::new();
     let program_safe = Arc::new(Mutex::new(program));
+    
+    let node_controller = DataNodeControllerServer {
+        program: program_safe.clone(),
+    };
+
+
     let data_stream = UnitDataStream {
         program: program_safe,
     };
+
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
@@ -55,6 +62,7 @@ async fn main() -> Result<()> {
         let shutdown_tx_arc = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
             if let Err(e) = Server::builder()
+                .add_service(NodeControllerServer::new(node_controller))
                 .add_service(DataStreamServer::new(data_stream))
                 .serve(addr)
                 .await

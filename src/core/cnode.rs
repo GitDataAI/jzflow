@@ -1,4 +1,4 @@
-use super::{MachineSpec, GID};
+use super::MachineSpec;
 use serde::{Deserialize, Serialize};
 
 // DataPoint use to definite data transfer channel
@@ -9,33 +9,25 @@ pub struct DataPoint {
 
 // ComputeUnit used to define logic for data generation, transformer, ouput.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ComputeUnit<ID>
-where
-    ID: GID,
+pub struct ComputeUnit
 {
-    #[serde(bound(deserialize = ""))]
-    pub id: ID,
-
     pub name: String,
 
     pub spec: MachineSpec,
 
     pub channel: Option<DataPoint>,
 
-    #[serde(bound(deserialize = ""))]
-    pub(crate) dependency: Vec<ID>,
+    pub(crate) dependency: Vec<String>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
 
     #[test]
     fn test_from_str() {
         let json_str = r#"
       {
-        "id": "5c42b900-a87f-45e3-ba06-c40d94ad5ba2",
         "name": "ComputeUnit1",
         "dependency": [
           
@@ -57,6 +49,6 @@ mod tests {
       }
               "#
         .to_owned();
-        serde_json::from_str::<ComputeUnit<Uuid>>(&json_str).unwrap();
+        serde_json::from_str::<ComputeUnit>(&json_str).unwrap();
     }
 }

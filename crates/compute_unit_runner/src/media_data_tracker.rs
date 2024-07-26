@@ -334,6 +334,7 @@ impl MediaDataTracker {
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
         let tmp_store = self.tmp_store.clone();
+        //todo use db to keep this data.
         let mut state_map: HashMap<String, BatchState> = HashMap::new();
         tokio::spawn(async move {
             loop {
@@ -392,7 +393,7 @@ impl MediaDataTracker {
                     if let Err(e) = fs::remove_dir(&tmp_path) {
                         error!("remove tmp dir{:?} fail {}", tmp_path, e);
                     }
-                    //no output
+                    //remove state
                     let _ = state_map.remove(&req.id);
                 },
                 }

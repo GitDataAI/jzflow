@@ -1,24 +1,20 @@
 use super::graph::Graph;
-use crate::core::{ComputeUnit, GID};
+use crate::core::ComputeUnit;
 use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Ok, Result};
 use std::collections::HashMap;
 
-pub struct Dag<ID>
-where
-    ID: GID,
+pub struct Dag
 {
-    id: ID,
     name: String,
-    nodes: HashMap<ID, ComputeUnit<ID>>,
+    nodes: HashMap<String, ComputeUnit>,
     /// Store dependency relations.
-    rely_graph: Graph<ID>,
+    rely_graph: Graph,
 }
 
-impl<ID: GID> Dag<ID> {
+impl Dag {
     pub fn new() -> Self {
         Dag {
-            id: ID::default(),
             name: String::new(),
             nodes: HashMap::new(),
             rely_graph: Graph::new(),
@@ -26,16 +22,16 @@ impl<ID: GID> Dag<ID> {
     }
 
     //add_node add a compute unit to graph, if this unit alread exit, ignore it
-    pub fn add_node(&mut self, node: ComputeUnit<ID>) -> &mut Self {
-        if self.nodes.get(&node.id).is_none() {
-            self.rely_graph.add_node(node.id.clone());
-            self.nodes.insert(node.id.clone(), node);
+    pub fn add_node(&mut self, node: ComputeUnit) -> &mut Self {
+        if self.nodes.get(&node.name).is_none() {
+            self.rely_graph.add_node(node.name.clone());
+            self.nodes.insert(node.name.clone(), node);
         }
         self
     }
 
     //add_node add a compute unit to graph, if this unit alread exit, ignore it
-    pub fn set_edge(&mut self, from: &ID, to: &ID) -> Result<&mut Self> {
+    pub fn set_edge(&mut self, from: &str, to: &str) -> Result<&mut Self> {
         if self.nodes.get(from).is_none() {
             return Err(anyhow!("from node not exit"));
         }
@@ -52,11 +48,6 @@ impl<ID: GID> Dag<ID> {
     pub fn from_json<'a>(json: &'a str) -> Result<Self> {
         let value: serde_json::Value = serde_json::from_str(json)?;
 
-        let id: ID = value
-            .get("id")
-            .anyhow("id must exit")
-            .map(|v| serde_json::from_value::<ID>(v.clone()))??;
-
         let dag_name: &str = value
             .get("name")
             .anyhow("name must exit")
@@ -66,21 +57,20 @@ impl<ID: GID> Dag<ID> {
 
         let mut nodes = vec![];
         for node in dag.as_array().anyhow("dag must be a arrary")?.iter() {
-            nodes.push(serde_json::from_value::<ComputeUnit<ID>>(node.clone())?);
+            nodes.push(serde_json::from_value::<ComputeUnit>(node.clone())?);
         }
 
-        let node_ids: Vec<ID> = nodes.iter().map(|node| node.id).collect();
-        let mut rely_graph = Graph::with_nodes(node_ids.as_slice());
+        let node_ids: Vec<String> = nodes.iter().map(|node| node.name.clone()).collect();
+        let mut rely_graph = Graph::with_nodes(&node_ids);
         for node in nodes.iter() {
             node.dependency.iter().for_each(|v| {
-                rely_graph.add_edge(v, &node.id);
+                rely_graph.add_edge(v, &node.name);
             });
         }
 
-        let nodes_map: HashMap<ID, ComputeUnit<ID>> =
-            nodes.into_iter().map(|node| (node.id, node)).collect();
+        let nodes_map: HashMap<String, ComputeUnit> =
+            nodes.into_iter().map(|node| (node.name.clone(), node)).collect();
         Ok(Dag {
-            id: id,
             name: dag_name.to_string(),
             nodes: nodes_map,
             rely_graph: rely_graph,
@@ -96,7 +86,7 @@ impl<ID: GID> Dag<ID> {
     }
 
     // iter immutable iterate over graph
-    pub fn iter(&self) -> GraphIter<ID> {
+    pub fn iter(&self) -> GraphIter {
         GraphIter {
             index: 0,
             data: &self.nodes,
@@ -105,7 +95,7 @@ impl<ID: GID> Dag<ID> {
     }
 
     // iter_mut mutable iterate over graph
-    pub fn iter_mut(&mut self) -> GraphIterMut<ID> {
+    pub fn iter_mut(&mut self) -> GraphIterMut {
         GraphIterMut {
             index: 0,
             data: &mut self.nodes,
@@ -114,21 +104,19 @@ impl<ID: GID> Dag<ID> {
     }
 }
 
-pub struct GraphIter<'a, ID>
-where
-    ID: GID,
+pub struct GraphIter<'a>
 {
     index: usize,
-    data: &'a HashMap<ID, ComputeUnit<ID>>,
-    toped_graph: Vec<ID>,
+    data: &'a HashMap<String, ComputeUnit>,
+    toped_graph: Vec<String>,
 }
 
-impl<'a, ID: GID> Iterator for GraphIter<'a, ID> {
-    type Item = &'a ComputeUnit<ID>;
+impl<'a> Iterator for GraphIter<'a> {
+    type Item = &'a ComputeUnit;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.data.len() {
-            let item = self.toped_graph[self.index];
+            let item = self.toped_graph[self.index].clone();
             self.index += 1;
             Some(self.data.get(&item).expect("node added in previous step"))
         } else {
@@ -137,21 +125,19 @@ impl<'a, ID: GID> Iterator for GraphIter<'a, ID> {
     }
 }
 
-pub struct GraphIterMut<'a, ID>
-where
-    ID: GID,
+pub struct GraphIterMut<'a>
 {
     index: usize,
-    data: &'a mut HashMap<ID, ComputeUnit<ID>>,
-    toped_graph: Vec<ID>,
+    data: &'a mut HashMap<String, ComputeUnit>,
+    toped_graph: Vec<String>,
 }
 
-impl<'a, ID: GID> Iterator for GraphIterMut<'a, ID> {
-    type Item = &'a mut ComputeUnit<ID>;
+impl<'a> Iterator for GraphIterMut<'a> {
+    type Item = &'a mut ComputeUnit;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.data.len() {
-            let item = self.toped_graph[self.index];
+            let item = self.toped_graph[self.index].clone();
             self.index += 1;
             let node = self
                 .data
@@ -159,7 +145,7 @@ impl<'a, ID: GID> Iterator for GraphIterMut<'a, ID> {
                 .expect("node added in previous step");
             unsafe {
                 // SAFETY: We ensure no two mutable references to the same element are possible.
-                let node_ptr = node as *mut ComputeUnit<ID>;
+                let node_ptr = node as *mut ComputeUnit;
                 Some(&mut *node_ptr)
             }
         } else {
@@ -171,7 +157,6 @@ impl<'a, ID: GID> Iterator for GraphIterMut<'a, ID> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
 
     #[test]
     fn deserialize_from_str() {
@@ -181,7 +166,6 @@ mod tests {
   "version": "v1",
   "dag": [
     {
-      "id": "5c42b900-a87f-45e3-ba06-c40d94ad5ba2",
       "name": "ComputeUnit1",
       "dependency": [
         
@@ -203,11 +187,10 @@ mod tests {
       }
     },
     {
-      "id": "353fc5bf-697e-4221-8487-6ab91915e2a1",
       "name": "ComputeUnit2",
       "node_type": "ComputeUnit",
       "dependency": [
-        "5c42b900-a87f-45e3-ba06-c40d94ad5ba2"
+        "ComputeUnit1"
       ],
       "spec": {
         "cmd": [
@@ -219,7 +202,7 @@ mod tests {
   ]
 }
                 "#;
-        let mut result = Dag::<Uuid>::from_json(json_str).unwrap();
+        let mut result = Dag::from_json(json_str).unwrap();
         let node_names: Vec<_> = result.iter().map(|node| node.name.clone()).collect();
         assert_eq!(["ComputeUnit1", "ComputeUnit2"], node_names.as_slice());
 

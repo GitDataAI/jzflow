@@ -23,7 +23,6 @@ node1->node2->node3->node4->node5->node6->node7->node8->node9
 
 */
 
-use crate::core::GID;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     vec,
@@ -31,21 +30,17 @@ use std::{
 
 #[derive(Debug, Clone)]
 /// Graph Struct
-pub(crate) struct Graph<ID>
-where
-    ID: GID,
+pub(crate) struct Graph
 {
-    nodes: HashSet<ID>,
+    nodes: HashSet<String>,
     nodes_count: usize,
     /// Adjacency list of graph (stored as a vector of vector of indices)
-    adj: HashMap<ID, Vec<ID>>,
+    adj: HashMap<String, Vec<String>>,
     /// Node's in_degree, used for topological sort
-    in_degree: HashMap<ID, Vec<ID>>,
+    in_degree: HashMap<String, Vec<String>>,
 }
 
-impl<ID> Graph<ID>
-where
-    ID: GID,
+impl Graph
 {
     /// Allocate an empty graph
     pub(crate) fn new() -> Self {
@@ -58,49 +53,49 @@ where
     }
 
     /// init with a batch of nodes
-    pub(crate) fn with_nodes(ids: &[ID]) -> Self {
+    pub(crate) fn with_nodes(ids: &[String]) -> Self {
         let mut graph = Graph::new();
         ids.iter().for_each(|id| {
-            graph.add_node(*id);
+            graph.add_node(id.clone());
         });
         graph
     }
 
     // Append a node in graph
-    pub(crate) fn add_node(&mut self, id: ID) {
+    pub(crate) fn add_node(&mut self, id: String) {
         if self.nodes.contains(&id) {
             return;
         }
 
         self.nodes_count += 1;
-        self.nodes.insert(id);
-        self.adj.insert(id, vec![]);
-        self.in_degree.insert(id, vec![]);
+        self.nodes.insert(id.clone());
+        self.adj.insert(id.clone(), vec![]);
+        self.in_degree.insert(id.clone(), vec![]);
     }
 
     /// Add an edge into the graph.
     /// Above operation adds a arrow from node 0 to node 1,
     /// which means node 0 shall be executed before node 1.
-    pub(crate) fn add_edge(&mut self, from: &ID, to: &ID) {
-        match self.adj.get_mut(&from) {
+    pub(crate) fn add_edge(&mut self, from: &str, to: &str) {
+        match self.adj.get_mut(from) {
             Some(v) => {
-                if !v.contains(&from) {
-                    v.push(to.clone());
+                if !v.contains(&from.to_string()) {
+                    v.push(to.to_string());
                 }
             }
             None => {
-                self.adj.insert(from.clone(), vec![to.clone()]);
+                self.adj.insert(from.to_string(), vec![to.to_string()]);
             }
         }
 
-        match self.in_degree.get_mut(&to) {
+        match self.in_degree.get_mut(to) {
             Some(v) => {
-                if !v.contains(&to) {
-                    v.push(from.clone());
+                if !v.contains(&to.to_string()) {
+                    v.push(from.to_string());
                 }
             }
             None => {
-                self.in_degree.insert(to.clone(), vec![from.clone()]);
+                self.in_degree.insert(to.to_string(), vec![from.to_string()]);
             }
         }
     }
@@ -123,7 +118,7 @@ where
     ///
     /// 4. Just repeat step 2, 3 until no more zero degree nodes can be generated.
     ///    If all nodes have been executed, then it's a DAG, or there must be a loop in the graph.
-    pub(crate) fn topo_sort(&self) -> Vec<ID> {
+    pub(crate) fn topo_sort(&self) -> Vec<String> {
         let mut queue = self
             .in_degree
             .iter()
@@ -131,7 +126,7 @@ where
             .collect::<VecDeque<_>>();
 
         let mut in_degree = self.in_degree.clone();
-        let mut sequence: Vec<ID> = Vec::with_capacity(self.nodes_count);
+        let mut sequence: Vec<String> = Vec::with_capacity(self.nodes_count);
 
         while let Some(v) = queue.pop_front() {
             sequence.push(v.clone());
@@ -149,7 +144,7 @@ where
     }
 
     /// Get the out degree of a node.
-    pub(crate) fn get_out_degree(&self, id: &ID) -> usize {
+    pub(crate) fn get_out_degree(&self, id: &str) -> usize {
         match self.adj.get(id) {
             Some(id) => id.len(),
             None => 0,
@@ -157,7 +152,7 @@ where
     }
 
     /// Get the out degree of a node.
-    pub(crate) fn get_in_degree(&self, id: &ID) -> usize {
+    pub(crate) fn get_in_degree(&self, id: &str) -> usize {
         match self.in_degree.get(id) {
             Some(id) => id.len(),
             None => 0,
@@ -166,27 +161,27 @@ where
 
     /// Get all the successors of a node (direct or indirect).
     /// This function will return a vector of indices of successors (including itself).
-    pub(crate) fn get_node_successors(&self, id: &ID) -> Vec<ID> {
+    pub(crate) fn get_node_successors(&self, id: &str) -> Vec<String> {
         match self.adj.get(id) {
             Some(outs) => {
                 // initialize a vector to store successors with max possible size
-                let mut successors = Vec::with_capacity(outs.len());
+                let mut successors:Vec<String> = Vec::with_capacity(outs.len());
 
                 // create a visited array to avoid visiting a node more than once
                 let mut visited = HashSet::new();
                 let mut stack = vec![id];
 
                 visited.insert(id);
-                successors.push(*id);
+                successors.push(id.to_string());
                 // while the queue is not empty
                 while !stack.is_empty() {
-                    let v = stack.remove(0);
+                    let v = stack.remove(0).to_string();
                     if let Some(out_degress) = self.adj.get(&v) {
                         for id in out_degress.iter() {
-                            if !visited.contains(id) {
+                            if !visited.contains(id.as_str()) {
                                 // if not visited, mark it as visited and collect it
                                 visited.insert(id);
-                                successors.push(*id);
+                                successors.push(id.to_string());
                                 stack.push(id);
                             }
                         }
@@ -202,12 +197,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
-    use arrayvec::ArrayString;
-
-    type StringID = ArrayString<5>;
 
     #[test]
     fn test_simple() {
@@ -215,12 +205,12 @@ mod tests {
         // "a" => "c"
         // "b" => "d"
         // "b" => "d"
-        let a = StringID::from_str("a").unwrap();
-        let b = StringID::from_str("b").unwrap();
-        let c = StringID::from_str("c").unwrap();
-        let d = StringID::from_str("d").unwrap();
+        let a = "a".to_string();
+        let b = "b".to_string();
+        let c = "c".to_string();
+        let d = "d".to_string();
 
-        let mut graph = Graph::with_nodes([a, b, c, d].as_slice());
+        let mut graph = Graph::with_nodes([a.clone(), b.clone(), c.clone(), d.clone()].as_slice());
         graph.add_edge(&a, &b);
         graph.add_edge(&a, &c);
         graph.add_edge(&b, &d);
@@ -237,15 +227,15 @@ mod tests {
         // "a" => "c"
         // "b" => "d"
         // "b" => "d"
-        let a = StringID::from_str("a").unwrap();
-        let b = StringID::from_str("b").unwrap();
-        let c = StringID::from_str("c").unwrap();
-        let d = StringID::from_str("d").unwrap();
-        let e = StringID::from_str("e").unwrap();
-        let f = StringID::from_str("f").unwrap();
-        let g = StringID::from_str("g").unwrap();
+        let a = "a".to_string();
+        let b = "b".to_string();
+        let c = "c".to_string();
+        let d = "d".to_string();
+        let e = "e".to_string();
+        let f = "f".to_string();
+        let g = "g".to_string();
 
-        let mut graph = Graph::with_nodes([a, b, c, d, e, f, g].as_slice());
+        let mut graph = Graph::with_nodes([a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), g.clone()].as_slice());
         graph.add_edge(&a, &b);
         graph.add_edge(&a, &c);
         graph.add_edge(&b, &d);
@@ -266,15 +256,15 @@ mod tests {
         // "a" => "c"
         // "b" => "d"
         // "b" => "d"
-        let a = StringID::from_str("a").unwrap();
-        let b = StringID::from_str("b").unwrap();
-        let c = StringID::from_str("c").unwrap();
-        let d = StringID::from_str("d").unwrap();
-        let e = StringID::from_str("e").unwrap();
-        let f = StringID::from_str("f").unwrap();
-        let g = StringID::from_str("g").unwrap();
+        let a = "a".to_string();
+        let b = "b".to_string();
+        let c = "c".to_string();
+        let d = "d".to_string();
+        let e = "e".to_string();
+        let f = "f".to_string();
+        let g = "g".to_string();
 
-        let mut graph = Graph::with_nodes([a, b, c, d, e, f, g].as_slice());
+        let mut graph = Graph::with_nodes([a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), f.clone(), g.clone()].as_slice());
         graph.add_edge(&a, &b);
         graph.add_edge(&a, &c);
         graph.add_edge(&b, &d);

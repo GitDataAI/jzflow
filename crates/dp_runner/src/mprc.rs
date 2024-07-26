@@ -1,7 +1,6 @@
 use rand::Rng;
 use std::hash::Hash;
 use std::{borrow::Borrow, vec};
-use tokio::sync::mpsc;
 
 pub(crate) struct Mprs<K, T>
 where

@@ -2,9 +2,7 @@ use anyhow::Ok;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use compute_unit_runner::ipc::{self, IPCClient};
-use jiaozifs_client_rs::apis::branches_api::GetBranchError;
 use jiaozifs_client_rs::apis::{self};
-use jiaozifs_client_rs::models;
 use jiaozifs_client_rs::models::RefType;
 use jz_action::utils::IntoAnyhowResult;
 use jz_action::utils::StdIntoAnyhowResult;
@@ -105,8 +103,6 @@ async fn main() -> Result<()> {
 }
 
 async fn write_jz_fs(args: Args) -> Result<()> {
-    //ensure this wip exit
-
     let mut configuration = apis::configuration::Configuration::default();
     configuration.base_path = args.jiaozifs_url;
     configuration.basic_auth = Some((args.username, Some(args.password)));
@@ -121,7 +117,6 @@ async fn write_jz_fs(args: Args) -> Result<()> {
     }?;
 
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
-
     loop {
         let id = client.request_avaiable_data().await?;
         let path_str = args.tmp_path.clone() + "/" + &id + "-input";
@@ -146,5 +141,4 @@ async fn write_jz_fs(args: Args) -> Result<()> {
         }
         client.submit_result(&id).await?;
     }
-    Ok(())
 }

@@ -73,12 +73,11 @@ pub struct UnitDataStream {
 
 #[tonic::async_trait]
 impl DataStream for UnitDataStream {
-    type subscribe_media_dataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
-
+    type subscribeMediaDataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
     async fn subscribe_media_data(
         &self,
         request: Request<Empty>,
-    ) -> Result<Response<Self::subscribe_media_dataStream>, Status> {
+    ) -> Result<Response<Self::subscribeMediaDataStream>, Status> {
         println!("recieve new data request {:?}", request);
 
         let (tx, rx) = mpsc::channel(4);
@@ -101,12 +100,12 @@ impl DataStream for UnitDataStream {
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 
-    type subscribe_tabular_dataStream = ReceiverStream<Result<TabularDataBatchResponse, Status>>;
+    type subscribeTabularDataStream = ReceiverStream<Result<TabularDataBatchResponse, Status>>;
 
     async fn subscribe_tabular_data(
         &self,
         _request: Request<Empty>,
-    ) -> Result<Response<Self::subscribe_tabular_dataStream>, Status> {
+    ) -> Result<Response<Self::subscribeTabularDataStream>, Status> {
         todo!()
     }
 }
