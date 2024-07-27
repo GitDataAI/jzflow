@@ -1,12 +1,10 @@
 use crate::ipc::{AvaiableDataResponse, SubmitResultReq};
 use anyhow::Result;
-use jz_action::core::models::{Node, NodeRepo, TrackerState};
+use jz_action::core::models::{NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, MediaDataCell};
 use jz_action::network::nodecontroller::NodeType;
-use mongodb::bson::doc;
-use mongodb::{Collection, Database};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,11 +39,11 @@ pub struct MediaDataTracker<R>
 where
     R: NodeRepo,
 {
-    pub(crate) name: String,
+    pub(crate) _name: String,
 
     pub(crate) tmp_store: PathBuf,
 
-    pub(crate) repo: R,
+    pub(crate) _repo: R,
 
     pub(crate) local_state: TrackerState,
 
@@ -69,8 +67,8 @@ where
 
         MediaDataTracker {
             tmp_store,
-            name: name.to_string(),
-            repo,
+            _name: name.to_string(),
+            _repo: repo,
             node_type: NodeType::Input,
             local_state: TrackerState::Init,
             upstreams: None,
@@ -411,19 +409,18 @@ where
         Ok(())
     }
 
-    pub(crate) async fn pool_state(
-        database: mongodb::Database,
+    pub async fn apply_db_state(
+        repo: R,
         name: &str,
         program: Arc<Mutex<MediaDataTracker<R>>>,
     ) -> Result<()> {
-        let col: Collection<Node> = database.collection("node_state");
         let mut interval = time::interval(time::Duration::from_secs(10));
         loop {
             interval.tick().await;
-            let record = col
-                .find_one(doc! { "name": name })
-                .await?
-                .expect("record has inserted in controller");
+            let record = repo
+                .get_node_by_name(name)
+                .await
+                .expect("record has inserted in controller or network error");
             match record.state {
                 TrackerState::Ready => {
                     let mut program_guard = program.lock().await;

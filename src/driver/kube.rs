@@ -244,7 +244,6 @@ impl Driver for KubeDriver<'_> {
                 let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
                 let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
 
-                let tmp = self.reg.get_template("channel_deployment").unwrap();
                 let channel_deployment_string = self.reg.render("channel_deployment", node)?;
                 debug!(
                     "rendered channel deployment string {}",

@@ -4,7 +4,8 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use mongodb::{bson::doc, options::IndexOptions, Client, Collection, IndexModel};
-use tracing::{error, info};
+use std::{ops::Deref, sync::Arc};
+use tracing::error;
 
 const GRAPH_COL_NAME: &'static str = "graph";
 const NODE_COL_NAME: &'static str = "node";
@@ -65,5 +66,25 @@ impl NodeRepo for MongoRepo {
             Ok(Some(val)) => Ok(val),
             Err(e) => Err(e.into()),
         }
+    }
+}
+
+impl<T: NodeRepo> NodeRepo for Arc<T> {
+    async fn insert_node(&self, state: Node) -> Result<()> {
+        self.deref().insert_node(state).await
+    }
+
+    async fn get_node_by_name(&self, name: &str) -> Result<Node> {
+        self.deref().get_node_by_name(name).await
+    }
+}
+
+impl<T: GraphRepo> GraphRepo for Arc<T> {
+    async fn insert_global_state(&self, state: Graph) -> Result<()> {
+        self.deref().insert_global_state(state).await
+    }
+
+    async fn get_global_state(&self) -> Result<Graph> {
+        self.deref().get_global_state().await
     }
 }

@@ -1,7 +1,6 @@
 use compute_unit_runner::{ipc, media_data_tracker, unit};
 use jz_action::dbrepo::mongo::MongoRepo;
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
-use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
 use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
@@ -56,19 +55,37 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let db_repo = MongoRepo::new(&args.mongo_url, &args.database).await?;
+    let db_repo = Arc::new(MongoRepo::new(&args.mongo_url, &args.database).await?);
 
     let program = MediaDataTracker::new(
-        db_repo,
+        db_repo.clone(),
         &args.node_name,
         PathBuf::from_str(args.tmp_path.as_str())?,
     );
 
     let program_safe = Arc::new(Mutex::new(program));
-
-    let data_stream = UnitDataStream::<MongoRepo>::new(program_safe.clone());
+    let data_stream = UnitDataStream::<Arc<MongoRepo>>::new(program_safe.clone());
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
+    {
+        let shutdown_tx = shutdown_tx.clone();
+        let program_safe = program_safe.clone();
+        let node_name = args.node_name.clone();
+        let _ = tokio::spawn(async move {
+            if let Err(err) = MediaDataTracker::<Arc<MongoRepo>>::apply_db_state(
+                db_repo,
+                &node_name,
+                program_safe,
+            )
+            .await
+            {
+                let _ = shutdown_tx
+                    .send(Err(anyhow!("start data controller {err}")))
+                    .await;
+            }
+        });
+    }
+
     {
         let addr = args.host_port.parse()?;
         //listen port

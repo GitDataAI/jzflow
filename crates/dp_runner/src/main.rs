@@ -2,8 +2,8 @@ mod channel_tracker;
 mod mprc;
 mod unit;
 
+use jz_action::dbrepo::mongo::MongoRepo;
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
-use jz_action::network::nodecontroller::node_controller_server::NodeControllerServer;
 use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tracing::{info, Level};
-use unit::{DataNodeControllerServer, UnitDataStream};
+use unit::UnitDataStream;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -29,6 +29,15 @@ use unit::{DataNodeControllerServer, UnitDataStream};
 struct Args {
     #[arg(short, long, default_value = "INFO")]
     log_level: String,
+
+    #[arg(short, long)]
+    node_name: String,
+
+    #[arg(short, long)]
+    mongo_url: String,
+
+    #[arg(short, long)]
+    database: String,
 
     #[arg(long, default_value = "[::1]:25431")]
     host_port: String,
@@ -42,13 +51,11 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let addr = args.host_port.parse()?;
-    let program = ChannelTracker::new();
-    let program_safe = Arc::new(Mutex::new(program));
+    let db_repo = MongoRepo::new(&args.mongo_url, &args.database).await?;
 
-    let node_controller = DataNodeControllerServer {
-        program: program_safe.clone(),
-    };
+    let addr = args.host_port.parse()?;
+    let program = ChannelTracker::new(db_repo, &args.node_name);
+    let program_safe = Arc::new(Mutex::new(program));
 
     let data_stream = UnitDataStream {
         program: program_safe,
@@ -60,7 +67,6 @@ async fn main() -> Result<()> {
         let shutdown_tx_arc = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
             if let Err(e) = Server::builder()
-                .add_service(NodeControllerServer::new(node_controller))
                 .add_service(DataStreamServer::new(data_stream))
                 .serve(addr)
                 .await

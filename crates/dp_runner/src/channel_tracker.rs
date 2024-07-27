@@ -1,50 +1,49 @@
 use anyhow::{anyhow, Ok, Result};
+use jz_action::core::models::{NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::MediaDataBatchResponse;
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, Mutex};
+use tokio::time;
 use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::{error, info};
 
 use crate::mprc;
-
-#[derive(Debug)]
-pub(crate) enum ChannelState {
-    Init,
-    Ready,
-    Pending,
-    Finish,
-    Stopped,
-}
-
-pub(crate) struct ChannelTracker {
-    pub(crate) state: ChannelState,
+pub struct ChannelTracker<R>
+where
+    R: NodeRepo,
+{
+    pub(crate) _repo: R,
+    pub(crate) _name: String,
+    pub(crate) local_state: TrackerState,
     pub(crate) upstreams: Option<Vec<String>>,
-    pub(crate) script: Option<String>,
     pub receivers:
         Arc<Mutex<mprc::Mprs<String, mpsc::Sender<Result<MediaDataBatchResponse, Status>>>>>,
 }
 
-impl ChannelTracker {
-    pub(crate) fn new() -> Self {
+impl<R> ChannelTracker<R>
+where
+    R: NodeRepo,
+{
+    pub(crate) fn new(repo: R, name: &str) -> Self {
         ChannelTracker {
-            state: ChannelState::Init,
+            _name: name.to_string(),
+            _repo: repo,
+            local_state: TrackerState::Init,
             upstreams: None,
-            script: None,
             receivers: Arc::new(Mutex::new(mprc::Mprs::new())),
         }
     }
 
-    pub(crate) async fn fetch_data(&self) -> Result<()> {
+    pub(crate) async fn route_data(&self) -> Result<()> {
         if self.upstreams.is_none() {
             return Err(anyhow!("no upstream"));
         }
 
         let (tx, mut rx) = mpsc::channel(1024);
-
         for upstream in self.upstreams.as_ref().unwrap() {
             let upstream_clone = upstream.clone();
             let tx_clone = tx.clone();
@@ -80,6 +79,38 @@ impl ChannelTracker {
                 }
             }
         });
+        Ok(())
+    }
+
+    pub async fn apply_db_state(
+        repo: R,
+        name: &str,
+        program: Arc<Mutex<ChannelTracker<R>>>,
+    ) -> Result<()> {
+        let mut interval = time::interval(time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            let record = repo
+                .get_node_by_name(name)
+                .await
+                .expect("record has inserted in controller or network error");
+            match record.state {
+                TrackerState::Ready => {
+                    let mut program_guard = program.lock().await;
+
+                    if matches!(program_guard.local_state, TrackerState::Init) {
+                        //start
+                        program_guard.local_state = TrackerState::Ready;
+                        program_guard.upstreams = Some(record.upstreams);
+                        program_guard.route_data().await?;
+                    }
+                }
+                TrackerState::Stop => {
+                    todo!()
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
 }

@@ -1,9 +1,8 @@
 use anyhow::Result;
+use jz_action::core::models::NodeRepo;
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_server::DataStream;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
-use jz_action::network::nodecontroller::node_controller_server::NodeController;
-use jz_action::network::nodecontroller::StartRequest;
 use jz_action::utils::{AnyhowToGrpc, IntoAnyhowResult};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -11,59 +10,20 @@ use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Code, Request, Response, Status};
 
-use super::channel_tracker::{ChannelState, ChannelTracker};
+use super::channel_tracker::ChannelTracker;
 
-pub(crate) struct DataNodeControllerServer {
-    pub(crate) program: Arc<Mutex<ChannelTracker>>,
+pub struct UnitDataStream<R>
+where
+    R: NodeRepo + Send + Sync + 'static,
+{
+    pub(crate) program: Arc<Mutex<ChannelTracker<R>>>,
 }
 
 #[tonic::async_trait]
-impl NodeController for DataNodeControllerServer {
-    async fn start(
-        &self,
-        request: Request<StartRequest>,
-    ) -> std::result::Result<Response<Empty>, Status> {
-        let request = request.into_inner();
-        let mut program_guard = self.program.lock().await;
-        program_guard.state = ChannelState::Ready;
-        program_guard.upstreams = Some(request.upstreams);
-        program_guard.script = Some(request.script);
-
-        program_guard.fetch_data().await.to_rpc(Code::Internal)?;
-        Ok(Response::new(Empty {}))
-    }
-
-    async fn pause(
-        &self,
-        _request: Request<Empty>,
-    ) -> std::result::Result<Response<Empty>, Status> {
-        let mut program_guard = self.program.lock().await;
-        program_guard.state = ChannelState::Pending;
-        Ok(Response::new(Empty {}))
-    }
-
-    async fn restart(
-        &self,
-        _request: Request<Empty>,
-    ) -> std::result::Result<Response<Empty>, Status> {
-        let mut program_guard = self.program.lock().await;
-        program_guard.state = ChannelState::Ready;
-        Ok(Response::new(Empty {}))
-    }
-
-    async fn stop(&self, _request: Request<Empty>) -> std::result::Result<Response<Empty>, Status> {
-        let mut program_guard = self.program.lock().await;
-        program_guard.state = ChannelState::Stopped;
-        Ok(Response::new(Empty {}))
-    }
-}
-
-pub(crate) struct UnitDataStream {
-    pub(crate) program: Arc<Mutex<ChannelTracker>>,
-}
-
-#[tonic::async_trait]
-impl DataStream for UnitDataStream {
+impl<R> DataStream for UnitDataStream<R>
+where
+    R: NodeRepo + Send + Sync + 'static,
+{
     type subscribeMediaDataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
 
     async fn subscribe_media_data(
