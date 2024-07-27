@@ -22,13 +22,24 @@ pub(crate) struct AvaiableDataResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct SubmitResultReq {
+pub(crate) struct CompleteDataReq {
     pub(crate) id: String,
 }
 
-impl SubmitResultReq {
+impl CompleteDataReq {
     fn new(id: &str) -> Self {
-        SubmitResultReq { id: id.to_string() }
+        CompleteDataReq { id: id.to_string() }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct SubmitOuputDataReq {
+    pub(crate) id: String,
+}
+
+impl SubmitOuputDataReq {
+    fn new(id: &str) -> Self {
+        SubmitOuputDataReq { id: id.to_string() }
     }
 }
 
@@ -54,9 +65,9 @@ where
     }
 }
 
-async fn process_submit_result_request<R>(
+async fn process_completed_request<R>(
     program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
-    data: web::Json<SubmitResultReq>,
+    data: web::Json<CompleteDataReq>,
 ) -> HttpResponse
 where
     R: NodeRepo,
@@ -65,7 +76,33 @@ where
     let program = program_mutex.lock().await;
     //read request
     program
-        .ipc_process_submit_result_tx
+        .ipc_process_completed_data_tx
+        .as_ref()
+        .unwrap()
+        .send((data.0, tx))
+        .await
+        .unwrap();
+    match rx.try_recv() {
+        Ok(resp) => {
+            //response result
+            HttpResponse::Ok().body(resp)
+        }
+        Err(e) => HttpResponse::ServiceUnavailable().body(e.to_string()),
+    }
+}
+
+async fn process_submit_output_request<R>(
+    program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
+    data: web::Json<SubmitOuputDataReq>,
+) -> HttpResponse
+where
+    R: NodeRepo,
+{
+    let (tx, mut rx) = oneshot::channel::<()>();
+    let program = program_mutex.lock().await;
+    //read request
+    program
+        .ipc_process_submit_output_tx
         .as_ref()
         .unwrap()
         .send((data.0, tx))
@@ -91,7 +128,8 @@ where
         App::new()
             .app_data(program.clone())
             .service(web::resource("/api/v1/data").get(process_data_request::<R>))
-            .service(web::resource("/api/v1/submit").post(process_submit_result_request::<R>))
+            .service(web::resource("/api/v1/data").post(process_completed_request::<R>))
+            .service(web::resource("/api/v1/submit").post(process_submit_output_request::<R>))
     })
     .bind_uds(unix_socket_addr)
     .unwrap();
@@ -100,7 +138,8 @@ where
 }
 
 pub trait IPCClient {
-    async fn submit_result(&self, id: &str) -> Result<()>;
+    async fn submit_output(&self, id: &str) -> Result<()>;
+    async fn complete_result(&self, id: &str) -> Result<()>;
     async fn request_avaiable_data(&self) -> Result<String>;
 }
 
@@ -119,8 +158,8 @@ impl IPCClientImpl {
 }
 
 impl IPCClient for IPCClientImpl {
-    async fn submit_result(&self, id: &str) -> Result<()> {
-        let req = SubmitResultReq::new(id);
+    async fn submit_output(&self, id: &str) -> Result<()> {
+        let req = SubmitOuputDataReq::new(id);
         let json = serde_json::to_string(&req)?;
 
         let req: Request<Full<Bytes>> = Request::builder()
@@ -147,5 +186,22 @@ impl IPCClient for IPCClientImpl {
         let contents = resp.collect().await.map(Collected::to_bytes)?;
         let avaiabel_data: AvaiableDataResponse = serde_json::from_slice(contents.as_ref())?;
         Ok(avaiabel_data.id)
+    }
+
+    async fn complete_result(&self, id: &str) -> Result<()> {
+        let req = CompleteDataReq::new(id);
+        let json = serde_json::to_string(&req)?;
+
+        let req: Request<Full<Bytes>> = Request::builder()
+            .method(Method::POST)
+            .uri(self.unix_socket_addr.clone() + "/api/v1/data")
+            .body(Full::from(json))?;
+
+        let resp = self.client.request(req).await.anyhow()?;
+        if resp.status().is_success() {
+            return Ok(());
+        }
+
+        Err(anyhow!("submit data fail {}", resp.status()))
     }
 }

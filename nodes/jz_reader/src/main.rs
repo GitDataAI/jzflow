@@ -4,6 +4,7 @@ use compute_unit_runner::ipc::{self, IPCClient};
 use jiaozifs_client_rs::apis;
 use jiaozifs_client_rs::models::RefType;
 use jz_action::utils::StdIntoAnyhowResult;
+use std::path::Path;
 use std::str::FromStr;
 use tokio::fs;
 use tokio::select;
@@ -119,11 +120,12 @@ async fn read_jz_fs(args: Args) -> Result<()> {
     .await?;
 
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
+    let tmp_path = Path::new(&args.tmp_path);
     for batch in file_paths.chunks(args.batch_size) {
         //create temp output directory
         let id = uuid::Uuid::new_v4().to_string();
-        let tmp_dir = args.tmp_path.clone() + "/" + &id + "-output";
-        fs::create_dir_all(tmp_dir.clone()).await?;
+        let output_dir = tmp_path.join(&id);
+        fs::create_dir_all(output_dir.clone()).await?;
 
         //read file from jzfs and write to output directory
         let mut files = vec![];
@@ -139,7 +141,8 @@ async fn read_jz_fs(args: Args) -> Result<()> {
             )
             .await?;
 
-            let mut tmp_file = fs::File::create(tmp_dir.clone() + &path).await?;
+            let file_path = output_dir.as_path().join(&path);
+            let mut tmp_file = fs::File::create(file_path).await?;
             while let Some(item) = byte_stream.next().await {
                 tokio::io::copy(&mut item.unwrap().as_ref(), &mut tmp_file)
                     .await
@@ -149,7 +152,7 @@ async fn read_jz_fs(args: Args) -> Result<()> {
         }
 
         //submit directory after completed a batch
-        client.submit_result(&id).await?;
+        client.submit_output(&id).await?;
     }
     Ok(())
 }

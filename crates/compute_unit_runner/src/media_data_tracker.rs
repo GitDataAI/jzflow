@@ -1,4 +1,4 @@
-use crate::ipc::{AvaiableDataResponse, SubmitResultReq};
+use crate::ipc::{AvaiableDataResponse, CompleteDataReq, SubmitOuputDataReq};
 use anyhow::Result;
 use jz_action::core::models::{NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
@@ -51,10 +51,18 @@ where
 
     pub(crate) upstreams: Option<Vec<String>>,
 
-    pub(crate) ipc_process_submit_result_tx:
-        Option<mpsc::Sender<(SubmitResultReq, oneshot::Sender<()>)>>,
+    // channel for process avaiable data request
     pub(crate) ipc_process_data_req_tx:
         Option<mpsc::Sender<((), oneshot::Sender<AvaiableDataResponse>)>>,
+
+    // channel for response complete data. do clean work when receive this request
+    pub(crate) ipc_process_completed_data_tx:
+        Option<mpsc::Sender<(CompleteDataReq, oneshot::Sender<()>)>>,
+
+    // channel for submit output data
+    pub(crate) ipc_process_submit_output_tx:
+        Option<mpsc::Sender<(SubmitOuputDataReq, oneshot::Sender<()>)>>,
+
     pub(crate) out_going_tx: broadcast::Sender<MediaDataBatchResponse>, //receive data from upstream and send it to program with this
 }
 
@@ -72,7 +80,8 @@ where
             node_type: NodeType::Input,
             local_state: TrackerState::Init,
             upstreams: None,
-            ipc_process_submit_result_tx: None,
+            ipc_process_submit_output_tx: None,
+            ipc_process_completed_data_tx: None,
             ipc_process_data_req_tx: None,
             out_going_tx: out_going_tx,
         }
@@ -86,9 +95,10 @@ where
         }
     }
 
+    /// data was trasfer from user contaienr to data container
     pub(crate) async fn track_input_data(&mut self) -> Result<()> {
         let (ipc_process_submit_result_tx, mut ipc_process_submit_result_rx) = mpsc::channel(1024);
-        self.ipc_process_submit_result_tx = Some(ipc_process_submit_result_tx);
+        self.ipc_process_submit_output_tx = Some(ipc_process_submit_result_tx);
 
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
@@ -107,7 +117,7 @@ where
                     // respose with nothing
                     resp.send(()).expect("channel only read once");
 
-                    let tmp_out_path = tmp_store.join(req.id.clone()+"-out");
+                    let tmp_out_path = tmp_store.join(req.id.clone());
                     let mut new_batch =MediaDataBatchResponse::default();
 
                     let mut entry_count = 0 ;
@@ -155,6 +165,7 @@ where
         Ok(())
     }
 
+    /// data was transfer from data container -> user container -> data container
     pub(crate) async fn track_input_output_data(&mut self) -> Result<()> {
         let upstreams = self
             .upstreams
@@ -167,7 +178,11 @@ where
         self.ipc_process_data_req_tx = Some(ipc_process_data_req_tx);
 
         let (ipc_process_submit_result_tx, mut ipc_process_submit_result_rx) = mpsc::channel(1024);
-        self.ipc_process_submit_result_tx = Some(ipc_process_submit_result_tx);
+        self.ipc_process_submit_output_tx = Some(ipc_process_submit_result_tx);
+
+        let (ipc_process_completed_data_tx, mut ipc_process_completed_data_rx) =
+            mpsc::channel(1024);
+        self.ipc_process_completed_data_tx = Some(ipc_process_completed_data_tx);
 
         for upstream in upstreams {
             {
@@ -201,18 +216,12 @@ where
                     if let Some(data_batch) = data_batch_result {
                         //create input directory
                         let id = Uuid::new_v4().to_string();
-                        let tmp_in_path = tmp_store.join(id.clone()+"-input");
+                        let tmp_in_path = tmp_store.join(id.clone());
                         if let Err(e) = fs::create_dir_all(&tmp_in_path).await {
                             error!("create input dir {:?} fail {}", tmp_in_path, e);
                             return
                         }
 
-                        //create output directory at the same time
-                        let tmp_out_path = tmp_store.join(id.clone()+"-output");
-                        if let Err(e) = fs::create_dir_all(&tmp_out_path).await {
-                            error!("create output dir {:?} fail {}", tmp_out_path, e);
-                            return
-                        }
                         //write batch files
                         for entry in  data_batch.cells.iter() {
                             let entry_path = tmp_in_path.join(entry.path.clone());
@@ -238,7 +247,7 @@ where
                             }
                         }
                  },
-                 Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
+                 Some((req, resp))  = ipc_process_completed_data_rx.recv() => {
                     //mark this data as completed
                     match state_map.get_mut(&req.id) {
                         Some(state)=>{
@@ -248,10 +257,16 @@ where
                     }
                     // respose with nothing
                     resp.send(()).expect("channel only read once");
-
+                    //remove input data
+                    let tmp_path = tmp_store.join(req.id.clone());
+                    if let Err(e) = fs::remove_dir_all(&tmp_path).await {
+                        error!("remove tmp dir{:?} fail {}", tmp_path, e);
+                    }
+                 },
+                 Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
                     //reconstruct batch
                     //TODO combine multiple batch
-                    let tmp_out_path = tmp_store.join(req.id.clone()+"-out");
+                    let tmp_out_path = tmp_store.join(req.id.clone());
                     let mut new_batch = MediaDataBatchResponse::default();
 
                     let mut entry_count = 0 ;
@@ -280,23 +295,22 @@ where
                     }
                     new_batch.size  = entry_count;
 
+                    // respose with nothing
+                    resp.send(()).expect("channel only read once");
                     //write outgoing
                     if new_batch.size >0 {
                         if let Err(e) = out_going_tx.send(new_batch) {
                             error!("send data {}", e);
                             continue;
                         }
-                        let entry = state_map.get_mut(&req.id)
-                        .expect("this value has been inserted before");
-                        entry.state = DataStateEnum::Sent;
                     }
 
-                    //remove data
-                    let tmp_path = tmp_store.join(req.id.clone()+"-input");
-                    if let Err(e) = fs::remove_dir(&tmp_path).await {
+                    //remove output data
+                    // TODO keep outgoing data  until all downstream channel recevied this data
+                    let tmp_path = tmp_store.join(req.id.clone());
+                    if let Err(e) = fs::remove_dir_all(&tmp_path).await {
                         error!("remove tmp dir{:?} fail {}", tmp_path, e);
                     }
-                    let _ = state_map.remove(&req.id);
                 },
                 }
             }
@@ -316,7 +330,7 @@ where
         self.ipc_process_data_req_tx = Some(ipc_process_data_req_tx);
 
         let (ipc_process_submit_result_tx, mut ipc_process_submit_result_rx) = mpsc::channel(1024);
-        self.ipc_process_submit_result_tx = Some(ipc_process_submit_result_tx);
+        self.ipc_process_submit_output_tx = Some(ipc_process_submit_result_tx);
 
         for upstream in upstreams {
             {
@@ -350,18 +364,12 @@ where
                     if let Some(data_batch) = data_batch_result {
                         //create input directory
                         let id = Uuid::new_v4().to_string();
-                        let tmp_in_path = tmp_store.join(id.clone()+"-input");
+                        let tmp_in_path = tmp_store.join(id.clone());
                         if let Err(e) = fs::create_dir_all(&tmp_in_path).await {
                             error!("create input dir {:?} fail {}", tmp_in_path, e);
                             return
                         }
 
-                        //create output directory at the same time
-                        let tmp_out_path = tmp_store.join(id.clone()+"-output");
-                        if let Err(e) = fs::create_dir_all(&tmp_out_path).await {
-                            error!("create output dir {:?} fail {}", tmp_out_path, e);
-                            return
-                        }
                         //write batch files
                         for entry in  data_batch.cells.iter() {
                             let entry_path = tmp_in_path.join(entry.path.clone());
@@ -396,8 +404,8 @@ where
                         None=>error!("id({:?}) not found", &req.id)
                     }
                     //remove data
-                    let tmp_path = tmp_store.join(req.id.clone()+"-input");
-                    if let Err(e) = fs::remove_dir(&tmp_path).await {
+                    let tmp_path = tmp_store.join(req.id.clone());
+                    if let Err(e) = fs::remove_dir_all(&tmp_path).await {
                         error!("remove tmp dir{:?} fail {}", tmp_path, e);
                     }
                     //remove state

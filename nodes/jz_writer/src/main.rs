@@ -6,7 +6,7 @@ use jiaozifs_client_rs::apis::{self};
 use jiaozifs_client_rs::models::RefType;
 use jz_action::utils::IntoAnyhowResult;
 use jz_action::utils::StdIntoAnyhowResult;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
 use tokio::select;
@@ -117,11 +117,11 @@ async fn write_jz_fs(args: Args) -> Result<()> {
     }?;
 
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
+    let tmp_path = Path::new(&args.tmp_path);
     loop {
         let id = client.request_avaiable_data().await?;
-        let path_str = args.tmp_path.clone() + "/" + &id + "-input";
-        let root_input_dir = Path::new(&path_str);
-
+        let path_str = tmp_path.join(&id);
+        let root_input_dir = path_str.as_path();
         for entry in WalkDir::new(root_input_dir) {
             let entry = entry?;
             if entry.file_type().is_file() {
@@ -140,6 +140,6 @@ async fn write_jz_fs(args: Args) -> Result<()> {
                 .await?;
             }
         }
-        client.submit_result(&id).await?;
+        client.complete_result(&id).await?;
     }
 }
