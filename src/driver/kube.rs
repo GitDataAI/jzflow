@@ -1,5 +1,8 @@
 use super::{ChannelHandler, Driver, PipelineController, UnitHandler};
+use crate::core::models::DBConfig;
+use crate::core::{models::DbRepo, ComputeUnit};
 use crate::dag::Dag;
+use crate::dbrepo::mongo::{MongoConfig, MongoRepo};
 use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use handlebars::Handlebars;
@@ -10,27 +13,40 @@ use kube::{Api, Client};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::default::Default;
+use std::marker::PhantomData;
+use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::Retry;
 use tracing::debug;
-pub struct KubeChannelHander {
+pub struct KubeChannelHander<R>
+where
+    R: DbRepo,
+{
     pub deployment: Deployment,
     pub claim: PersistentVolumeClaim,
     pub service: Service,
+    pub db_repo: R,
 }
 
-impl Default for KubeChannelHander {
-    fn default() -> Self {
+impl<R> KubeChannelHander<R>
+where
+    R: DbRepo,
+{
+    fn new(db_repo: R) -> Self {
         Self {
             deployment: Default::default(),
             claim: PersistentVolumeClaim::default(),
             service: Default::default(),
+            db_repo:db_repo
         }
     }
 }
 
-impl ChannelHandler for KubeChannelHander {
+impl<R> ChannelHandler for KubeChannelHander<R>
+where
+    R: DbRepo,
+{
     async fn pause(&mut self) -> Result<()> {
         todo!()
     }
@@ -44,25 +60,36 @@ impl ChannelHandler for KubeChannelHander {
     }
 }
 
-pub struct KubeHandler {
+pub struct KubeHandler<R>
+where
+    R: DbRepo,
+{
     pub deployment: Deployment,
     pub claim: PersistentVolumeClaim,
     pub service: Service,
-    pub channel: Option<KubeChannelHander>,
+    pub db_repo: R,
+    pub channel: Option<KubeChannelHander<R>>,
 }
 
-impl Default for KubeHandler {
-    fn default() -> Self {
+impl<R> KubeHandler<R>
+where
+    R: DbRepo,
+{
+    fn new(repo: R) -> Self {
         Self {
             deployment: Default::default(),
             claim: PersistentVolumeClaim::default(),
             service: Default::default(),
             channel: None,
+            db_repo: repo,
         }
     }
 }
 
-impl UnitHandler for KubeHandler {
+impl<R> UnitHandler for KubeHandler<R>
+where
+    R: DbRepo,
+{
     async fn pause(&mut self) -> Result<()> {
         todo!()
     }
@@ -76,62 +103,61 @@ impl UnitHandler for KubeHandler {
     }
 
     #[allow(refining_impl_trait)]
-    async fn channel_handler(&self) -> Result<Option<Arc<Mutex<KubeChannelHander>>>> {
+    async fn channel_handler(&self) -> Result<Option<Arc<Mutex<KubeChannelHander<R>>>>> {
         todo!()
     }
 }
 
-pub struct KubePipelineController {
-    handlers: HashMap<String, KubeHandler>,
+pub struct KubePipelineController< R>
+where
+    R: DbRepo,
+{
+    pub db_repo: R,
+    handlers: HashMap<String, KubeHandler< R>>,
 }
 
-impl<'a> Default for KubePipelineController {
-    fn default() -> Self {
+impl<R> KubePipelineController< R>
+where
+    R: DbRepo,
+{
+    fn new(repo: R) -> Self {
         Self {
+            db_repo: repo,
             handlers: Default::default(),
         }
     }
 }
 
-impl PipelineController for KubePipelineController {
-    async fn get_node<'a>(&'a self, id: &'a String) -> Result<&'a impl UnitHandler> {
+impl<R> PipelineController for KubePipelineController< R>
+where
+    R: DbRepo,
+{
+    async fn get_node<'b>(&'b self, id: &'b String) -> Result<&'b impl UnitHandler> {
         self.handlers.get(id).anyhow("id not found")
     }
 
-    async fn get_node_mut<'a>(&'a mut self, id: &'a String) -> Result<&'a mut impl UnitHandler> {
+    async fn get_node_mut<'b>(&'b mut self, id: &'b String) -> Result<&'b mut impl UnitHandler> {
         self.handlers.get_mut(id).anyhow("id not found")
     }
 }
 
-pub struct KubeDriver<'reg> {
+pub struct KubeDriver<'reg, R, DBC>
+where
+    R: DbRepo,
+    DBC: Clone + Serialize + Send + Sync + DBConfig+'static,
+{
     reg: Handlebars<'reg>,
     client: Client,
+    db_config: DBC,
+    _phantomData: PhantomData<R>
 }
 
-impl<'reg> KubeDriver<'reg> {
-    pub async fn default() -> Result<KubeDriver<'reg>> {
-        let mut reg = Handlebars::new();
-        reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
-
-        reg.register_template_string("deployment", include_str!("kubetpl/deployment.tpl"))?;
-        reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
-        reg.register_template_string(
-            "channel_deployment",
-            include_str!("kubetpl/channel_deployment.tpl"),
-        )?;
-        reg.register_template_string(
-            "channel_service",
-            include_str!("kubetpl/channel_service.tpl"),
-        )?;
-
-        let client = Client::try_default().await?;
-        Ok(KubeDriver {
-            reg: reg,
-            client: client,
-        })
-    }
-
-    pub async fn from_k8s_client(client: Client) -> Result<KubeDriver<'reg>> {
+impl<'reg,  R, DBC> KubeDriver<'reg,  R, DBC>
+where
+    R: DbRepo,
+    DBC: Clone + Serialize + Send + Sync + DBConfig,
+{
+    pub async fn new(client: Client, db_config: DBC) -> Result<KubeDriver<'reg,  R, DBC>> {
         let mut reg = Handlebars::new();
         reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
 
@@ -146,8 +172,10 @@ impl<'reg> KubeDriver<'reg> {
             include_str!("kubetpl/channel_service.tpl"),
         )?;
         Ok(KubeDriver {
-            reg: reg,
-            client: client,
+            reg,
+            client,
+            db_config,
+            _phantomData: PhantomData,
         })
     }
 
@@ -196,16 +224,33 @@ struct ClaimRenderParams {
     name: String,
 }
 
-impl Driver for KubeDriver<'_> {
+#[derive(Serialize)]
+struct DataUnitDeploymentRenderParams<'a, DBC>
+where
+    DBC: Sized + Serialize + Send + Sync + DBConfig +'static,
+{
+    node: &'a ComputeUnit,
+    log_level: &'a str,
+    db: DBC,
+}
+
+impl<R, DBC> Driver for KubeDriver<'_,  R, DBC>
+where
+    R: DbRepo,
+    DBC: Clone + Serialize + Send + Sync + DBConfig+'static,
+{
     #[allow(refining_impl_trait)]
-    async fn deploy(&self, ns: &str, graph: &Dag) -> Result<KubePipelineController> {
-        Self::ensure_namespace_exit_and_clean(&self.client, ns).await?;
+    async fn deploy(&self, run_id: &str, graph: &Dag) -> Result<KubePipelineController<MongoRepo>>
+    {
+        Self::ensure_namespace_exit_and_clean(&self.client, run_id).await?;
 
-        let deployment_api: Api<Deployment> = Api::namespaced(self.client.clone(), ns);
-        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), ns);
-        let service_api: Api<Service> = Api::namespaced(self.client.clone(), ns);
+        let repo = MongoRepo::new(self.db_config.clone(), run_id).await?;
+        let deployment_api: Api<Deployment> = Api::namespaced(self.client.clone(), run_id);
+        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
+        let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
 
-        let mut pipeline_ctl = KubePipelineController::default();
+        //db = name + hash + retry_number
+        let mut pipeline_ctl= KubePipelineController::new(repo.clone());
         for node in graph.iter() {
             let claim_string = self.reg.render(
                 "claim",
@@ -217,7 +262,13 @@ impl Driver for KubeDriver<'_> {
             let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
             let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
 
-            let deployment_string = self.reg.render("deployment", node)?;
+            let data_unit_render_args = DataUnitDeploymentRenderParams {
+                node,
+                db: self.db_config.clone(),
+                log_level: "debug",
+            };
+
+            let deployment_string = self.reg.render("deployment", &data_unit_render_args)?;
             debug!("rendered unit clam string {}", deployment_string);
 
             let unit_deployment: Deployment = serde_json::from_str(&deployment_string)?;
@@ -244,7 +295,9 @@ impl Driver for KubeDriver<'_> {
                 let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
                 let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
 
-                let channel_deployment_string = self.reg.render("channel_deployment", node)?;
+                let channel_deployment_string = self
+                    .reg
+                    .render("channel_deployment", &data_unit_render_args)?;
                 debug!(
                     "rendered channel deployment string {}",
                     channel_deployment_string
@@ -267,6 +320,7 @@ impl Driver for KubeDriver<'_> {
                     claim: claim_deployment,
                     deployment: channel_deployment,
                     service: channel_service,
+                    db_repo: repo.clone(),
                 })
             } else {
                 None
@@ -277,6 +331,7 @@ impl Driver for KubeDriver<'_> {
                 deployment: unit_deployment,
                 service: unit_service,
                 channel: channel_handler,
+                db_repo: repo.clone(),
             };
 
             pipeline_ctl.handlers.insert(node.name.clone(), handler);
@@ -285,7 +340,7 @@ impl Driver for KubeDriver<'_> {
     }
 
     #[allow(refining_impl_trait)]
-    async fn attach(&self, _namespace: &str, _graph: &Dag) -> Result<KubePipelineController> {
+    async fn attach(&self, _namespace: &str, _graph: &Dag) -> Result<KubePipelineController<R>> {
         todo!()
     }
 
@@ -308,6 +363,8 @@ mod tests {
     use std::env;
 
     use super::*;
+    use crate::dbrepo::mongo::{MongoConfig, MongoRepo};
+    use kube::client;
     use tracing_subscriber;
 
     #[tokio::test]
@@ -361,7 +418,13 @@ mod tests {
         }
                         "#;
         let dag = Dag::from_json(json_str).unwrap();
-        let kube_driver = KubeDriver::default().await.unwrap();
+
+        let mongo_cfg = MongoConfig {
+            mongo_url: "".to_string(),
+        };
+        let client = Client::try_default().await.unwrap();
+        let mut kube_driver = KubeDriver::new(client, mongo_cfg).await.unwrap();
+
         kube_driver.deploy("ntest", &dag).await.unwrap();
         //    kube_driver.clean("ntest").await.unwrap();
     }

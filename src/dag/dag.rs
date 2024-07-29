@@ -5,7 +5,7 @@ use anyhow::{anyhow, Ok, Result};
 use std::collections::HashMap;
 
 pub struct Dag {
-    name: String,
+    pub name: String,
     nodes: HashMap<String, ComputeUnit>,
     /// Store dependency relations.
     rely_graph: Graph,

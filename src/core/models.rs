@@ -43,3 +43,9 @@ pub trait NodeRepo {
     async fn insert_node(&self, state: Node) -> Result<()>;
     async fn get_node_by_name(&self, name: &str) -> Result<Node>;
 }
+
+pub trait DbRepo = GraphRepo + NodeRepo + Send + Sync + 'static;
+
+pub trait DBConfig {
+    fn connection_string(&self) -> &str;
+}

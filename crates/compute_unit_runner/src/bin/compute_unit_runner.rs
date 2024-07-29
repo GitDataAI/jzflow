@@ -22,7 +22,7 @@ use unit::UnitDataStream;
     name = "compute_unit_runner",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
-    about = "embed in k8s images"
+    about = "embed in k8s images. work for process data input and output"
 )]
 struct Args {
     #[arg(short, long, default_value = "INFO")]

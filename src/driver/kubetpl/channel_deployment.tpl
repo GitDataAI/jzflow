@@ -30,6 +30,12 @@
             "command": [
               "/dp_runner"
             ],
+            "args":[
+              "--node-name={{{.node.name}}}",
+              "--log-level={{{.log_level}}}",
+              "--mongo-url={{{.mongo_url}}}",
+              "--database={{{.database}}}",
+            ],
             "ports": [
               {
                 "containerPort": 80

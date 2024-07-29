@@ -5,7 +5,7 @@ $(OUTPUT):
 
 ################### build crates
 build-cd: $(OUTPUT)
-	cargo build -p compute_unit_runner --release
+	cargo build -p compute_unit_runner --release --bin compute_unit_runner
 	cp target/release/compute_unit_runner $(OUTPUT)/compute_unit_runner
 
 build-dp: $(OUTPUT)

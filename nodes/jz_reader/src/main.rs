@@ -18,7 +18,7 @@ use tracing::{info, Level};
     name = "jz_reader",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
-    about = "embed in k8s images"
+    about = "embed in k8s images. "
 )]
 
 struct Args {

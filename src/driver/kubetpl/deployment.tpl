@@ -2,23 +2,23 @@
   "apiVersion": "apps/v1",
   "kind": "Deployment",
   "metadata": {
-    "name": "{{{name}}}-deployment",
+    "name": "{{{node.name}}}-deployment",
     "id": "{{{id}}}",
     "labels": {
       "exec-type": "compute-unit"
     }
   },
   "spec": {
-    "replicas": {{spec.replicas}},
+    "replicas": {{{node.spec.replicas}}},
     "selector": {
       "matchLabels": {
-        "app": "{{{name}}}-pod"
+        "app": "{{{node.name}}}-pod"
       }
     },
     "template": {
       "metadata": {
         "labels": {
-          "app": "{{{name}}}-pod"
+          "app": "{{{node.name}}}-pod"
         }
       },
       "spec": {
@@ -27,7 +27,13 @@
             "name": "compute-data-unit",
             "image": "jz-action/compute_unit_runner:latest",
             "command": [
-              "/compute_unit_runner"
+              "/compute_unit_runner",
+            ],
+            "args":[
+              "--node-name={{{.node.name}}}",
+              "--log-level={{{.log_level}}}",
+              "--mongo-url={{{.mongo_url}}}",
+              "--database={{{.database}}}"
             ],
             "imagePullPolicy":"IfNotPresent",
             "ports": [
@@ -48,7 +54,7 @@
           },
           {
             "name": "compute-user-unit",
-            "image": "{{{spec.image}}}",
+            "image": "{{{node.spec.image}}}",
             "command": [
               "sleep"
             ],
@@ -75,7 +81,7 @@
           {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName":"{{name}}-node-claim"
+              "claimName":"{{{name}}}-node-claim"
             }
           }
         ]

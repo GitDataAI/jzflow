@@ -1,23 +1,38 @@
 use crate::{
-    core::models::{Graph, GraphRepo, Node, NodeRepo},
+    core::models::{DBConfig, Graph, GraphRepo, Node, NodeRepo},
     utils::StdIntoAnyhowResult,
 };
 use anyhow::{anyhow, Result};
 use mongodb::{bson::doc, options::IndexOptions, Client, Collection, IndexModel};
-use std::{ops::Deref, sync::Arc};
+use serde::Serialize;
+use std::{marker::PhantomData, ops::Deref, sync::Arc};
 use tracing::error;
 
 const GRAPH_COL_NAME: &'static str = "graph";
 const NODE_COL_NAME: &'static str = "node";
 
+#[derive(Clone)]
 pub struct MongoRepo {
     graph_col: Collection<Graph>,
     node_col: Collection<Node>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct MongoConfig {
+    pub mongo_url: String,
+}
+
+impl DBConfig for MongoConfig {
+    fn connection_string(&self) -> &str {
+        return &self.mongo_url;
+    }
+}
+
 impl MongoRepo {
-    pub async fn new(mongo_url: &str, db_name: &str) -> Result<Self> {
-        let client = Client::with_uri_str(mongo_url).await?;
+    pub async fn new<DBC>(config: DBC, db_name: &str) -> Result<Self>
+    where DBC: DBConfig
+     {
+        let client = Client::with_uri_str(config.connection_string()).await?;
         let database = client.database(db_name);
         let graph_col: Collection<Graph> = database.collection(&GRAPH_COL_NAME);
         let node_col: Collection<Node> = database.collection(&NODE_COL_NAME);
@@ -41,7 +56,8 @@ impl MongoRepo {
     }
 }
 
-impl GraphRepo for MongoRepo {
+impl GraphRepo for MongoRepo
+{
     async fn insert_global_state(&self, state: Graph) -> Result<()> {
         self.graph_col.insert_one(state).await.map(|_| ()).anyhow()
     }
@@ -55,7 +71,8 @@ impl GraphRepo for MongoRepo {
     }
 }
 
-impl NodeRepo for MongoRepo {
+impl NodeRepo for MongoRepo
+{
     async fn insert_node(&self, state: Node) -> Result<()> {
         self.node_col.insert_one(state).await.map(|_| ()).anyhow()
     }
