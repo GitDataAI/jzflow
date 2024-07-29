@@ -2,7 +2,7 @@ use super::{ChannelHandler, Driver, PipelineController, UnitHandler};
 use crate::core::models::DBConfig;
 use crate::core::{models::DbRepo, ComputeUnit};
 use crate::dag::Dag;
-use crate::dbrepo::mongo::{MongoConfig, MongoRepo};
+use crate::dbrepo::mongo::MongoRepo;
 use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use handlebars::Handlebars;
@@ -14,7 +14,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
-use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::Retry;
@@ -149,7 +148,7 @@ where
     reg: Handlebars<'reg>,
     client: Client,
     db_config: DBC,
-    _phantomData: PhantomData<R>
+    _phantom_data: PhantomData<R>
 }
 
 impl<'reg,  R, DBC> KubeDriver<'reg,  R, DBC>
@@ -175,7 +174,7 @@ where
             reg,
             client,
             db_config,
-            _phantomData: PhantomData,
+            _phantom_data: PhantomData,
         })
     }
 
@@ -269,7 +268,7 @@ where
             };
 
             let deployment_string = self.reg.render("deployment", &data_unit_render_args)?;
-            debug!("rendered unit clam string {}", deployment_string);
+            debug!("rendered unit string {}", deployment_string);
 
             let unit_deployment: Deployment = serde_json::from_str(&deployment_string)?;
             let unit_deployment = deployment_api
@@ -364,7 +363,6 @@ mod tests {
 
     use super::*;
     use crate::dbrepo::mongo::{MongoConfig, MongoRepo};
-    use kube::client;
     use tracing_subscriber;
 
     #[tokio::test]
@@ -420,10 +418,10 @@ mod tests {
         let dag = Dag::from_json(json_str).unwrap();
 
         let mongo_cfg = MongoConfig {
-            mongo_url: "".to_string(),
+            mongo_url: "mongodb://localhost:27017".to_string(),
         };
         let client = Client::try_default().await.unwrap();
-        let mut kube_driver = KubeDriver::new(client, mongo_cfg).await.unwrap();
+        let kube_driver= KubeDriver::<MongoRepo, MongoConfig>::new(client, mongo_cfg).await.unwrap();
 
         kube_driver.deploy("ntest", &dag).await.unwrap();
         //    kube_driver.clean("ntest").await.unwrap();

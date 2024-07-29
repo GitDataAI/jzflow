@@ -2,7 +2,7 @@ mod channel_tracker;
 mod mprc;
 mod unit;
 
-use jz_action::dbrepo::mongo::MongoRepo;
+use jz_action::dbrepo::mongo::{MongoConfig, MongoRepo};
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::utils::StdIntoAnyhowResult;
 
@@ -39,7 +39,7 @@ struct Args {
     #[arg(short, long)]
     database: String,
 
-    #[arg(long, default_value = "[::1]:25431")]
+    #[arg(long, default_value = "[::1]:80")]
     host_port: String,
 }
 
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let db_repo = MongoRepo::new(&args.mongo_url, &args.database).await?;
+    let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
     let addr = args.host_port.parse()?;
     let program = ChannelTracker::new(db_repo, &args.node_name);

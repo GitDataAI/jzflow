@@ -1,5 +1,5 @@
 use compute_unit_runner::{ipc, media_data_tracker, unit};
-use jz_action::dbrepo::mongo::MongoRepo;
+use jz_action::dbrepo::mongo::{MongoConfig, MongoRepo};
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::utils::StdIntoAnyhowResult;
 
@@ -43,7 +43,7 @@ struct Args {
     #[arg(short, long, default_value = "/unix_socket/compute_unit_runner_d")]
     unix_socket_addr: String,
 
-    #[arg(long, default_value = "[::1]:25431")]
+    #[arg(long, default_value = "[::1]:80")]
     host_port: String,
 }
 
@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let db_repo = Arc::new(MongoRepo::new(&args.mongo_url, &args.database).await?);
+    let db_repo = Arc::new(MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?);
 
     let program = MediaDataTracker::new(
         db_repo.clone(),

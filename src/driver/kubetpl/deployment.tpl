@@ -27,13 +27,13 @@
             "name": "compute-data-unit",
             "image": "jz-action/compute_unit_runner:latest",
             "command": [
-              "/compute_unit_runner",
+              "/compute_unit_runner"
             ],
             "args":[
-              "--node-name={{{.node.name}}}",
-              "--log-level={{{.log_level}}}",
-              "--mongo-url={{{.mongo_url}}}",
-              "--database={{{.database}}}"
+              "--node-name={{{node.name}}}",
+              "--log-level={{{log_level}}}",
+              "--mongo-url={{{db.mongo_url}}}",
+              "--database={{{db.database}}}"
             ],
             "imagePullPolicy":"IfNotPresent",
             "ports": [
@@ -81,7 +81,7 @@
           {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName":"{{{name}}}-node-claim"
+              "claimName":"{{{node.name}}}-node-claim"
             }
           }
         ]

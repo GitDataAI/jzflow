@@ -2,23 +2,23 @@
   "apiVersion": "apps/v1",
   "kind": "Deployment",
   "metadata": {
-    "name": "{{{name}}}-channel-deployment",
+    "name": "{{{node.name}}}-channel-deployment",
     "id": "{{{id}}}",
     "labels": {
       "exec-type": "channel"
     }
   },
   "spec": {
-    "replicas": {{{channel.spec.replicas}}},
+    "replicas": {{{node.channel.spec.replicas}}},
     "selector": {
       "matchLabels": {
-        "app": "{{{name}}}-channel-pod"
+        "app": "{{{node.name}}}-channel-pod"
       }
     },
     "template": {
       "metadata": {
         "labels": {
-          "app": "{{{name}}}-channel-pod"
+          "app": "{{{node.name}}}-channel-pod"
         }
       },
       "spec": {
@@ -31,10 +31,10 @@
               "/dp_runner"
             ],
             "args":[
-              "--node-name={{{.node.name}}}",
-              "--log-level={{{.log_level}}}",
-              "--mongo-url={{{.mongo_url}}}",
-              "--database={{{.database}}}",
+              "--node-name={{{node.name}}}",
+              "--log-level={{{log_level}}}",
+              "--mongo-url={{{db.mongo_url}}}",
+              "--database={{{db.database}}}"
             ],
             "ports": [
               {
@@ -53,7 +53,7 @@
              {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName":"{{name}}-channel-claim"
+              "claimName":"{{node.name}}-channel-claim"
             }
           }
         ]

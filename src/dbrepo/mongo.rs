@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use mongodb::{bson::doc, options::IndexOptions, Client, Collection, IndexModel};
 use serde::Serialize;
-use std::{marker::PhantomData, ops::Deref, sync::Arc};
+use std::{ ops::Deref, sync::Arc};
 use tracing::error;
 
 const GRAPH_COL_NAME: &'static str = "graph";
@@ -22,6 +22,13 @@ pub struct MongoConfig {
     pub mongo_url: String,
 }
 
+impl MongoConfig {
+    pub fn new(mongo_url: String) -> Self {
+        MongoConfig{
+            mongo_url,
+        }
+    }
+}
 impl DBConfig for MongoConfig {
     fn connection_string(&self) -> &str {
         return &self.mongo_url;
