@@ -36,7 +36,7 @@ pub(crate) struct Graph {
     /// Adjacency list of graph (stored as a vector of vector of indices)
     adj: HashMap<String, Vec<String>>,
     /// Node's in_degree, used for topological sort
-    in_degree: HashMap<String, Vec<String>>,
+     in_degree: HashMap<String, Vec<String>>,
 }
 
 impl Graph {
@@ -150,11 +150,19 @@ impl Graph {
         }
     }
 
-    /// Get the out degree of a node.
+    /// Get the in_comming nodes.
     pub(crate) fn get_in_degree(&self, id: &str) -> usize {
         match self.in_degree.get(id) {
             Some(id) => id.len(),
             None => 0,
+        }
+    }
+
+    /// Get the out degree of a node.
+    pub(crate) fn get_incoming_nodes(&self, id: &str) -> Vec<&str> {
+        match self.in_degree.get(id) {
+            Some(id) => id.iter().map(|v|v.as_str()).collect(),
+            None => vec![],
         }
     }
 

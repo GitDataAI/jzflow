@@ -1,14 +1,14 @@
 {
   "apiVersion": "apps/v1",
-  "kind": "Deployment",
+  "kind": "StatefulSet",
   "metadata": {
-    "name": "{{{node.name}}}-deployment",
-    "id": "{{{id}}}",
+    "name": "{{{node.name}}}-statefulset",
     "labels": {
       "exec-type": "compute-unit"
     }
   },
   "spec": {
+    "serviceName": "{{{node.name}}}-headless-service",
     "replicas": {{{node.spec.replicas}}},
     "selector": {
       "matchLabels": {
@@ -29,13 +29,13 @@
             "command": [
               "/compute_unit_runner"
             ],
-            "args":[
+            "args": [
               "--node-name={{{node.name}}}",
               "--log-level={{{log_level}}}",
               "--mongo-url={{{db.mongo_url}}}",
               "--database={{{db.database}}}"
             ],
-            "imagePullPolicy":"IfNotPresent",
+            "imagePullPolicy": "IfNotPresent",
             "ports": [
               {
                 "containerPort": 80
@@ -81,7 +81,7 @@
           {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName":"{{{node.name}}}-node-claim"
+              "claimName": "{{{node.name}}}-node-claim"
             }
           }
         ]

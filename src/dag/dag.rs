@@ -5,6 +5,7 @@ use anyhow::{anyhow, Ok, Result};
 use std::collections::HashMap;
 
 pub struct Dag {
+    pub raw: String,
     pub name: String,
     nodes: HashMap<String, ComputeUnit>,
     /// Store dependency relations.
@@ -14,6 +15,7 @@ pub struct Dag {
 impl Dag {
     pub fn new() -> Self {
         Dag {
+            raw: String::new(),
             name: String::new(),
             nodes: HashMap::new(),
             rely_graph: Graph::new(),
@@ -41,6 +43,14 @@ impl Dag {
 
         self.rely_graph.add_edge(from, to);
         Ok(self)
+    }
+
+    pub fn get_nodes(&self, node_id: &str)-> Vec<&str> {
+        self.rely_graph.get_incoming_nodes(node_id)
+    }
+
+    pub fn get_incomming_nodes(&self, node_id: &str)-> Vec<&str> {
+        self.rely_graph.get_incoming_nodes(node_id)
     }
 
     // from_json build graph from json string
@@ -73,6 +83,7 @@ impl Dag {
             .collect();
         Ok(Dag {
             name: dag_name.to_string(),
+            raw: json.to_string(),
             nodes: nodes_map,
             rely_graph: rely_graph,
         })

@@ -28,7 +28,6 @@ pub struct Node {
     pub node_name: String,
     pub state: TrackerState,
     pub node_type: NodeType,
-    pub input_output_type: i32,
     pub upstreams: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,

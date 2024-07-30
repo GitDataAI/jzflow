@@ -29,7 +29,7 @@ serde_json = {version = "1.0.117"}
 serde = {version ="1.0.203", features = ["derive"]}
 uuid = {version="1.8.0", features = ["v4","serde"]}
 mongodb = {version="3.0.1"}
-
+chrono = "0.4"
 
 
 [package]
@@ -56,6 +56,7 @@ tonic = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
 mongodb = {workspace = true}
+chrono = {workspace = true}
 
 [build-dependencies]
 tonic-build = "0.12.1"

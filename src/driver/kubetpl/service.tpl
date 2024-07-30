@@ -6,6 +6,7 @@
     "exec-type": "compute-unit"
   },
   "spec": {
+    clusterIP: None,
     "selector": {
       "app": "{{{name}}}-pod"
     },

@@ -1,12 +1,12 @@
 use super::{ChannelHandler, Driver, PipelineController, UnitHandler};
-use crate::core::models::DBConfig;
+use crate::core::models::{DBConfig, Graph, GraphRepo, Node, NodeRepo, NodeType, TrackerState};
 use crate::core::{models::DbRepo, ComputeUnit};
 use crate::dag::Dag;
 use crate::dbrepo::mongo::MongoRepo;
 use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use handlebars::Handlebars;
-use k8s_openapi::api::apps::v1::Deployment;
+use k8s_openapi::api::apps::v1:: StatefulSet;
 use k8s_openapi::api::core::v1::{Namespace, PersistentVolumeClaim, Service};
 use kube::api::{DeleteParams, PostParams};
 use kube::{Api, Client};
@@ -18,11 +18,13 @@ use std::sync::{Arc, Mutex};
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::Retry;
 use tracing::debug;
+use chrono::prelude::*;
+
 pub struct KubeChannelHander<R>
 where
     R: DbRepo,
 {
-    pub deployment: Deployment,
+    pub statefulset: StatefulSet,
     pub claim: PersistentVolumeClaim,
     pub service: Service,
     pub db_repo: R,
@@ -34,7 +36,7 @@ where
 {
     fn new(db_repo: R) -> Self {
         Self {
-            deployment: Default::default(),
+            statefulset: Default::default(),
             claim: PersistentVolumeClaim::default(),
             service: Default::default(),
             db_repo:db_repo
@@ -63,7 +65,7 @@ pub struct KubeHandler<R>
 where
     R: DbRepo,
 {
-    pub deployment: Deployment,
+    pub statefulset: StatefulSet,
     pub claim: PersistentVolumeClaim,
     pub service: Service,
     pub db_repo: R,
@@ -76,7 +78,7 @@ where
 {
     fn new(repo: R) -> Self {
         Self {
-            deployment: Default::default(),
+            statefulset: Default::default(),
             claim: PersistentVolumeClaim::default(),
             service: Default::default(),
             channel: None,
@@ -160,11 +162,11 @@ where
         let mut reg = Handlebars::new();
         reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
 
-        reg.register_template_string("deployment", include_str!("kubetpl/deployment.tpl"))?;
+        reg.register_template_string("statefulset", include_str!("kubetpl/statefulset.tpl"))?;
         reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
         reg.register_template_string(
-            "channel_deployment",
-            include_str!("kubetpl/channel_deployment.tpl"),
+            "channel_statefulset",
+            include_str!("kubetpl/channel_statefulset.tpl"),
         )?;
         reg.register_template_string(
             "channel_service",
@@ -224,7 +226,7 @@ struct ClaimRenderParams {
 }
 
 #[derive(Serialize)]
-struct DataUnitDeploymentRenderParams<'a, DBC>
+struct NodeRenderParams<'a, DBC>
 where
     DBC: Sized + Serialize + Send + Sync + DBConfig +'static,
 {
@@ -244,46 +246,44 @@ where
         Self::ensure_namespace_exit_and_clean(&self.client, run_id).await?;
 
         let repo = MongoRepo::new(self.db_config.clone(), run_id).await?;
-        let deployment_api: Api<Deployment> = Api::namespaced(self.client.clone(), run_id);
+        let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), run_id);
         let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
 
-        //db = name + hash + retry_number
+        // insert global record
+        let cur_tm = Utc::now().timestamp();
+        let graph_record = Graph{
+            graph_json: graph.raw.clone(),
+            created_at: cur_tm,
+            updated_at: cur_tm,
+        };
+        repo.insert_global_state(graph_record).await?;
+
         let mut pipeline_ctl= KubePipelineController::new(repo.clone());
         for node in graph.iter() {
-            let claim_string = self.reg.render(
-                "claim",
-                &ClaimRenderParams {
-                    name: node.name.clone() + "-node-claim",
-                },
-            )?;
-            debug!("rendered clam string {}", claim_string);
-            let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
-            let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
-
-            let data_unit_render_args = DataUnitDeploymentRenderParams {
+            let data_unit_render_args = NodeRenderParams {
                 node,
                 db: self.db_config.clone(),
                 log_level: "debug",
             };
 
-            let deployment_string = self.reg.render("deployment", &data_unit_render_args)?;
-            debug!("rendered unit string {}", deployment_string);
-
-            let unit_deployment: Deployment = serde_json::from_str(&deployment_string)?;
-            let unit_deployment = deployment_api
-                .create(&PostParams::default(), &unit_deployment)
-                .await?;
-
-            let service_string = self.reg.render("service", node)?;
-            debug!("rendered unit service config {}", service_string);
-
-            let unit_service: Service = serde_json::from_str(service_string.as_str())?;
-            let unit_service = service_api
-                .create(&PostParams::default(), &unit_service)
-                .await?;
-
+            // apply channel
             let channel_handler = if node.channel.is_some() {
+                let upstreams = graph.get_incomming_nodes(&node.name).iter().map(|upstream|{
+                    //<pod-name>.<service-name>.<namespace>.svc.cluster.local
+                    format!("{}.{}.{}.svc.cluster.local",)
+                });
+                let channel_record = Node{
+                    node_name: node.name.clone() +"-channel",
+                    state: TrackerState::Init,
+                    node_type: NodeType::Channel,
+                    upstreams: upstreams.iter().map(|v|v.to_string()).collect(),
+                    created_at: cur_tm,
+                    updated_at: cur_tm,
+                };
+
+                repo.insert_node(channel_record).await?;
+
                 let claim_string = self.reg.render(
                     "claim",
                     &ClaimRenderParams {
@@ -294,21 +294,21 @@ where
                 let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
                 let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
 
-                let channel_deployment_string = self
+                let channel_statefulset_string = self
                     .reg
-                    .render("channel_deployment", &data_unit_render_args)?;
+                    .render("channel_statefulset", &data_unit_render_args)?;
                 debug!(
-                    "rendered channel deployment string {}",
-                    channel_deployment_string
+                    "rendered channel statefulset string {}",
+                    channel_statefulset_string
                 );
-                let channel_deployment: Deployment =
-                    serde_json::from_str(channel_deployment_string.as_str())?;
-                let channel_deployment = deployment_api
-                    .create(&PostParams::default(), &channel_deployment)
+                let channel_statefulset: StatefulSet =
+                    serde_json::from_str(channel_statefulset_string.as_str())?;
+                let channel_statefulset = statefulset_api
+                    .create(&PostParams::default(), &channel_statefulset)
                     .await?;
 
                 let channel_service_string = self.reg.render("channel_service", node)?;
-                debug!("rendered channel service string {}", deployment_string);
+                debug!("rendered channel service string {}", channel_service_string);
 
                 let channel_service: Service =
                     serde_json::from_str(channel_service_string.as_str())?;
@@ -317,7 +317,7 @@ where
                     .await?;
                 Some(KubeChannelHander {
                     claim: claim_deployment,
-                    deployment: channel_deployment,
+                    statefulset: channel_statefulset,
                     service: channel_service,
                     db_repo: repo.clone(),
                 })
@@ -325,9 +325,51 @@ where
                 None
             };
 
+
+            // apply nodes
+            let claim_string = self.reg.render(
+                "claim",
+                &ClaimRenderParams {
+                    name: node.name.clone() + "-node-claim",
+                },
+            )?;
+            debug!("rendered clam string {}", claim_string);
+            let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
+            let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
+
+      
+            let statefulset_string = self.reg.render("statefulset", &data_unit_render_args)?;
+            debug!("rendered unit string {}", statefulset_string);
+
+            let unit_statefulset: StatefulSet = serde_json::from_str(&statefulset_string)?;
+            let unit_statefulset = statefulset_api
+                .create(&PostParams::default(), &unit_statefulset)
+                .await?;
+
+            let node_record = Node{
+                node_name: node.name.clone(),
+                state: TrackerState::Init,
+                node_type: NodeType::CoputeUnit,
+                upstreams: upstreams.iter().map(|v|v.to_string()).collect(),
+                created_at: cur_tm,
+                updated_at: cur_tm,
+            };
+
+            repo.insert_node(node_record).await?;
+
+            let service_string = self.reg.render("service", node)?;
+            debug!("rendered unit service config {}", service_string);
+
+            let unit_service: Service = serde_json::from_str(service_string.as_str())?;
+            let unit_service = service_api
+                .create(&PostParams::default(), &unit_service)
+                .await?;
+
+          
+
             let handler = KubeHandler {
                 claim: claim_deployment,
-                deployment: unit_deployment,
+                statefulset: unit_statefulset,
                 service: unit_service,
                 channel: channel_handler,
                 db_repo: repo.clone(),
