@@ -33,7 +33,7 @@
               "--node-name={{{node.name}}}",
               "--log-level={{{log_level}}}",
               "--mongo-url={{{db.mongo_url}}}",
-              "--database={{{db.database}}}"
+              "--database={{{run_id}}}"
             ],
             "imagePullPolicy": "IfNotPresent",
             "ports": [

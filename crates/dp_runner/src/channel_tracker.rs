@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time;
 use tokio_stream::StreamExt;
 use tonic::Status;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::mprc;
 pub struct ChannelTracker<R>
@@ -45,21 +45,26 @@ where
 
         let (tx, mut rx) = mpsc::channel(1024);
         for upstream in self.upstreams.as_ref().unwrap() {
-            let upstream_clone = upstream.clone();
+            let upstream = upstream.clone();
             let tx_clone = tx.clone();
             let _ = tokio::spawn(async move {
-                let mut client = DataStreamClient::connect(upstream_clone).await?;
+                info!("connect upstream {}", upstream.clone());
+                let mut client = DataStreamClient::connect(upstream.clone()).await?;
+                info!("subscribe {}", upstream.clone());
                 let mut stream = client.subscribe_media_data(Empty {}).await?.into_inner();
-
-                while let Some(item) = stream.next().await {
-                    tx_clone.send(item.unwrap()).await.unwrap();
+                info!("start to listen new data from upstream {}", upstream.clone());
+                while let Some(resp) = stream.next().await {
+                    debug!("receive a data and send to channel");
+                    //TODO need to confirm item why can be ERR
+                    match resp {
+                        std::result::Result::Ok(resp) => tx_clone.send(resp).await.unwrap(),
+                        Err(err) => error!("receive a error from stream {err}"),
+                    }
                 }
 
                 error!("unable read data from stream");
                 Ok(())
             });
-
-            info!("listen data from upstream {}", upstream);
         }
 
         let receivers = self.receivers.clone();
@@ -67,13 +72,20 @@ where
             loop {
                 select! {
                  data_batch = rx.recv() => {
-                    let sender = {
-                         let mut guard = receivers.lock().await;
-                         guard.get_random().unwrap().clone()
-                    };
+                    if let Some(data_batch) = data_batch {
+                        let (dest, sender) = {
+                            let mut guard = receivers.lock().await;
+                            if guard.count() == 0 {
+                                debug!("receive a data but no sendable nodes");
+                                continue;
+                            }
+                            guard.get_random().unwrap().clone()
+                       };
 
-                    if let Err(e) = sender.send(std::result::Result::Ok(data_batch.unwrap())).await{
-                        error!("unable send data to downstream {e}");
+                       debug!("select destination {dest}, and send data to this node");
+                       if let Err(e) = sender.send(std::result::Result::Ok(data_batch)).await{
+                           error!("unable send data to downstream {e}");
+                       }
                     }
                  },
                 }
@@ -91,14 +103,16 @@ where
         loop {
             interval.tick().await;
             let record = repo
-                .get_node_by_name(name)
+                .get_node_by_name(&(name.to_owned()))
                 .await
                 .expect("record has inserted in controller or network error");
+            debug!("{} fetch state from db", record.node_name);
             match record.state {
                 TrackerState::Ready => {
                     let mut program_guard = program.lock().await;
 
                     if matches!(program_guard.local_state, TrackerState::Init) {
+                        info!("set to ready state {:?}", record.upstreams);
                         //start
                         program_guard.local_state = TrackerState::Ready;
                         program_guard.upstreams = Some(record.upstreams);

@@ -31,6 +31,10 @@ where
         None
     }
 
+    pub(crate) fn count(&self) -> usize {
+        self.entries.len()
+    }
+
     pub(crate) fn iter(&mut self) -> impl Iterator<Item = &(K, T)> {
         self.entries.iter()
     }
@@ -45,7 +49,7 @@ where
         ret
     }
 
-    pub(crate) fn get_random(&mut self) -> Option<&T>
+    pub(crate) fn get_random(&mut self) -> Option<&(K, T)>
     where
         K: Hash + Eq,
     {
@@ -55,7 +59,7 @@ where
         }
         let mut rng = rand::thread_rng();
         let rand_one = rng.gen_range(0..count);
-        Some(&self.entries[rand_one].1)
+        Some(&self.entries[rand_one])
     }
 }
 
@@ -114,7 +118,7 @@ mod tests {
 
         for _ in 0..10 {
             if let Some(sender) = mprs.get_random() {
-                sender.try_send(12).unwrap();
+                sender.1.try_send(12).unwrap();
             }
         }
 

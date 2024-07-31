@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
+use tracing::info;
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -49,6 +50,7 @@ async fn process_data_request<R>(
 where
     R: NodeRepo,
 {
+    info!("receive avaiable data reqeust");
     let (tx, mut rx) = oneshot::channel::<AvaiableDataResponse>();
     let program = program_mutex.lock().await;
     program
@@ -72,6 +74,7 @@ async fn process_completed_request<R>(
 where
     R: NodeRepo,
 {
+    info!("receive data completed request");
     let (tx, mut rx) = oneshot::channel::<()>();
     let program = program_mutex.lock().await;
     //read request
@@ -98,6 +101,7 @@ async fn process_submit_output_request<R>(
 where
     R: NodeRepo,
 {
+    info!("receive submit output request");
     let (tx, mut rx) = oneshot::channel::<()>();
     let program = program_mutex.lock().await;
     //read request

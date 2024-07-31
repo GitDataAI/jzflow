@@ -2,18 +2,16 @@
   "apiVersion": "v1",
   "kind": "Service",
   "metadata": {
-    "name": "{{{name}}}-service",
+    "name": "{{{name}}}-headless-service",
     "exec-type": "compute-unit"
   },
   "spec": {
-    clusterIP: None,
+    "clusterIP": "None",
     "selector": {
       "app": "{{{name}}}-pod"
     },
     "ports": [
       {
-        "name": "http",
-        "protocol": "TCP",
         "port": 80,
         "targetPort": 80
       }

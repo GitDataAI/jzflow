@@ -45,11 +45,11 @@ impl Dag {
         Ok(self)
     }
 
-    pub fn get_nodes(&self, node_id: &str)-> Vec<&str> {
-        self.rely_graph.get_incoming_nodes(node_id)
+    pub fn get_node(&self, node_id: &str) -> Option<&ComputeUnit> {
+        self.nodes.get(node_id)
     }
 
-    pub fn get_incomming_nodes(&self, node_id: &str)-> Vec<&str> {
+    pub fn get_incomming_nodes(&self, node_id: &str) -> Vec<&str> {
         self.rely_graph.get_incoming_nodes(node_id)
     }
 

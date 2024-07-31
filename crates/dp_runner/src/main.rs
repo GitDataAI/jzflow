@@ -1,6 +1,6 @@
 mod channel_tracker;
 mod mprc;
-mod unit;
+mod stream;
 
 use jz_action::dbrepo::mongo::{MongoConfig, MongoRepo};
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
@@ -11,13 +11,13 @@ use channel_tracker::ChannelTracker;
 use clap::Parser;
 use std::str::FromStr;
 use std::sync::Arc;
+use stream::ChannelDataStream;
 use tokio::select;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tonic::transport::Server;
 use tracing::{info, Level};
-use unit::UnitDataStream;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -39,7 +39,7 @@ struct Args {
     #[arg(short, long)]
     database: String,
 
-    #[arg(long, default_value = "[::1]:80")]
+    #[arg(long, default_value = "0.0.0.0:80")]
     host_port: String,
 }
 
@@ -51,21 +51,38 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
+    let db_repo =
+        Arc::new(MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?);
 
     let addr = args.host_port.parse()?;
-    let program = ChannelTracker::new(db_repo, &args.node_name);
+    let program = ChannelTracker::new(db_repo.clone(), &args.node_name);
     let program_safe = Arc::new(Mutex::new(program));
 
-    let data_stream = UnitDataStream {
-        program: program_safe,
-    };
-
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
+    {
+        let shutdown_tx = shutdown_tx.clone();
+        let program_safe = program_safe.clone();
+        let node_name = args.node_name.clone();
+        let _ = tokio::spawn(async move {
+            if let Err(err) =
+                ChannelTracker::<Arc<MongoRepo>>::apply_db_state(db_repo, &node_name, program_safe)
+                    .await
+            {
+                let _ = shutdown_tx
+                    .send(Err(anyhow!("start data controller {err}")))
+                    .await;
+            }
+        });
+    }
+
     {
         //listen port
         let shutdown_tx_arc = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
+            let data_stream = ChannelDataStream {
+                program: program_safe,
+            };
+
             if let Err(e) = Server::builder()
                 .add_service(DataStreamServer::new(data_stream))
                 .serve(addr)

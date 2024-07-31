@@ -3,10 +3,9 @@ use crate::{
     utils::StdIntoAnyhowResult,
 };
 use anyhow::{anyhow, Result};
-use mongodb::{bson::doc, options::IndexOptions, Client, Collection, IndexModel};
+use mongodb::{bson::doc, error::ErrorKind, options::IndexOptions, Client, Collection, IndexModel};
 use serde::Serialize;
-use std::{ ops::Deref, sync::Arc};
-use tracing::error;
+use std::{ops::Deref, sync::Arc};
 
 const GRAPH_COL_NAME: &'static str = "graph";
 const NODE_COL_NAME: &'static str = "node";
@@ -24,11 +23,10 @@ pub struct MongoConfig {
 
 impl MongoConfig {
     pub fn new(mongo_url: String) -> Self {
-        MongoConfig{
-            mongo_url,
-        }
+        MongoConfig { mongo_url }
     }
 }
+
 impl DBConfig for MongoConfig {
     fn connection_string(&self) -> &str {
         return &self.mongo_url;
@@ -37,23 +35,32 @@ impl DBConfig for MongoConfig {
 
 impl MongoRepo {
     pub async fn new<DBC>(config: DBC, db_name: &str) -> Result<Self>
-    where DBC: DBConfig
-     {
+    where
+        DBC: DBConfig,
+    {
         let client = Client::with_uri_str(config.connection_string()).await?;
         let database = client.database(db_name);
         let graph_col: Collection<Graph> = database.collection(&GRAPH_COL_NAME);
         let node_col: Collection<Node> = database.collection(&NODE_COL_NAME);
 
         //create index
-        let idx_opts = IndexOptions::builder().unique(true).build();
+        let idx_opts = IndexOptions::builder()
+            .unique(true)
+            .name("idx_node_name_unique".to_owned())
+            .build();
 
         let index = IndexModel::builder()
-            .keys(doc! { "name": 1 })
+            .keys(doc! { "node_name": 1 })
             .options(idx_opts)
             .build();
 
         if let Err(e) = node_col.create_index(index).await {
-            error!("write index {e}");
+            match *e.kind {
+                ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
+                e => {
+                    return Err(anyhow!("create index error {}", e));
+                }
+            }
         }
 
         Ok(MongoRepo {
@@ -63,8 +70,7 @@ impl MongoRepo {
     }
 }
 
-impl GraphRepo for MongoRepo
-{
+impl GraphRepo for MongoRepo {
     async fn insert_global_state(&self, state: Graph) -> Result<()> {
         self.graph_col.insert_one(state).await.map(|_| ()).anyhow()
     }
@@ -78,14 +84,13 @@ impl GraphRepo for MongoRepo
     }
 }
 
-impl NodeRepo for MongoRepo
-{
+impl NodeRepo for MongoRepo {
     async fn insert_node(&self, state: Node) -> Result<()> {
         self.node_col.insert_one(state).await.map(|_| ()).anyhow()
     }
 
     async fn get_node_by_name(&self, name: &str) -> Result<Node> {
-        match self.node_col.find_one(doc! {name:name}).await {
+        match self.node_col.find_one(doc! {"node_name":name}).await {
             Ok(None) => Err(anyhow!("node not exit")),
             Ok(Some(val)) => Ok(val),
             Err(e) => Err(e.into()),

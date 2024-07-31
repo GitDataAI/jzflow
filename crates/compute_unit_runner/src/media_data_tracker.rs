@@ -4,14 +4,14 @@ use jz_action::core::models::{NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, MediaDataCell};
-use jz_action::network::nodecontroller::NodeType;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
+use jz_action::utils::StdIntoAnyhowResult;
 use tokio::fs;
 use tokio::select;
 use tokio::sync::mpsc;
@@ -19,8 +19,6 @@ use tokio::sync::Mutex;
 use tokio::sync::{broadcast, oneshot};
 use tokio::time;
 use tokio_stream::StreamExt;
-
-use jz_action::utils::StdIntoAnyhowResult;
 
 #[derive(Debug, PartialEq)]
 pub enum DataStateEnum {
@@ -46,8 +44,6 @@ where
     pub(crate) _repo: R,
 
     pub(crate) local_state: TrackerState,
-
-    pub(crate) node_type: NodeType,
 
     pub(crate) upstreams: Option<Vec<String>>,
 
@@ -77,7 +73,6 @@ where
             tmp_store,
             _name: name.to_string(),
             _repo: repo,
-            node_type: NodeType::Input,
             local_state: TrackerState::Init,
             upstreams: None,
             ipc_process_submit_output_tx: None,
@@ -101,8 +96,8 @@ where
             mpsc::channel(1024);
         self.ipc_process_completed_data_tx = Some(ipc_process_completed_data_tx);
 
-        if let Some(upstreams) = self.upstreams {
-            info!("Start listen upstream {} ....", upstream);
+        if let Some(upstreams) = self.upstreams.as_ref() {
+            info!("Start listen upstream {:?} ....", upstreams);
             for upstream in upstreams {
                 {
                     let upstream = upstream.clone();
@@ -111,19 +106,21 @@ where
                         //todo handle network disconnect
                         let mut client = DataStreamClient::connect(upstream.clone()).await?;
                         let mut stream = client.subscribe_media_data(Empty {}).await?.into_inner();
-    
-                        while let Some(item) = stream.next().await {
-                            tx_clone.send(item.unwrap()).await.unwrap();
+                        info!("start to listen new data from upstream {}", upstream);
+                        while let Some(resp) = stream.next().await {
+                            //TODO need to confirm item why can be ERR
+                            match resp {
+                                Ok(resp) => tx_clone.send(resp).await.unwrap(),
+                                Err(err) => error!("receive a error from stream {err}"),
+                            }
                         }
-    
+
                         error!("unable read data from stream");
                         anyhow::Ok(())
                     });
                 }
-                info!("listen incoming data from upstream {}", upstream);
             }
         }
-
 
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
@@ -251,15 +248,15 @@ where
                 .get_node_by_name(name)
                 .await
                 .expect("record has inserted in controller or network error");
+            debug!("{} fetch state from db", record.node_name);
             match record.state {
                 TrackerState::Ready => {
                     let mut program_guard = program.lock().await;
 
                     if matches!(program_guard.local_state, TrackerState::Init) {
                         //start
+                        info!("set to ready state {:?}", record.upstreams);
                         program_guard.local_state = TrackerState::Ready;
-                        program_guard.node_type =
-                            NodeType::try_from(record.input_output_type).anyhow()?;
                         program_guard.upstreams = Some(record.upstreams);
                         program_guard.process_data_cmd().await?;
                     }

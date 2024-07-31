@@ -5,8 +5,9 @@ use crate::dag::Dag;
 use crate::dbrepo::mongo::MongoRepo;
 use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Result};
+use chrono::prelude::*;
 use handlebars::Handlebars;
-use k8s_openapi::api::apps::v1:: StatefulSet;
+use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{Namespace, PersistentVolumeClaim, Service};
 use kube::api::{DeleteParams, PostParams};
 use kube::{Api, Client};
@@ -18,7 +19,6 @@ use std::sync::{Arc, Mutex};
 use tokio_retry::strategy::ExponentialBackoff;
 use tokio_retry::Retry;
 use tracing::debug;
-use chrono::prelude::*;
 
 pub struct KubeChannelHander<R>
 where
@@ -39,7 +39,7 @@ where
             statefulset: Default::default(),
             claim: PersistentVolumeClaim::default(),
             service: Default::default(),
-            db_repo:db_repo
+            db_repo: db_repo,
         }
     }
 }
@@ -109,15 +109,15 @@ where
     }
 }
 
-pub struct KubePipelineController< R>
+pub struct KubePipelineController<R>
 where
     R: DbRepo,
 {
     pub db_repo: R,
-    handlers: HashMap<String, KubeHandler< R>>,
+    handlers: HashMap<String, KubeHandler<R>>,
 }
 
-impl<R> KubePipelineController< R>
+impl<R> KubePipelineController<R>
 where
     R: DbRepo,
 {
@@ -129,7 +129,7 @@ where
     }
 }
 
-impl<R> PipelineController for KubePipelineController< R>
+impl<R> PipelineController for KubePipelineController<R>
 where
     R: DbRepo,
 {
@@ -145,20 +145,20 @@ where
 pub struct KubeDriver<'reg, R, DBC>
 where
     R: DbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig+'static,
+    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     reg: Handlebars<'reg>,
     client: Client,
     db_config: DBC,
-    _phantom_data: PhantomData<R>
+    _phantom_data: PhantomData<R>,
 }
 
-impl<'reg,  R, DBC> KubeDriver<'reg,  R, DBC>
+impl<'reg, R, DBC> KubeDriver<'reg, R, DBC>
 where
     R: DbRepo,
     DBC: Clone + Serialize + Send + Sync + DBConfig,
 {
-    pub async fn new(client: Client, db_config: DBC) -> Result<KubeDriver<'reg,  R, DBC>> {
+    pub async fn new(client: Client, db_config: DBC) -> Result<KubeDriver<'reg, R, DBC>> {
         let mut reg = Handlebars::new();
         reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
 
@@ -228,21 +228,21 @@ struct ClaimRenderParams {
 #[derive(Serialize)]
 struct NodeRenderParams<'a, DBC>
 where
-    DBC: Sized + Serialize + Send + Sync + DBConfig +'static,
+    DBC: Sized + Serialize + Send + Sync + DBConfig + 'static,
 {
     node: &'a ComputeUnit,
     log_level: &'a str,
     db: DBC,
+    run_id: &'a str,
 }
 
-impl<R, DBC> Driver for KubeDriver<'_,  R, DBC>
+impl<R, DBC> Driver for KubeDriver<'_, R, DBC>
 where
     R: DbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig+'static,
+    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     #[allow(refining_impl_trait)]
-    async fn deploy(&self, run_id: &str, graph: &Dag) -> Result<KubePipelineController<MongoRepo>>
-    {
+    async fn deploy(&self, run_id: &str, graph: &Dag) -> Result<KubePipelineController<MongoRepo>> {
         Self::ensure_namespace_exit_and_clean(&self.client, run_id).await?;
 
         let repo = MongoRepo::new(self.db_config.clone(), run_id).await?;
@@ -252,36 +252,52 @@ where
 
         // insert global record
         let cur_tm = Utc::now().timestamp();
-        let graph_record = Graph{
+        let graph_record = Graph {
             graph_json: graph.raw.clone(),
             created_at: cur_tm,
             updated_at: cur_tm,
         };
         repo.insert_global_state(graph_record).await?;
 
-        let mut pipeline_ctl= KubePipelineController::new(repo.clone());
+        let mut pipeline_ctl = KubePipelineController::new(repo.clone());
         for node in graph.iter() {
             let data_unit_render_args = NodeRenderParams {
                 node,
                 db: self.db_config.clone(),
                 log_level: "debug",
+                run_id,
             };
-
+            let upstreams = graph.get_incomming_nodes(&node.name);
             // apply channel
-            let channel_handler = if node.channel.is_some() {
-                let upstreams = graph.get_incomming_nodes(&node.name).iter().map(|upstream|{
-                    //<pod-name>.<service-name>.<namespace>.svc.cluster.local
-                    format!("{}.{}.{}.svc.cluster.local",)
-                });
-                let channel_record = Node{
-                    node_name: node.name.clone() +"-channel",
+            let channel_handler = if upstreams.len() > 0 {
+                //channel node receive upstreams from upstream nodes
+                let upstreams = upstreams
+                    .iter()
+                    .map(|node_name| {
+                        graph
+                            .get_node(node_name)
+                            .expect("node added already before")
+                    })
+                    .map(|node| {
+                        //<pod-name>.<service-name>.<namespace>.svc.cluster.local
+                        (0..node.spec.replicas).map(|seq| {
+                            format!(
+                                "http://{}-statefulset-{}.{}-headless-service.{}.svc.cluster.local:80",
+                                node.name, seq, node.name, run_id
+                            )
+                        })
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                let channel_record = Node {
+                    node_name: node.name.clone() + "-channel",
                     state: TrackerState::Init,
                     node_type: NodeType::Channel,
-                    upstreams: upstreams.iter().map(|v|v.to_string()).collect(),
+                    upstreams: upstreams,
                     created_at: cur_tm,
                     updated_at: cur_tm,
                 };
-
                 repo.insert_node(channel_record).await?;
 
                 let claim_string = self.reg.render(
@@ -325,7 +341,6 @@ where
                 None
             };
 
-
             // apply nodes
             let claim_string = self.reg.render(
                 "claim",
@@ -337,7 +352,6 @@ where
             let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
             let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
 
-      
             let statefulset_string = self.reg.render("statefulset", &data_unit_render_args)?;
             debug!("rendered unit string {}", statefulset_string);
 
@@ -346,11 +360,23 @@ where
                 .create(&PostParams::default(), &unit_statefulset)
                 .await?;
 
-            let node_record = Node{
+            // compute unit only receive data from channel
+            let channel_streams = channel_handler
+                .is_some()
+                .then(|| {
+                    vec![format!(
+                        "http://{}-channel-statefulset-0.{}-channel-headless-service.{}.svc.cluster.local:80",
+                        node.name, node.name, run_id
+                    )]
+                })
+                .unwrap_or_else(|| vec![]);
+
+            debug!("{}'s upstreams {:?}", node.name, upstreams);
+            let node_record = Node {
                 node_name: node.name.clone(),
                 state: TrackerState::Init,
                 node_type: NodeType::CoputeUnit,
-                upstreams: upstreams.iter().map(|v|v.to_string()).collect(),
+                upstreams: channel_streams,
                 created_at: cur_tm,
                 updated_at: cur_tm,
             };
@@ -364,8 +390,6 @@ where
             let unit_service = service_api
                 .create(&PostParams::default(), &unit_service)
                 .await?;
-
-          
 
             let handler = KubeHandler {
                 claim: claim_deployment,
@@ -405,39 +429,28 @@ mod tests {
 
     use super::*;
     use crate::dbrepo::mongo::{MongoConfig, MongoRepo};
+    use mongodb::Client as MongoClient;
     use tracing_subscriber;
-
     #[tokio::test]
     async fn test_render() {
         env::set_var("RUST_LOG", "DEBUG");
         tracing_subscriber::fmt::init();
-
+//computeunit1-statefulset-0.computeunit1-headless-service.ntest.svc.cluster.local
+//computeunit1-statefulset-0.computeunit1-headless-service.ntest.svc.cluster.local
         let json_str = r#"
         {
           "name": "example",
           "version": "v1",
           "dag": [
-            {
+           {
               "name": "computeunit1",
-              "dependency": [
-                
-              ],
+              "dependency": [],
               "spec": {
                 "cmd": [
                   "ls"
                 ],
                 "image": "ubuntu:22.04",
                 "replicas":1
-              },
-              "channel": {
-                "spec": {
-                  "cmd": [
-                    "bufsize",
-                    "1024"
-                  ],
-                  "image": "ubuntu:22.04",
-                  "replicas":1
-                }
               }
             },
             {
@@ -452,6 +465,13 @@ mod tests {
                 ],
                 "replicas":1,
                 "image": "ubuntu:22.04"
+              },
+              "channel": {
+                "spec": {
+                  "image": "ubuntu:22.04",
+                  "cmd":[],
+                  "replicas":1
+                }
               }
             }
           ]
@@ -460,10 +480,18 @@ mod tests {
         let dag = Dag::from_json(json_str).unwrap();
 
         let mongo_cfg = MongoConfig {
-            mongo_url: "mongodb://localhost:27017".to_string(),
+            mongo_url: "mongodb://192.168.3.163:27017".to_string(),
         };
+
+        let client = MongoClient::with_uri_str(mongo_cfg.connection_string())
+            .await
+            .unwrap();
+        client.database("ntest").drop().await.unwrap();
+
         let client = Client::try_default().await.unwrap();
-        let kube_driver= KubeDriver::<MongoRepo, MongoConfig>::new(client, mongo_cfg).await.unwrap();
+        let kube_driver = KubeDriver::<MongoRepo, MongoConfig>::new(client, mongo_cfg)
+            .await
+            .unwrap();
 
         kube_driver.deploy("ntest", &dag).await.unwrap();
         //    kube_driver.clean("ntest").await.unwrap();

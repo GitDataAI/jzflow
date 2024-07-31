@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM jz-action/net-debug
 
 RUN mkdir -p /app
 
