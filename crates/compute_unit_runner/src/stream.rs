@@ -1,5 +1,5 @@
 use anyhow::Result;
-use jz_action::core::models::NodeRepo;
+use jz_action::core::models::DbRepo;
 use jz_action::network::datatransfer::data_stream_server::DataStream;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
 use jz_action::utils::AnyhowToGrpc;
@@ -17,7 +17,7 @@ use super::media_data_tracker::MediaDataTracker;
 
 pub struct UnitDataStream<R>
 where
-    R: NodeRepo + Send + Sync + 'static,
+    R: DbRepo + Clone+ Send + Sync + 'static,
 {
     pub program: Arc<Mutex<MediaDataTracker<R>>>,
     _phantom: PhantomData<R>,
@@ -25,7 +25,7 @@ where
 
 impl<R> UnitDataStream<R>
 where
-    R: NodeRepo + Send + Sync + 'static,
+    R: DbRepo + Clone+ Send + Sync + 'static,
 {
     pub fn new(program: Arc<Mutex<MediaDataTracker<R>>>) -> Self {
         UnitDataStream {
@@ -38,7 +38,7 @@ where
 #[tonic::async_trait]
 impl<R> DataStream for UnitDataStream<R>
 where
-    R: NodeRepo + Send + Sync + 'static,
+    R: DbRepo + Clone+ Send + Sync + 'static,
 {
     type subscribeMediaDataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
     async fn subscribe_media_data(

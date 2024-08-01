@@ -310,6 +310,16 @@ where
             };
             let upstreams = graph.get_incomming_nodes(&node.name);
             let downstreams = graph.get_outgoing_nodes(&node.name);
+
+            let claim_string = self.reg.render(
+                "claim",
+                &ClaimRenderParams {
+                    name: node.name.clone() + "-claim",
+                },
+            )?;
+            debug!("rendered channel claim string {}", claim_string);
+            let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
+            let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
             // apply channel
             let channel_handler = if upstreams.len() > 0 {
                 //if node have no upstream node, no need to create channel points
@@ -352,17 +362,7 @@ where
                     updated_at: cur_tm,
                 };
                 repo.insert_node(channel_record).await?;
-
-                let claim_string = self.reg.render(
-                    "claim",
-                    &ClaimRenderParams {
-                        name: node.name.clone() + "-channel-claim",
-                    },
-                )?;
-                debug!("rendered channel claim string {}", claim_string);
-                let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
-                let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
-
+                
                 let channel_statefulset_string = self
                     .reg
                     .render("channel_statefulset", &data_unit_render_args)?;
@@ -386,7 +386,7 @@ where
                     .create(&PostParams::default(), &channel_service)
                     .await?;
                 Some(KubeChannelHander {
-                    claim: claim_deployment,
+                    claim: claim_deployment.clone() ,
                     statefulset: channel_statefulset,
                     service: channel_service,
                     db_repo: repo.clone(),
@@ -396,16 +396,6 @@ where
             };
 
             // apply nodes
-            let claim_string = self.reg.render(
-                "claim",
-                &ClaimRenderParams {
-                    name: node.name.clone() + "-node-claim",
-                },
-            )?;
-            debug!("rendered clam string {}", claim_string);
-            let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
-            let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
-
             let statefulset_string = self.reg.render("statefulset", &data_unit_render_args)?;
             debug!("rendered unit string {}", statefulset_string);
 
@@ -415,18 +405,10 @@ where
                 .await?;
 
             // compute unit only receive data from channel
-            let channel_streams = channel_handler
-                .is_some()
-                .then(|| {
-                    (0..node.channel.as_ref().map(|dp|dp.spec.replicas).unwrap_or(1)).map(|seq| {
-                        format!(
-                          "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
-                            node.name, seq, node.name, run_id
-                        )
-                    }).collect::<Vec<_>>()
-                })
-                .unwrap_or_else(|| vec![]);
-
+            let channel_stream = format!(
+                "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
+                  node.name, 0, node.name, run_id
+              );
             let outgoing_node_streams = downstreams
                     .iter()
                     .map(|node_name| {
@@ -436,21 +418,19 @@ where
                     })
                     .map(|node| {
                         //<pod-name>.<service-name>.<namespace>.svc.cluster.local
-                        (0..node.channel.as_ref().map(|dp|dp.spec.replicas).unwrap_or(1)).map(|seq| {
-                            format!(
-                                "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
-                                node.name, seq, node.name, run_id
-                            )
-                        })
+                        format!(
+                            "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
+                            node.name, 0, node.name, run_id
+                        )
                     })
-                    .flatten()
+       
                     .collect::<Vec<_>>();
             debug!("{}'s upstreams {:?}", node.name, upstreams);
             let node_record = Node {
                 node_name: node.name.clone(),
                 state: TrackerState::Init,
                 node_type: NodeType::CoputeUnit,
-                upstreams: channel_streams,
+                upstreams: vec![channel_stream],
                 downstreams: outgoing_node_streams,
                 created_at: cur_tm,
                 updated_at: cur_tm,
@@ -534,13 +514,6 @@ mod tests {
                 "image": "jz-action/dummy_out:latest",
                 "cmd": ["/dummy_out", "--log-level=debug"],
                 "replicas":1
-              },
-              "channel": {
-                "spec": {
-                  "image": "",
-                  "cmd":[],
-                  "replicas":1
-                }
               }
             }
           ]

@@ -10,7 +10,7 @@
   },
   "spec": {
     "serviceName": "{{{node.name}}}-channel-headless-service",
-    "replicas": {{{node.channel.spec.replicas}}},
+    "replicas": 1,
     "selector": {
       "matchLabels": {
         "app": "{{{node.name}}}-channel-pod"

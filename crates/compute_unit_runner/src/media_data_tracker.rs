@@ -1,6 +1,6 @@
 use crate::ipc::{AvaiableDataResponse, CompleteDataReq, SubmitOuputDataReq};
 use anyhow::Result;
-use jz_action::core::models::{NodeRepo, TrackerState};
+use jz_action::core::models::{DataRecord, DataRepo, DataState, DbRepo, Direction, NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, MediaDataCell};
@@ -36,13 +36,13 @@ pub struct BatchState {
 
 pub struct MediaDataTracker<R>
 where
-    R: NodeRepo,
+    R: DbRepo
 {
-    pub(crate) _name: String,
+    pub(crate) name: String,
 
     pub(crate) tmp_store: PathBuf,
 
-    pub(crate) _repo: R,
+    pub(crate) repo: R,
 
     pub(crate) local_state: TrackerState,
 
@@ -67,15 +67,15 @@ where
 
 impl<R> MediaDataTracker<R>
 where
-    R: NodeRepo,
+    R: DbRepo
 {
     pub fn new(repo: R, name: &str, tmp_store: PathBuf) -> Self {
         let out_going_tx = broadcast::Sender::new(128);
 
         MediaDataTracker {
             tmp_store,
-            _name: name.to_string(),
-            _repo: repo,
+            name: name.to_string(),
+            repo: repo,
             local_state: TrackerState::Init,
             upstreams: vec![],
             downstreams: vec![],
@@ -88,12 +88,12 @@ where
 
     /// data was transfer from data container -> user container -> data container
     pub(crate) async fn process_data_cmd(&mut self) -> Result<()> {
-        let (incoming_data_tx, mut incoming_data_rx) = mpsc::channel(1024);
+        let (incoming_data_tx, mut incoming_data_rx) = mpsc::channel(1);
 
-        let (ipc_process_data_req_tx, mut ipc_process_data_req_rx) = mpsc::channel(1024);
+        let (ipc_process_data_req_tx, mut ipc_process_data_req_rx) = mpsc::channel(1);
         self.ipc_process_data_req_tx = Some(ipc_process_data_req_tx);
 
-        let (ipc_process_submit_result_tx, mut ipc_process_submit_result_rx) = mpsc::channel(1024);
+        let (ipc_process_submit_result_tx, mut ipc_process_submit_result_rx) = mpsc::channel(1);
         self.ipc_process_submit_output_tx = Some(ipc_process_submit_result_tx);
 
         let (ipc_process_completed_data_tx, mut ipc_process_completed_data_rx) =
@@ -122,7 +122,10 @@ where
                                         while let Some(resp) = stream.next().await {
                                             //TODO need to confirm item why can be ERR
                                             match resp {
-                                                Ok(resp) => tx_clone.send(resp).await.unwrap(),
+                                                Ok(resp) => {
+                                                    tx_clone.send(resp).await.unwrap();
+                                                    //TODO wait for result
+                                                },
                                                 Err(err) => {
                                                     error!("receive a error from stream {err}");
                                                     break;
@@ -152,6 +155,9 @@ where
         let tmp_store = self.tmp_store.clone();
         let mut state_map: HashMap<String, BatchState> = HashMap::new();
         let downstreams = self.downstreams.clone(); //make dynamic downstreams?
+        let db_repo = self.repo.clone();
+        let node_name = self.name.clone();
+
         tokio::spawn(async move {
             loop {
                 select! {
@@ -176,9 +182,6 @@ where
                                 error!("write file {:?} fail {}", entry_path, e);
                             }
                         }
-                        state_map.insert(id, BatchState{
-                            state: DataStateEnum::Received,
-                        });
                     }
                  },
                  Some((_, resp)) = ipc_process_data_req_rx.recv() => {
@@ -288,6 +291,17 @@ where
         program: Arc<Mutex<MediaDataTracker<R>>>,
     ) -> Result<()> {
         let mut interval = time::interval(time::Duration::from_secs(10));
+        let x = repo.clone();
+/*
+        tokio::spawn(async move  {
+            let _record = x
+            .get_node_by_name("")
+            .await
+            .expect("record has inserted in controller or network error");
+        });
+*/
+
+
         loop {
             interval.tick().await;
             let record = repo
@@ -314,6 +328,5 @@ where
                 _ => {}
             }
         }
-        Ok(())
     }
 }

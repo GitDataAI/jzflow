@@ -14,8 +14,6 @@ pub struct ComputeUnit {
 
     pub spec: MachineSpec,
 
-    pub channel: Option<DataPoint>,
-
     pub(crate) dependency: Vec<String>,
 }
 
@@ -36,14 +34,6 @@ mod tests {
             "ls"
           ],
           "image": ""
-        },
-        "channel": {
-          "spec": {
-            "cmd": [
-              "ls"
-            ],
-            "image": ""
-          }
         }
       }
               "#

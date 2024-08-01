@@ -15,7 +15,6 @@ message MediaDataCell {
   bytes data = 3;
 }
 
-
 message MediaDataBatchResponse {
     uint32 size = 1;
     repeated MediaDataCell cells = 2;
