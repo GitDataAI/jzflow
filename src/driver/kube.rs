@@ -362,7 +362,7 @@ where
                     updated_at: cur_tm,
                 };
                 repo.insert_node(channel_record).await?;
-                
+
                 let channel_statefulset_string = self
                     .reg
                     .render("channel_statefulset", &data_unit_render_args)?;
@@ -386,7 +386,7 @@ where
                     .create(&PostParams::default(), &channel_service)
                     .await?;
                 Some(KubeChannelHander {
-                    claim: claim_deployment.clone() ,
+                    claim: claim_deployment.clone(),
                     statefulset: channel_statefulset,
                     service: channel_service,
                     db_repo: repo.clone(),
@@ -423,7 +423,6 @@ where
                             node.name, 0, node.name, run_id
                         )
                     })
-       
                     .collect::<Vec<_>>();
             debug!("{}'s upstreams {:?}", node.name, upstreams);
             let node_record = Node {
@@ -490,7 +489,7 @@ mod tests {
     async fn test_render() {
         env::set_var("RUST_LOG", "DEBUG");
         tracing_subscriber::fmt::init();
-        let json_str = r#"
+        let json_str = r#" 
         {
           "name": "example",
           "version": "v1",

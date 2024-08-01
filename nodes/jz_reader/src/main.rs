@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use compute_unit_runner::ipc::SubmitOuputDataReq;
 use compute_unit_runner::ipc::{self, IPCClient};
 use jiaozifs_client_rs::apis;
 use jiaozifs_client_rs::models::RefType;
@@ -151,7 +152,9 @@ async fn read_jz_fs(args: Args) -> Result<()> {
         }
 
         //submit directory after completed a batch
-        client.submit_output(&id).await?;
+        client
+            .submit_output(SubmitOuputDataReq::new(&id, batch.len() as u32))
+            .await?;
     }
     Ok(())
 }

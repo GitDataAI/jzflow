@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
-use compute_unit_runner::ipc::{self, IPCClient};
+use compute_unit_runner::ipc::{self, IPCClient, SubmitOuputDataReq};
 use jz_action::utils::StdIntoAnyhowResult;
 use random_word::Lang;
 use std::path::Path;
@@ -87,6 +87,8 @@ async fn dummy_in(args: Args) -> Result<()> {
             }
         }
         //submit directory after completed a batch
-        client.submit_output(&id).await?;
+        client
+            .submit_output(SubmitOuputDataReq::new(&id, 30))
+            .await?;
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use jz_action::core::models::NodeRepo;
+use jz_action::core::models::{DbRepo, NodeRepo};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_server::DataStream;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
@@ -15,7 +15,7 @@ use super::channel_tracker::ChannelTracker;
 
 pub struct ChannelDataStream<R>
 where
-    R: NodeRepo + Send + Sync + 'static,
+    R: DbRepo,
 {
     pub(crate) program: Arc<Mutex<ChannelTracker<R>>>,
 }
@@ -23,7 +23,7 @@ where
 #[tonic::async_trait]
 impl<R> DataStream for ChannelDataStream<R>
 where
-    R: NodeRepo + Send + Sync + 'static,
+    R: DbRepo,
 {
     type subscribeMediaDataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
 

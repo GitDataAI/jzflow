@@ -75,12 +75,12 @@ async fn write_dummy(args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        let id = client.request_avaiable_data().await?;
-        if id.is_none() {
+        let req = client.request_avaiable_data().await?;
+        if req.is_none() {
             sleep(Duration::from_secs(2)).await;
             continue;
         }
-        let id = id.unwrap();
+        let id = req.unwrap().id;
         let path_str = tmp_path.join(&id);
         let root_input_dir = path_str.as_path();
 

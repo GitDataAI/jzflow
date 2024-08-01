@@ -17,7 +17,7 @@ use super::media_data_tracker::MediaDataTracker;
 
 pub struct UnitDataStream<R>
 where
-    R: DbRepo + Clone+ Send + Sync + 'static,
+    R: DbRepo + Clone + Send + Sync + 'static,
 {
     pub program: Arc<Mutex<MediaDataTracker<R>>>,
     _phantom: PhantomData<R>,
@@ -25,7 +25,7 @@ where
 
 impl<R> UnitDataStream<R>
 where
-    R: DbRepo + Clone+ Send + Sync + 'static,
+    R: DbRepo + Clone + Send + Sync + 'static,
 {
     pub fn new(program: Arc<Mutex<MediaDataTracker<R>>>) -> Self {
         UnitDataStream {
@@ -38,7 +38,7 @@ where
 #[tonic::async_trait]
 impl<R> DataStream for UnitDataStream<R>
 where
-    R: DbRepo + Clone+ Send + Sync + 'static,
+    R: DbRepo + Clone + Send + Sync + 'static,
 {
     type subscribeMediaDataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
     async fn subscribe_media_data(
@@ -54,9 +54,9 @@ where
             loop {
                 select! {
                  data_batch = data_rx.recv() => {
-                    if let Err(e) = tx.send(data_batch.anyhow().to_rpc(Code::Internal)).await {
+                    if let Err(err) = tx.send(data_batch.anyhow().to_rpc(Code::Internal)).await {
                         //todo handle disconnect
-                        error!("send data {}", e);
+                        error!("unable to send data to downstream {}", err);
                         return
                     }
                  },

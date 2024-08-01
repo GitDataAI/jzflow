@@ -1,25 +1,29 @@
 use anyhow::{anyhow, Result};
-use jz_action::core::models::{NodeRepo, TrackerState};
+use jz_action::core::models::{DataRecord, DataState, DbRepo, Direction, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::MediaDataBatchResponse;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::select;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{self, sleep};
+use tokio::{fs, select};
 use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
 use crate::mprc;
 pub struct ChannelTracker<R>
 where
-    R: NodeRepo,
+    R: DbRepo,
 {
-    pub(crate) _repo: R,
+    pub(crate) repo: R,
 
-    pub(crate) _name: String,
+    pub(crate) name: String,
+
+    pub(crate) tmp_store: PathBuf,
 
     pub(crate) local_state: TrackerState,
 
@@ -33,12 +37,13 @@ where
 
 impl<R> ChannelTracker<R>
 where
-    R: NodeRepo,
+    R: DbRepo,
 {
-    pub(crate) fn new(repo: R, name: &str) -> Self {
+    pub(crate) fn new(repo: R, name: &str, tmp_store: PathBuf) -> Self {
         ChannelTracker {
-            _name: name.to_string(),
-            _repo: repo,
+            name: name.to_string(),
+            repo: repo,
+            tmp_store,
             local_state: TrackerState::Init,
             upstreams: vec![],
             downstreams: vec![],
@@ -47,11 +52,11 @@ where
     }
 
     pub(crate) async fn route_data(&self) -> Result<()> {
-        if self.upstreams.len() == 0  {
+        if self.upstreams.len() == 0 {
             return Err(anyhow!("no upstream"));
         }
 
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::channel(1);
         for upstream in &self.upstreams {
             let upstream = upstream.clone();
             let tx_clone = tx.clone();
@@ -63,10 +68,7 @@ where
                             match client.subscribe_media_data(Empty {}).await {
                                 Ok(stream) => {
                                     let mut stream = stream.into_inner();
-                                    info!(
-                                        "start to listen new data from upstream {}",
-                                        upstream
-                                    );
+                                    info!("start to listen new data from upstream {}", upstream);
                                     while let Some(resp) = stream.next().await {
                                         //TODO need to confirm item why can be ERR
                                         match resp {
@@ -78,10 +80,9 @@ where
                                         }
                                     }
                                 }
-                                Err(err) => error!(
-                                    "subscribe_media_data fail {} {err}",
-                                    upstream.clone()
-                                ),
+                                Err(err) => {
+                                    error!("subscribe_media_data fail {} {err}", upstream.clone())
+                                }
                             }
                         }
                         Err(err) => error!("connect upstream fail {} {err}", upstream.clone()),
@@ -93,26 +94,41 @@ where
             });
         }
 
-        let receivers = self.receivers.clone();
+        let tmp_store = self.tmp_store.clone();
+        let db_repo = self.repo.clone();
+        let node_name = self.name.clone();
         tokio::spawn(async move {
             loop {
                 select! {
-                 data_batch = rx.recv() => {
-                    if let Some(data_batch) = data_batch {
-                        let (dest, sender) = {
-                            let mut guard = receivers.lock().await;
-                            if guard.count() == 0 {
-                                debug!("receive a data but no sendable nodes");
-                                continue;
-                            }
-                            guard.get_random().unwrap().clone()
-                       };
+                 Some(data_batch) = rx.recv() => {
+                    //save to fs
+                    //create input directory
+                    let id = Uuid::new_v4().to_string();
+                    let tmp_in_path = tmp_store.join(id.clone());
 
-                       debug!("select destination {dest}, and send data to this node");
-                       if let Err(e) = sender.send(std::result::Result::Ok(data_batch)).await{
-                           error!("unable send data to downstream {e}");
-                       }
+                    debug!("try to create directory {:?}", tmp_in_path);
+                    if let Err(e) = fs::create_dir_all(&tmp_in_path).await {
+                        error!("create input dir {:?} fail {}", tmp_in_path, e);
+                        return
                     }
+
+                    //write batch files
+                    for entry in  data_batch.cells.iter() {
+                        let entry_path = tmp_in_path.join(entry.path.clone());
+                        if let Err(e) = fs::write(entry_path.clone(), &entry.data).await {
+                            error!("write file {:?} fail {}", entry_path, e);
+                        }
+                    }
+
+                    info!("insert a data batch in {}", &id);
+                    //insert record to database
+                    db_repo.insert_new_path(&DataRecord{
+                        node_name: node_name.clone(),
+                        id:id.clone(),
+                        size: data_batch.size,
+                        state: DataState::Received,
+                        direction:Direction::In,
+                    }).await.unwrap();
                  },
                 }
             }
@@ -129,7 +145,7 @@ where
         loop {
             interval.tick().await;
             let record = repo
-                .get_node_by_name(&(name.to_owned()))
+                .get_node_by_name(&(name.to_owned() + "-channel"))
                 .await
                 .expect("record has inserted in controller or network error");
             debug!("{} fetch state from db", record.node_name);

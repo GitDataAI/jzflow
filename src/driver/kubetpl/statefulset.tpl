@@ -80,7 +80,7 @@
           {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName": "{{{node.name}}}-node-claim"
+              "claimName": "{{{node.name}}}-claim"
             }
           }
         ]

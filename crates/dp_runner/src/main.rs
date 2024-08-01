@@ -9,6 +9,7 @@ use jz_action::utils::StdIntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use channel_tracker::ChannelTracker;
 use clap::Parser;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use stream::ChannelDataStream;
@@ -29,6 +30,9 @@ use tracing::{error, info, Level};
 struct Args {
     #[arg(short, long, default_value = "INFO")]
     log_level: String,
+
+    #[arg(short, long, default_value = "/app/tmp")]
+    tmp_path: String,
 
     #[arg(short, long)]
     node_name: String,
@@ -51,11 +55,14 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let db_repo =
-        Arc::new(MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?);
+    let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
     let addr = args.host_port.parse()?;
-    let program = ChannelTracker::new(db_repo.clone(), &args.node_name);
+    let program = ChannelTracker::new(
+        db_repo.clone(),
+        &args.node_name,
+        PathBuf::from_str(args.tmp_path.as_str())?,
+    );
     let program_safe = Arc::new(Mutex::new(program));
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
@@ -65,8 +72,7 @@ async fn main() -> Result<()> {
         let node_name = args.node_name.clone();
         let _ = tokio::spawn(async move {
             if let Err(err) =
-                ChannelTracker::<Arc<MongoRepo>>::apply_db_state(db_repo, &node_name, program_safe)
-                    .await
+                ChannelTracker::<MongoRepo>::apply_db_state(db_repo, &node_name, program_safe).await
             {
                 let _ = shutdown_tx.send(Err(anyhow!("apply db state {err}"))).await;
             }

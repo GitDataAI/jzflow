@@ -34,15 +34,20 @@ pub struct Node {
     pub updated_at: i64,
 }
 
-#[derive(Serialize, Deserialize,Debug, PartialEq)]
+/// DataState use to represent databatch state
+/// for incoming data:  Received(channel receive data) -> Assigned(assigned to user containerd) -> Processed(user containerd has processed)
+/// for outgoing data:  Received(user container product) -> Sent(send to channel)
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum DataState {
     Received,
     Assigned,
     Processed,
     Sent,
+    Error,
 }
 
-#[derive(Serialize, Deserialize,Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum Direction {
     In,
     Out,
@@ -52,6 +57,7 @@ pub enum Direction {
 pub struct DataRecord {
     pub node_name: String,
     pub id: String,
+    pub size: u32,
     pub state: DataState,
     pub direction: Direction,
 }
@@ -61,20 +67,43 @@ pub trait DBConfig {
 }
 
 pub trait GraphRepo {
-    async fn insert_global_state(&self, state: Graph) -> Result<()>;
-    async fn get_global_state(&self) -> Result<Graph>;
+    fn insert_global_state(
+        &self,
+        state: Graph,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn get_global_state(&self) -> impl std::future::Future<Output = Result<Graph>> + Send;
 }
 
 pub trait NodeRepo {
-    async fn insert_node(&self, state: Node) -> Result<()>;
-    async fn get_node_by_name(&self, name: &str) -> Result<Node>;
+    fn insert_node(&self, state: Node) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn get_node_by_name(
+        &self,
+        name: &str,
+    ) -> impl std::future::Future<Output = Result<Node>> + Send;
 }
 
 pub trait DataRepo {
-    async fn get_avaiable_data(&self, node_name: &str)-> Result<Option<String>>;
-    async fn insert_new_path(&self, record: &DataRecord)-> Result<()>;
-    async fn update_state(&self, node_name: &str, id: &str, state: DataState) ->Result<()>;
+    fn find_and_assign_input_data(
+        &self,
+        node_name: &str,
+    ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
+
+    fn find_and_sent_output_data(
+        &self,
+        node_name: &str,
+    ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
+
+    fn insert_new_path(
+        &self,
+        record: &DataRecord,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn update_state(
+        &self,
+        node_name: &str,
+        id: &str,
+        state: DataState,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
-pub trait DbRepo = GraphRepo + NodeRepo + DataRepo+Clone + Send + Sync + 'static;
-
+pub trait DbRepo = GraphRepo + NodeRepo + DataRepo + Clone + Send + Sync + 'static;

@@ -1,5 +1,4 @@
 use crate::media_data_tracker::MediaDataTracker;
-use actix_web::error::JsonPayloadError;
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::{error, middleware, web, App, HttpRequest, HttpResponse, HttpServer};
@@ -10,13 +9,12 @@ use http_body_util::Collected;
 use jz_action::core::models::{DbRepo, TrackerState};
 use jz_action::utils::StdIntoAnyhowResult;
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
-use tokio::time::{sleep, Instant};
-use tracing::{debug, error, info};
+use tokio::time::sleep;
+use tracing::info;
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -27,6 +25,7 @@ use hyperlocal::{UnixClientExt, UnixConnector, Uri};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AvaiableDataResponse {
     pub id: String,
+    pub size: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -43,11 +42,15 @@ impl CompleteDataReq {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubmitOuputDataReq {
     pub id: String,
+    pub size: u32,
 }
 
 impl SubmitOuputDataReq {
-    pub fn new(id: &str) -> Self {
-        SubmitOuputDataReq { id: id.to_string() }
+    pub fn new(id: &str, size: u32) -> Self {
+        SubmitOuputDataReq {
+            id: id.to_string(),
+            size,
+        }
     }
 }
 
@@ -58,7 +61,7 @@ pub struct Status {
 
 async fn status<R>(program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>) -> HttpResponse
 where
-    R: DbRepo+ Clone,
+    R: DbRepo + Clone,
 {
     info!("receive status request");
     let status = {
@@ -74,10 +77,10 @@ async fn process_data_request<R>(
     program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
 ) -> HttpResponse
 where
-R: DbRepo+ Clone,
+    R: DbRepo + Clone,
 {
     info!("receive avaiable data reqeust");
-    let (tx, rx) = oneshot::channel::<Option<AvaiableDataResponse>>();
+    let (tx, rx) = oneshot::channel::<Result<Option<AvaiableDataResponse>>>();
 
     let sender = loop {
         let program = program_mutex.lock().await;
@@ -102,9 +105,10 @@ R: DbRepo+ Clone,
     }
 
     match rx.await {
-        Ok(Some(resp)) => HttpResponse::Ok().json(resp),
-        Ok(None) => HttpResponse::NotFound().body("no avaiablle data"),
-        Err(e) => HttpResponse::ServiceUnavailable().body(e.to_string()),
+        Ok(Ok(Some(resp))) => HttpResponse::Ok().json(resp),
+        Ok(Ok(None)) => HttpResponse::NotFound().body("no avaiablle data"),
+        Ok(Err(err)) => HttpResponse::ServiceUnavailable().body(err.to_string()),
+        Err(err) => HttpResponse::ServiceUnavailable().body(err.to_string()),
     }
 }
 
@@ -113,10 +117,10 @@ async fn process_completed_request<R>(
     data: web::Json<CompleteDataReq>,
 ) -> HttpResponse
 where
-R: DbRepo+ Clone,
+    R: DbRepo + Clone,
 {
     info!("receive data completed request");
-    let (tx, rx) = oneshot::channel::<()>();
+    let (tx, rx) = oneshot::channel::<Result<()>>();
     let sender = loop {
         let program = program_mutex.lock().await;
         if matches!(program.local_state, TrackerState::Ready) {
@@ -140,11 +144,9 @@ R: DbRepo+ Clone,
     }
 
     match rx.await {
-        Ok(resp) => {
-            //response result
-            HttpResponse::Ok().body(resp)
-        }
-        Err(e) => HttpResponse::ServiceUnavailable().body(e.to_string()),
+        Ok(Ok(resp)) => HttpResponse::Ok().body(resp),
+        Ok(Err(err)) => HttpResponse::ServiceUnavailable().body(err.to_string()),
+        Err(err) => HttpResponse::ServiceUnavailable().body(err.to_string()),
     }
 }
 
@@ -154,12 +156,12 @@ async fn process_submit_output_request<R>(
     //body: web::Bytes,
 ) -> HttpResponse
 where
-R: DbRepo+ Clone,
+    R: DbRepo + Clone,
 {
     // let data: SubmitOuputDataReq = serde_json::from_slice(&body).unwrap();
 
     info!("receive submit output request {}", &data.id);
-    let (tx, mut rx) = oneshot::channel::<()>();
+    let (tx, rx) = oneshot::channel::<Result<()>>();
     let sender = loop {
         let program = program_mutex.lock().await;
         if matches!(program.local_state, TrackerState::Ready) {
@@ -183,11 +185,9 @@ R: DbRepo+ Clone,
     }
 
     match rx.await {
-        Ok(resp) => {
-            //response result
-            HttpResponse::Ok().body(resp)
-        }
-        Err(e) => HttpResponse::ServiceUnavailable().body(e.to_string()),
+        Ok(Ok(resp)) => HttpResponse::Ok().body(resp),
+        Ok(Err(err)) => HttpResponse::ServiceUnavailable().body(err.to_string()),
+        Err(err) => HttpResponse::ServiceUnavailable().body(err.to_string()),
     }
 }
 
@@ -196,7 +196,7 @@ pub async fn start_ipc_server<R>(
     program: Arc<Mutex<MediaDataTracker<R>>>,
 ) -> Result<()>
 where
-    R: DbRepo + Clone+ Send + Sync + 'static,
+    R: DbRepo + Clone + Send + Sync + 'static,
 {
     let server = HttpServer::new(move || {
         fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
@@ -219,12 +219,12 @@ where
             .service(
                 web::scope("/api/v1")
                     .service(web::resource("status").get(status::<R>))
-                    .service(web::resource("data")
-                    .route(web::post().to(process_completed_request::<R>))
-                    .route(web::get().to(process_data_request::<R>))
-                )
+                    .service(
+                        web::resource("data")
+                            .route(web::post().to(process_completed_request::<R>))
+                            .route(web::get().to(process_data_request::<R>)),
+                    )
                     .service(web::resource("submit").post(process_submit_output_request::<R>)),
-                    
             )
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
     })
@@ -236,9 +236,9 @@ where
 
 pub trait IPCClient {
     async fn status(&self) -> Result<Status>;
-    async fn submit_output(&self, id: &str) -> Result<()>;
+    async fn submit_output(&self, req: SubmitOuputDataReq) -> Result<()>;
     async fn complete_result(&self, id: &str) -> Result<()>;
-    async fn request_avaiable_data(&self) -> Result<Option<String>>;
+    async fn request_avaiable_data(&self) -> Result<Option<AvaiableDataResponse>>;
 }
 
 pub struct IPCClientImpl {
@@ -278,8 +278,7 @@ impl IPCClient for IPCClientImpl {
         Ok(status)
     }
 
-    async fn submit_output(&self, id: &str) -> Result<()> {
-        let req = SubmitOuputDataReq::new(id);
+    async fn submit_output(&self, req: SubmitOuputDataReq) -> Result<()> {
         let json = serde_json::to_string(&req)?;
         let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/submit").into();
 
@@ -298,7 +297,7 @@ impl IPCClient for IPCClientImpl {
         Err(anyhow!("submit data fail {} {}", status_code, contents))
     }
 
-    async fn request_avaiable_data(&self) -> Result<Option<String>> {
+    async fn request_avaiable_data(&self) -> Result<Option<AvaiableDataResponse>> {
         let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data").into();
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::GET)
@@ -324,7 +323,7 @@ impl IPCClient for IPCClientImpl {
 
         let contents = resp.collect().await.map(Collected::to_bytes)?;
         let avaiabel_data: AvaiableDataResponse = serde_json::from_slice(contents.as_ref())?;
-        Ok(Some(avaiabel_data.id))
+        Ok(Some(avaiabel_data))
     }
 
     async fn complete_result(&self, id: &str) -> Result<()> {

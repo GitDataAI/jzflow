@@ -55,8 +55,7 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let db_repo =
-        Arc::new(MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?);
+    let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
     let program = MediaDataTracker::new(
         db_repo.clone(),
@@ -65,7 +64,7 @@ async fn main() -> Result<()> {
     );
 
     let program_safe = Arc::new(Mutex::new(program));
-    let data_stream = UnitDataStream::<Arc<MongoRepo>>::new(program_safe.clone());
+    let data_stream = UnitDataStream::<MongoRepo>::new(program_safe.clone());
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
@@ -73,12 +72,9 @@ async fn main() -> Result<()> {
         let program_safe = program_safe.clone();
         let node_name = args.node_name.clone();
         let _ = tokio::spawn(async move {
-            if let Err(err) = MediaDataTracker::<Arc<MongoRepo>>::apply_db_state(
-                db_repo,
-                &node_name,
-                program_safe,
-            )
-            .await
+            if let Err(err) =
+                MediaDataTracker::<MongoRepo>::apply_db_state(db_repo, &node_name, program_safe)
+                    .await
             {
                 let _ = shutdown_tx.send(Err(anyhow!("apply db state {err}"))).await;
             }

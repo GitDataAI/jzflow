@@ -1,12 +1,12 @@
 use crate::{
-    core::models::{DBConfig, Graph, GraphRepo, Node, NodeRepo, DataRecord,DataState, DataRepo},
+    core::models::{DBConfig, DataRecord, DataRepo, DataState, Graph, GraphRepo, Node, NodeRepo},
     utils::StdIntoAnyhowResult,
 };
 use anyhow::{anyhow, Result};
 use mongodb::{bson::doc, error::ErrorKind, options::IndexOptions, Client, Collection, IndexModel};
 use serde::Serialize;
-use std::{ops::Deref, sync::Arc};
 use serde_variant::to_variant_name;
+use std::{ops::Deref, sync::Arc};
 
 const GRAPH_COL_NAME: &'static str = "graph";
 const NODE_COL_NAME: &'static str = "node";
@@ -18,7 +18,6 @@ pub struct MongoRepo {
     node_col: Collection<Node>,
     data_col: Collection<DataRecord>,
 }
-
 
 #[derive(Clone, Serialize)]
 pub struct MongoConfig {
@@ -105,62 +104,52 @@ impl NodeRepo for MongoRepo {
 }
 
 impl DataRepo for MongoRepo {
-    async fn get_avaiable_data(&self, node_name: &str)-> Result<Option<String>> {
+    async fn find_and_assign_input_data(&self, node_name: &str) -> Result<Option<DataRecord>> {
         let update = doc! {
             "$set": { "state": "Assigned" },
         };
 
-        let result =  self.data_col.find_one_and_update( doc! {"node_name":node_name,"state": "Received"},  update ).await?;
-        Ok(result.map(|record|record.id))
+        let result = self
+            .data_col
+            .find_one_and_update(
+                doc! {"node_name":node_name,"state": "Received", "direction":"In"},
+                update,
+            )
+            .await?;
+        Ok(result)
     }
 
-    async fn insert_new_path(&self, record: &DataRecord)-> Result<()> {
-        self.data_col.insert_one(record).await.map(|_|()).anyhow()
+    async fn find_and_sent_output_data(&self, node_name: &str) -> Result<Option<DataRecord>> {
+        let update = doc! {
+            "$set": { "state": "Sent" },
+        };
+
+        let result = self
+            .data_col
+            .find_one_and_update(
+                doc! {"node_name":node_name,"state": "Received", "direction":"Out"},
+                update,
+            )
+            .await?;
+        Ok(result)
     }
 
-    async fn update_state(&self, node_name: &str, id: &str, state: DataState) ->Result<()> {
+    async fn insert_new_path(&self, record: &DataRecord) -> Result<()> {
+        self.data_col.insert_one(record).await.map(|_| ()).anyhow()
+    }
+
+    async fn update_state(&self, node_name: &str, id: &str, state: DataState) -> Result<()> {
         let update = doc! {
             "$set": { "state":  to_variant_name(&state)?  },
         };
 
-        self.data_col.find_one_and_update( doc! {"node_name":node_name,"id": id},  update ).await.map(|_|()).anyhow()
+        self.data_col
+            .find_one_and_update(doc! {"node_name":node_name,"id": id}, update)
+            .await
+            .map(|_| ())
+            .anyhow()
     }
 }
-
-impl<T: NodeRepo> NodeRepo for Arc<T> {
-    async fn insert_node(&self, state: Node) -> Result<()> {
-        self.deref().insert_node(state).await
-    }
-
-    async fn get_node_by_name(&self, name: &str) -> Result<Node> {
-        self.deref().get_node_by_name(name).await
-    }
-}
-
-impl<T: GraphRepo> GraphRepo for Arc<T> {
-    async fn insert_global_state(&self, state: Graph) -> Result<()> {
-        self.deref().insert_global_state(state).await
-    }
-
-    async fn get_global_state(&self) -> Result<Graph> {
-        self.deref().get_global_state().await
-    }
-}
-
-impl<T: DataRepo> DataRepo for Arc<T> {
-    async fn get_avaiable_data(&self, node_name: &str)-> Result<Option<String>>{
-        self.deref().get_avaiable_data(node_name).await
-    }
-
-    async fn insert_new_path(&self, record: &DataRecord)-> Result<()>{
-        self.deref().insert_new_path(record).await
-    }
-
-    async fn update_state(&self, node_name: &str, id: &str, state: DataState) ->Result<()>{
-        self.deref().update_state(node_name, id,  state).await
-    }
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -168,7 +157,11 @@ mod tests {
     use std::env;
     use tracing_subscriber;
 
-    fn is_send<T>()where T:Send+Sync{}
+    fn is_send<T>()
+    where
+        T: Send + Sync,
+    {
+    }
     #[tokio::test]
     async fn test_render() {
         is_send::<MongoRepo>();

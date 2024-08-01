@@ -32,7 +32,7 @@
               "/dp_runner"
             ],
             "args": [
-              "--node-name={{{node.name}}}-channel",
+              "--node-name={{{node.name}}}",
               "--log-level={{{log_level}}}",
               "--mongo-url={{{db.mongo_url}}}",
               "--database={{{run_id}}}"
@@ -54,26 +54,11 @@
           {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName": "{{node.name}}-channel-claim"
+              "claimName": "{{node.name}}-claim"
             }
           }
         ]
       }
-    },
-    "volumeClaimTemplates": [
-      {
-        "metadata": {
-          "name": "tmpstore"
-        },
-        "spec": {
-          "accessModes": ["ReadWriteOnce"],
-          "resources": {
-            "requests": {
-              "storage": "1Gi"
-            }
-          }
-        }
-      }
-    ]
+    }
   }
 }
