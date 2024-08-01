@@ -9,7 +9,7 @@
     }
   },
   "spec": {
-    "serviceName": "{{{node.name}}}-channel-service",
+    "serviceName": "{{{node.name}}}-channel-headless-service",
     "replicas": {{{node.channel.spec.replicas}}},
     "selector": {
       "matchLabels": {

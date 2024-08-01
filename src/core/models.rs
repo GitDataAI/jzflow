@@ -7,7 +7,7 @@ pub enum NodeType {
     Channel,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TrackerState {
     Init,
     Ready,
@@ -29,6 +29,7 @@ pub struct Node {
     pub state: TrackerState,
     pub node_type: NodeType,
     pub upstreams: Vec<String>,
+    pub downstreams: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }

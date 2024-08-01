@@ -53,6 +53,10 @@ impl Dag {
         self.rely_graph.get_incoming_nodes(node_id)
     }
 
+    pub fn get_outgoing_nodes(&self, node_id: &str) -> Vec<&str> {
+        self.rely_graph.get_outgoing_nodes(node_id)
+    }
+
     // from_json build graph from json string
     pub fn from_json<'a>(json: &'a str) -> Result<Self> {
         let value: serde_json::Value = serde_json::from_str(json)?;

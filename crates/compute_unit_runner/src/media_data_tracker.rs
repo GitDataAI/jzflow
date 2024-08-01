@@ -5,8 +5,9 @@ use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, MediaDataCell};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -17,7 +18,7 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio::sync::{broadcast, oneshot};
-use tokio::time;
+use tokio::time::{self, sleep, sleep_until};
 use tokio_stream::StreamExt;
 
 #[derive(Debug, PartialEq)]
@@ -45,11 +46,13 @@ where
 
     pub(crate) local_state: TrackerState,
 
-    pub(crate) upstreams: Option<Vec<String>>,
+    pub(crate) upstreams: Vec<String>,
+
+    pub(crate) downstreams: Vec<String>,
 
     // channel for process avaiable data request
     pub(crate) ipc_process_data_req_tx:
-        Option<mpsc::Sender<((), oneshot::Sender<AvaiableDataResponse>)>>,
+        Option<mpsc::Sender<((), oneshot::Sender<Option<AvaiableDataResponse>>)>>,
 
     // channel for response complete data. do clean work when receive this request
     pub(crate) ipc_process_completed_data_tx:
@@ -74,7 +77,8 @@ where
             _name: name.to_string(),
             _repo: repo,
             local_state: TrackerState::Init,
-            upstreams: None,
+            upstreams: vec![],
+            downstreams: vec![],
             ipc_process_submit_output_tx: None,
             ipc_process_completed_data_tx: None,
             ipc_process_data_req_tx: None,
@@ -96,29 +100,49 @@ where
             mpsc::channel(1024);
         self.ipc_process_completed_data_tx = Some(ipc_process_completed_data_tx);
 
-        if let Some(upstreams) = self.upstreams.as_ref() {
-            info!("Start listen upstream {:?} ....", upstreams);
-            for upstream in upstreams {
-                {
-                    let upstream = upstream.clone();
-                    let tx_clone = incoming_data_tx.clone();
-                    let _ = tokio::spawn(async move {
+        //computeunit2-channel-statefulset-0.computeunit2-channel-headless-service.ntest.svc.cluster.local:80
+        //computeunit2-channel-statefulset-0.computeunit2-channel-headless-service
+        if self.upstreams.len() > 0 {
+            info!("Start listen upstream {:?} ....", &self.upstreams);
+            for upstream in &self.upstreams {
+                let upstream = upstream.clone();
+                let tx_clone = incoming_data_tx.clone();
+                let _ = tokio::spawn(async move {
+                    loop {
                         //todo handle network disconnect
-                        let mut client = DataStreamClient::connect(upstream.clone()).await?;
-                        let mut stream = client.subscribe_media_data(Empty {}).await?.into_inner();
-                        info!("start to listen new data from upstream {}", upstream);
-                        while let Some(resp) = stream.next().await {
-                            //TODO need to confirm item why can be ERR
-                            match resp {
-                                Ok(resp) => tx_clone.send(resp).await.unwrap(),
-                                Err(err) => error!("receive a error from stream {err}"),
+                        match DataStreamClient::connect(upstream.clone()).await {
+                            Ok(mut client) => {
+                                match client.subscribe_media_data(Empty {}).await {
+                                    Ok(stream) => {
+                                        let mut stream = stream.into_inner();
+                                        info!(
+                                            "start to listen new data from upstream {}",
+                                            upstream
+                                        );
+                                        while let Some(resp) = stream.next().await {
+                                            //TODO need to confirm item why can be ERR
+                                            match resp {
+                                                Ok(resp) => tx_clone.send(resp).await.unwrap(),
+                                                Err(err) => {
+                                                    error!("receive a error from stream {err}");
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(err) => error!(
+                                        "subscribe_media_data fail {} {err}",
+                                        upstream.clone()
+                                    ),
+                                }
                             }
+                            Err(err) => error!("connect upstream fail {} {err}", upstream.clone()),
                         }
 
-                        error!("unable read data from stream");
-                        anyhow::Ok(())
-                    });
-                }
+                        error!("unable read data from stream, reconnect in 2s");
+                        sleep(Duration::from_secs(2)).await;
+                    }
+                });
             }
         }
 
@@ -127,6 +151,7 @@ where
         let out_going_tx = self.out_going_tx.clone();
         let tmp_store = self.tmp_store.clone();
         let mut state_map: HashMap<String, BatchState> = HashMap::new();
+        let downstreams = self.downstreams.clone(); //make dynamic downstreams?
         tokio::spawn(async move {
             loop {
                 select! {
@@ -135,6 +160,8 @@ where
                         //create input directory
                         let id = Uuid::new_v4().to_string();
                         let tmp_in_path = tmp_store.join(id.clone());
+
+                        debug!("try to create directory {:?}", tmp_in_path);
                         if let Err(e) = fs::create_dir_all(&tmp_in_path).await {
                             error!("create input dir {:?} fail {}", tmp_in_path, e);
                             return
@@ -142,7 +169,9 @@ where
 
                         //write batch files
                         for entry in  data_batch.cells.iter() {
+                            debug!("try to join path {:?} {}", tmp_in_path, entry.path.clone());
                             let entry_path = tmp_in_path.join(entry.path.clone());
+                            debug!("try to write entry {:?}", entry_path);
                             if let Err(e) = fs::write(entry_path.clone(), &entry.data).await {
                                 error!("write file {:?} fail {}", entry_path, e);
                             }
@@ -154,14 +183,26 @@ where
                  },
                  Some((_, resp)) = ipc_process_data_req_rx.recv() => {
                         //select a unassgined data
+                        info!("try to find avaiable data");
+                        let mut data = None;
                         for (key, v ) in  state_map.iter_mut() {
+                            info!("key {} state {:?}", key, v);
                             if v.state == DataStateEnum::Received {
-                                //response this data's position
-                                resp.send(AvaiableDataResponse{
-                                    id:   key.clone(),
-                                }).expect("channel only read once");
-                                v.state = DataStateEnum::Assigned ;
+                                data = Some((key, v));
                                 break;
+                            }
+                        }
+
+                        match data {
+                            Some((k, v))=> {
+                                 //response this data's position
+                                resp.send(Some(AvaiableDataResponse{
+                                    id:   k.clone(),
+                                })).expect("channel only read once");
+                                v.state = DataStateEnum::Assigned ;
+                            },
+                            None=>{
+                                resp.send(None).expect("channel only read once");
                             }
                         }
                  },
@@ -188,13 +229,14 @@ where
                     let mut new_batch = MediaDataBatchResponse::default();
 
                     let mut entry_count = 0 ;
-                    for entry in WalkDir::new(tmp_out_path) {
+                    for entry in WalkDir::new(&tmp_out_path) {
                         match entry {
                            Ok(entry) => {
                                 if entry.file_type().is_file() {
-                                    let path  = entry.path();
+                                    let mut path  = entry.path();
                                     match fs::read(path).await {
                                        Ok(content) => {
+                                            path = path.strip_prefix(&tmp_out_path).expect("file is in the folder");
                                             new_batch.cells.push(MediaDataCell{
                                                 size: content.len() as i32,
                                                 path: path.to_str().unwrap().to_string(),
@@ -214,9 +256,13 @@ where
                     new_batch.size  = entry_count;
 
                     // respose with nothing
-                    resp.send(()).expect("channel only read once");
+                    if let Err(_) = resp.send(()) {
+                        error!("resp request fail");
+                    }
                     //write outgoing
-                    if new_batch.size >0 {
+                    if new_batch.size >0 && downstreams.len()>0 {
+                        //TODO change a more predicatable and reliable way to broadcase data message.
+                        //must ensure every downstream node receive this message
                         if let Err(e) = out_going_tx.send(new_batch) {
                             error!("send data {}", e);
                             continue;
@@ -257,7 +303,8 @@ where
                         //start
                         info!("set to ready state {:?}", record.upstreams);
                         program_guard.local_state = TrackerState::Ready;
-                        program_guard.upstreams = Some(record.upstreams);
+                        program_guard.upstreams = record.upstreams;
+                        program_guard.downstreams = record.downstreams;
                         program_guard.process_data_cmd().await?;
                     }
                 }

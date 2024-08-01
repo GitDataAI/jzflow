@@ -56,11 +56,10 @@
             "name": "compute-user-unit",
             "image": "{{{node.spec.image}}}",
             "command": [
-              "sleep"
+              "{{{commnad}}}"
             ],
-            "args": [
-              "infinity"
-            ],
+            "imagePullPolicy": "IfNotPresent",
+            "args": [{{{join_array args}}}],
             "volumeMounts": [
               {
                 "mountPath": "/unix_socket",

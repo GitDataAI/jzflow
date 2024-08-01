@@ -1,22 +1,21 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use compute_unit_runner::ipc::{self, IPCClient};
-use jiaozifs_client_rs::apis;
-use jiaozifs_client_rs::models::RefType;
 use jz_action::utils::StdIntoAnyhowResult;
+use random_word::Lang;
 use std::path::Path;
 use std::str::FromStr;
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tokio::select;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
 use tracing::error;
 use tracing::{info, Level};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "jz_reader",
+    name = "dummyu_in",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
     about = "embed in k8s images. "
@@ -31,33 +30,6 @@ struct Args {
 
     #[arg(short, long, default_value = "/app/tmp")]
     tmp_path: String,
-
-    #[arg(long, default_value = "64")]
-    batch_size: usize,
-
-    #[arg(long)]
-    jiaozifs_url: String,
-
-    #[arg(long)]
-    username: String,
-
-    #[arg(long)]
-    password: String,
-
-    #[arg(long)]
-    owner: String,
-
-    #[arg(long)]
-    repo: String,
-
-    #[arg(long)]
-    ref_type: String,
-
-    #[arg(long)]
-    ref_name: String,
-
-    #[arg(long, default_value = "*")]
-    pattern: String,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -72,8 +44,8 @@ async fn main() -> Result<()> {
     {
         let shutdown_tx = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
-            if let Err(e) = read_jz_fs(args).await {
-                let _ = shutdown_tx.send(Err(anyhow!("read jz fs {e}"))).await;
+            if let Err(e) = dummy_in(args).await {
+                let _ = shutdown_tx.send(Err(anyhow!("dummy read {e}"))).await;
             }
         });
     }
@@ -98,60 +70,23 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn read_jz_fs(args: Args) -> Result<()> {
-    let ref_type = match args.ref_type.as_str() {
-        "branch" => Ok(RefType::Branch),
-        "wip" => Ok(RefType::Wip),
-        "tag" => Ok(RefType::Tag),
-        "commit" => Ok(RefType::Commit),
-        val => Err(anyhow!("ref type not correct {}", val)),
-    }?;
-
-    let mut configuration = apis::configuration::Configuration::default();
-    configuration.base_path = args.jiaozifs_url;
-    configuration.basic_auth = Some((args.username, Some(args.password)));
-    let file_paths = apis::objects_api::get_files(
-        &configuration,
-        &args.owner,
-        &args.repo,
-        &args.ref_name,
-        ref_type,
-        Some("*"),
-    )
-    .await?;
-
+async fn dummy_in(args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
-    for batch in file_paths.chunks(args.batch_size) {
-        //create temp output directory
+    loop {
         let id = uuid::Uuid::new_v4().to_string();
         let output_dir = tmp_path.join(&id);
         fs::create_dir_all(output_dir.clone()).await?;
-
-        //read file from jzfs and write to output directory
-        for path in batch {
-            let mut byte_stream = apis::objects_api::get_object(
-                &configuration,
-                &args.owner,
-                &args.repo,
-                &args.ref_name,
-                path.as_str(),
-                ref_type,
-                None,
-            )
-            .await?;
-
-            let file_path = output_dir.as_path().join(&path);
+        for _ in 0..30 {
+            let file_name = random_word::gen(Lang::En);
+            let file_path = output_dir.as_path().join(file_name.to_string() + ".txt");
             let mut tmp_file = fs::File::create(file_path).await?;
-            while let Some(item) = byte_stream.next().await {
-                tokio::io::copy(&mut item.unwrap().as_ref(), &mut tmp_file)
-                    .await
-                    .unwrap();
+            for _ in 0..100 {
+                let word = random_word::gen(Lang::En).to_string() + "\n";
+                tmp_file.write(word.as_bytes()).await.unwrap();
             }
         }
-
         //submit directory after completed a batch
         client.submit_output(&id).await?;
     }
-    Ok(())
 }

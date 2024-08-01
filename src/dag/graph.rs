@@ -158,9 +158,17 @@ impl Graph {
         }
     }
 
-    /// Get the out degree of a node.
+    /// Get the out nodes of a node.
     pub(crate) fn get_incoming_nodes(&self, id: &str) -> Vec<&str> {
         match self.in_degree.get(id) {
+            Some(id) => id.iter().map(|v| v.as_str()).collect(),
+            None => vec![],
+        }
+    }
+
+    /// Get the out nodes of a node.
+    pub(crate) fn get_outgoing_nodes(&self, id: &str) -> Vec<&str> {
+        match self.adj.get(id) {
             Some(id) => id.iter().map(|v| v.as_str()).collect(),
             None => vec![],
         }

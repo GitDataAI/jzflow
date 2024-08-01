@@ -12,8 +12,6 @@ build-dp: $(OUTPUT)
 	cargo build -p dp_runner --release
 	cp target/release/dp_runner $(OUTPUT)/dp_runner
 
-
-
 build: build-cd build-dp
 	cargo build --release
 
@@ -31,9 +29,17 @@ build-nodes: $(OUTPUT)
 	cargo build -p jz_writer --release
 	cp target/release/jz_writer $(OUTPUT)/jz_writer
 
+	cargo build -p dummy_in --release
+	cp target/release/dummy_in $(OUTPUT)/dummy_in
+
+	cargo build -p dummy_out --release
+	cp target/release/dummy_out $(OUTPUT)/dummy_out
+
 docker_nodes: build-nodes
 	docker build -f ./nodes/jz_reader/dockerfile -t jz-action/jz_reader:latest .
 	docker build -f ./nodes/jz_writer/dockerfile -t jz-action/jz_writer:latest .
+	docker build -f ./nodes/dummy_in/dockerfile -t jz-action/dummy_in:latest .
+	docker build -f ./nodes/dummy_out/dockerfile -t jz-action/dummy_out:latest .
 
 ################## minikube
 docker: docker_cd docker_dp docker_nodes

@@ -6,7 +6,7 @@ use crate::dbrepo::mongo::MongoRepo;
 use crate::utils::IntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use chrono::prelude::*;
-use handlebars::Handlebars;
+use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError};
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{Namespace, PersistentVolumeClaim, Service};
 use kube::api::{DeleteParams, PostParams};
@@ -142,6 +142,31 @@ where
     }
 }
 
+fn join_array(
+    h: &Helper,
+    _: &Handlebars,
+    _: &Context,
+    _: &mut RenderContext,
+    out: &mut dyn Output,
+) -> Result<(), RenderError> {
+    // get parameter from helper or throw an error
+    let param = h.param(0);
+
+    match param {
+        None => Ok(()),
+        Some(args) => {
+            let args = args.value().as_array().unwrap();
+            let args_str: Vec<String> = args
+                .iter()
+                .map(|v| "\"".to_owned() + v.as_str().unwrap() + "\"")
+                .collect();
+            let rendered = format!("{}", args_str.join(","));
+            out.write(rendered.as_ref())?;
+            Ok(())
+        }
+    }
+}
+
 pub struct KubeDriver<'reg, R, DBC>
 where
     R: DbRepo,
@@ -172,6 +197,7 @@ where
             "channel_service",
             include_str!("kubetpl/channel_service.tpl"),
         )?;
+        reg.register_helper("join_array", Box::new(join_array));
         Ok(KubeDriver {
             reg,
             client,
@@ -234,6 +260,8 @@ where
     log_level: &'a str,
     db: DBC,
     run_id: &'a str,
+    commnad: &'a str,
+    args: Vec<&'a str>,
 }
 
 impl<R, DBC> Driver for KubeDriver<'_, R, DBC>
@@ -261,15 +289,30 @@ where
 
         let mut pipeline_ctl = KubePipelineController::new(repo.clone());
         for node in graph.iter() {
+            if node.spec.cmd.len() == 0 {
+                return Err(anyhow!("{} dont have command", &node.name));
+            }
+            let command = &node.spec.cmd[0];
+            let args: Vec<&str> = node
+                .spec
+                .cmd
+                .iter()
+                .skip(1)
+                .map(|arg| arg.as_str())
+                .collect();
             let data_unit_render_args = NodeRenderParams {
                 node,
                 db: self.db_config.clone(),
                 log_level: "debug",
                 run_id,
+                commnad: command,
+                args: args,
             };
             let upstreams = graph.get_incomming_nodes(&node.name);
+            let downstreams = graph.get_outgoing_nodes(&node.name);
             // apply channel
             let channel_handler = if upstreams.len() > 0 {
+                //if node have no upstream node, no need to create channel points
                 //channel node receive upstreams from upstream nodes
                 let upstreams = upstreams
                     .iter()
@@ -290,11 +333,21 @@ where
                     .flatten()
                     .collect::<Vec<_>>();
 
+                let node_stream = (0..node.spec.replicas)
+                    .map(|seq| {
+                        format!(
+                            "http://{}-statefulset-{}.{}-headless-service.{}.svc.cluster.local:80",
+                            node.name, seq, node.name, run_id
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
                 let channel_record = Node {
                     node_name: node.name.clone() + "-channel",
                     state: TrackerState::Init,
                     node_type: NodeType::Channel,
                     upstreams: upstreams,
+                    downstreams: node_stream, //only node read this channel
                     created_at: cur_tm,
                     updated_at: cur_tm,
                 };
@@ -323,7 +376,8 @@ where
                     .create(&PostParams::default(), &channel_statefulset)
                     .await?;
 
-                let channel_service_string = self.reg.render("channel_service", node)?;
+                let channel_service_string =
+                    self.reg.render("channel_service", &data_unit_render_args)?;
                 debug!("rendered channel service string {}", channel_service_string);
 
                 let channel_service: Service =
@@ -364,19 +418,40 @@ where
             let channel_streams = channel_handler
                 .is_some()
                 .then(|| {
-                    vec![format!(
-                        "http://{}-channel-statefulset-0.{}-channel-headless-service.{}.svc.cluster.local:80",
-                        node.name, node.name, run_id
-                    )]
+                    (0..node.channel.as_ref().map(|dp|dp.spec.replicas).unwrap_or(1)).map(|seq| {
+                        format!(
+                          "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
+                            node.name, seq, node.name, run_id
+                        )
+                    }).collect::<Vec<_>>()
                 })
                 .unwrap_or_else(|| vec![]);
 
+            let outgoing_node_streams = downstreams
+                    .iter()
+                    .map(|node_name| {
+                        graph
+                            .get_node(node_name)
+                            .expect("node added already before")
+                    })
+                    .map(|node| {
+                        //<pod-name>.<service-name>.<namespace>.svc.cluster.local
+                        (0..node.channel.as_ref().map(|dp|dp.spec.replicas).unwrap_or(1)).map(|seq| {
+                            format!(
+                                "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
+                                node.name, seq, node.name, run_id
+                            )
+                        })
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
             debug!("{}'s upstreams {:?}", node.name, upstreams);
             let node_record = Node {
                 node_name: node.name.clone(),
                 state: TrackerState::Init,
                 node_type: NodeType::CoputeUnit,
                 upstreams: channel_streams,
+                downstreams: outgoing_node_streams,
                 created_at: cur_tm,
                 updated_at: cur_tm,
             };
@@ -435,8 +510,6 @@ mod tests {
     async fn test_render() {
         env::set_var("RUST_LOG", "DEBUG");
         tracing_subscriber::fmt::init();
-//computeunit1-statefulset-0.computeunit1-headless-service.ntest.svc.cluster.local
-//computeunit1-statefulset-0.computeunit1-headless-service.ntest.svc.cluster.local
         let json_str = r#"
         {
           "name": "example",
@@ -446,10 +519,8 @@ mod tests {
               "name": "computeunit1",
               "dependency": [],
               "spec": {
-                "cmd": [
-                  "ls"
-                ],
-                "image": "ubuntu:22.04",
+                "image": "jz-action/dummy_in:latest",
+                "cmd": ["/dummy_in", "--log-level=debug"],
                 "replicas":1
               }
             },
@@ -460,15 +531,13 @@ mod tests {
                 "computeunit1"
               ],
               "spec": {
-                "cmd": [
-                  "ls"
-                ],
-                "replicas":1,
-                "image": "ubuntu:22.04"
+                "image": "jz-action/dummy_out:latest",
+                "cmd": ["/dummy_out", "--log-level=debug"],
+                "replicas":1
               },
               "channel": {
                 "spec": {
-                  "image": "ubuntu:22.04",
+                  "image": "",
                   "cmd":[],
                   "replicas":1
                 }

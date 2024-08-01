@@ -15,7 +15,7 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tonic::transport::Server;
-use tracing::{info, Level};
+use tracing::{error, info, Level};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -80,9 +80,7 @@ async fn main() -> Result<()> {
             )
             .await
             {
-                let _ = shutdown_tx
-                    .send(Err(anyhow!("start data controller {err}")))
-                    .await;
+                let _ = shutdown_tx.send(Err(anyhow!("apply db state {err}"))).await;
             }
         });
     }
@@ -98,9 +96,7 @@ async fn main() -> Result<()> {
                 .await
                 .anyhow()
             {
-                let _ = shutdown_tx
-                    .send(Err(anyhow!("start data controller {e}")))
-                    .await;
+                let _ = shutdown_tx.send(Err(anyhow!("data controller {e}"))).await;
             }
         });
 
@@ -113,7 +109,8 @@ async fn main() -> Result<()> {
         let program = program_safe.clone();
         let shutdown_tx = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
-            if let Err(e) = ipc::start_ipc_server(unix_socket_addr, program) {
+            info!("start ipc server {}", &unix_socket_addr);
+            if let Err(e) = ipc::start_ipc_server(unix_socket_addr, program).await {
                 let _ = shutdown_tx
                     .send(Err(anyhow!("start unix socket server {e}")))
                     .await;
@@ -133,7 +130,9 @@ async fn main() -> Result<()> {
         });
     }
 
-    shutdown_rx.recv().await;
+    if let Some(Err(err)) = shutdown_rx.recv().await {
+        error!("program exit with error {:?}", err)
+    }
     info!("gracefully shutdown");
     Ok(())
 }

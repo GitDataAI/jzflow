@@ -1,15 +1,22 @@
 use crate::media_data_tracker::MediaDataTracker;
-use actix_web::{web, App, HttpResponse, HttpServer};
+use actix_web::error::JsonPayloadError;
+use actix_web::http::StatusCode;
+use actix_web::web::Data;
+use actix_web::{error, middleware, web, App, HttpRequest, HttpResponse, HttpServer};
 use anyhow::anyhow;
 use anyhow::Result;
+use core::str;
 use http_body_util::Collected;
-use jz_action::core::models::NodeRepo;
+use jz_action::core::models::{NodeRepo, TrackerState};
 use jz_action::utils::StdIntoAnyhowResult;
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
-use tracing::info;
+use tokio::time::{sleep, Instant};
+use tracing::{debug, error, info};
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -18,30 +25,49 @@ use hyper_util::client::legacy::Client;
 use hyperlocal::{UnixClientExt, UnixConnector, Uri};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct AvaiableDataResponse {
-    pub(crate) id: String,
+pub struct AvaiableDataResponse {
+    pub id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct CompleteDataReq {
-    pub(crate) id: String,
+pub struct CompleteDataReq {
+    pub id: String,
 }
 
 impl CompleteDataReq {
-    fn new(id: &str) -> Self {
+    pub fn new(id: &str) -> Self {
         CompleteDataReq { id: id.to_string() }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct SubmitOuputDataReq {
-    pub(crate) id: String,
+pub struct SubmitOuputDataReq {
+    pub id: String,
 }
 
 impl SubmitOuputDataReq {
-    fn new(id: &str) -> Self {
+    pub fn new(id: &str) -> Self {
         SubmitOuputDataReq { id: id.to_string() }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Status {
+    pub state: TrackerState,
+}
+
+async fn status<R>(program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>) -> HttpResponse
+where
+    R: NodeRepo,
+{
+    info!("receive status request");
+    let status = {
+        let program = program_mutex.lock().await;
+        Status {
+            state: program.local_state.clone(),
+        }
+    };
+    HttpResponse::Ok().json(status)
 }
 
 async fn process_data_request<R>(
@@ -51,18 +77,33 @@ where
     R: NodeRepo,
 {
     info!("receive avaiable data reqeust");
-    let (tx, mut rx) = oneshot::channel::<AvaiableDataResponse>();
-    let program = program_mutex.lock().await;
-    program
-        .ipc_process_data_req_tx
-        .as_ref()
-        .unwrap()
-        .send(((), tx))
-        .await
-        .unwrap();
+    let (tx, rx) = oneshot::channel::<Option<AvaiableDataResponse>>();
 
-    match rx.try_recv() {
-        Ok(resp) => HttpResponse::Ok().json(resp),
+    let sender = loop {
+        let program = program_mutex.lock().await;
+        if matches!(program.local_state, TrackerState::Ready) {
+            break program.ipc_process_data_req_tx.as_ref().cloned();
+        }
+        drop(program);
+        sleep(Duration::from_secs(5)).await;
+    };
+
+    //read request
+    match sender {
+        Some(sender) => {
+            if let Err(err) = sender.send(((), tx)).await {
+                return HttpResponse::ServiceUnavailable()
+                    .body(format!("send to avaiable data channel {err}"));
+            }
+        }
+        None => {
+            return HttpResponse::ServiceUnavailable().body("channel is not ready");
+        }
+    }
+
+    match rx.await {
+        Ok(Some(resp)) => HttpResponse::Ok().json(resp),
+        Ok(None) => HttpResponse::NotFound().body("no avaiablle data"),
         Err(e) => HttpResponse::ServiceUnavailable().body(e.to_string()),
     }
 }
@@ -75,17 +116,30 @@ where
     R: NodeRepo,
 {
     info!("receive data completed request");
-    let (tx, mut rx) = oneshot::channel::<()>();
-    let program = program_mutex.lock().await;
+    let (tx, rx) = oneshot::channel::<()>();
+    let sender = loop {
+        let program = program_mutex.lock().await;
+        if matches!(program.local_state, TrackerState::Ready) {
+            break program.ipc_process_completed_data_tx.as_ref().cloned();
+        }
+        drop(program);
+        sleep(Duration::from_secs(5)).await;
+    };
+
     //read request
-    program
-        .ipc_process_completed_data_tx
-        .as_ref()
-        .unwrap()
-        .send((data.0, tx))
-        .await
-        .unwrap();
-    match rx.try_recv() {
+    match sender {
+        Some(sender) => {
+            if let Err(err) = sender.send((data.0, tx)).await {
+                return HttpResponse::ServiceUnavailable()
+                    .body(format!("send to avaiable data channel {err}"));
+            }
+        }
+        None => {
+            return HttpResponse::ServiceUnavailable().body("channel is not ready");
+        }
+    }
+
+    match rx.await {
         Ok(resp) => {
             //response result
             HttpResponse::Ok().body(resp)
@@ -97,22 +151,38 @@ where
 async fn process_submit_output_request<R>(
     program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
     data: web::Json<SubmitOuputDataReq>,
+    //body: web::Bytes,
 ) -> HttpResponse
 where
     R: NodeRepo,
 {
-    info!("receive submit output request");
+    // let data: SubmitOuputDataReq = serde_json::from_slice(&body).unwrap();
+
+    info!("receive submit output request {}", &data.id);
     let (tx, mut rx) = oneshot::channel::<()>();
-    let program = program_mutex.lock().await;
+    let sender = loop {
+        let program = program_mutex.lock().await;
+        if matches!(program.local_state, TrackerState::Ready) {
+            break program.ipc_process_submit_output_tx.as_ref().cloned();
+        }
+        drop(program);
+        sleep(Duration::from_secs(5)).await;
+    };
+
     //read request
-    program
-        .ipc_process_submit_output_tx
-        .as_ref()
-        .unwrap()
-        .send((data.0, tx))
-        .await
-        .unwrap();
-    match rx.try_recv() {
+    match sender {
+        Some(sender) => {
+            if let Err(err) = sender.send((data.0, tx)).await {
+                return HttpResponse::ServiceUnavailable()
+                    .body(format!("send to avaiable data channel {err}"));
+            }
+        }
+        None => {
+            return HttpResponse::ServiceUnavailable().body("channel is not ready");
+        }
+    }
+
+    match rx.await {
         Ok(resp) => {
             //response result
             HttpResponse::Ok().body(resp)
@@ -121,30 +191,54 @@ where
     }
 }
 
-pub fn start_ipc_server<R>(
+pub async fn start_ipc_server<R>(
     unix_socket_addr: String,
     program: Arc<Mutex<MediaDataTracker<R>>>,
 ) -> Result<()>
 where
     R: NodeRepo + Send + Sync + 'static,
 {
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
+        fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
+            use actix_web::error::JsonPayloadError;
+
+            let detail = err.to_string();
+            let resp = match &err {
+                JsonPayloadError::ContentType => HttpResponse::UnsupportedMediaType().body(detail),
+                JsonPayloadError::Deserialize(json_err) if json_err.is_data() => {
+                    HttpResponse::UnprocessableEntity().body(detail)
+                }
+                _ => HttpResponse::BadRequest().body(detail),
+            };
+            error::InternalError::from_response(err, resp).into()
+        }
+
         App::new()
-            .app_data(program.clone())
-            .service(web::resource("/api/v1/data").get(process_data_request::<R>))
-            .service(web::resource("/api/v1/data").post(process_completed_request::<R>))
-            .service(web::resource("/api/v1/submit").post(process_submit_output_request::<R>))
+            .wrap(middleware::Logger::default())
+            .app_data(Data::new(program.clone()))
+            .service(
+                web::scope("/api/v1")
+                    .service(web::resource("status").get(status::<R>))
+                    .service(web::resource("data")
+                    .route(web::post().to(process_completed_request::<R>))
+                    .route(web::get().to(process_data_request::<R>))
+                )
+                    .service(web::resource("submit").post(process_submit_output_request::<R>)),
+                    
+            )
+            .app_data(web::JsonConfig::default().error_handler(json_error_handler))
     })
-    .bind_uds(unix_socket_addr)
-    .unwrap();
+    .bind_uds(unix_socket_addr)?;
+    server.run().await.unwrap();
 
     Ok(())
 }
 
 pub trait IPCClient {
+    async fn status(&self) -> Result<Status>;
     async fn submit_output(&self, id: &str) -> Result<()>;
     async fn complete_result(&self, id: &str) -> Result<()>;
-    async fn request_avaiable_data(&self) -> Result<String>;
+    async fn request_avaiable_data(&self) -> Result<Option<String>>;
 }
 
 pub struct IPCClientImpl {
@@ -162,43 +256,86 @@ impl IPCClientImpl {
 }
 
 impl IPCClient for IPCClientImpl {
+    async fn status(&self) -> Result<Status> {
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/status").into();
+
+        let req: Request<Full<Bytes>> = Request::builder()
+            .method(Method::GET)
+            .uri(url)
+            .header("Content-Type", "application/json")
+            .body(Full::default())?;
+
+        let resp = self.client.request(req).await.anyhow()?;
+        if !resp.status().is_success() {
+            let status_code = resp.status();
+            let contents =
+                String::from_utf8(resp.collect().await.map(Collected::to_bytes)?.to_vec())?;
+            return Err(anyhow!("request status fail {} {}", status_code, contents));
+        }
+
+        let contents = resp.collect().await.map(Collected::to_bytes)?;
+        let status: Status = serde_json::from_slice(contents.as_ref())?;
+        Ok(status)
+    }
+
     async fn submit_output(&self, id: &str) -> Result<()> {
         let req = SubmitOuputDataReq::new(id);
         let json = serde_json::to_string(&req)?;
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/submit").into();
 
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::POST)
-            .uri(self.unix_socket_addr.clone() + "/api/v1/submit")
+            .uri(url)
+            .header("Content-Type", "application/json")
             .body(Full::from(json))?;
-
         let resp = self.client.request(req).await.anyhow()?;
         if resp.status().is_success() {
             return Ok(());
         }
 
-        Err(anyhow!("submit data fail {}", resp.status()))
+        let status_code = resp.status();
+        let contents = String::from_utf8(resp.collect().await.map(Collected::to_bytes)?.to_vec())?;
+        Err(anyhow!("submit data fail {} {}", status_code, contents))
     }
 
-    async fn request_avaiable_data(&self) -> Result<String> {
-        let url = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data").into();
-        let resp = self.client.get(url).await.anyhow()?;
+    async fn request_avaiable_data(&self) -> Result<Option<String>> {
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data").into();
+        let req: Request<Full<Bytes>> = Request::builder()
+            .method(Method::GET)
+            .uri(url)
+            .header("Content-Type", "application/json")
+            .body(Full::default())?;
+
+        let resp = self.client.request(req).await.anyhow()?;
+        if resp.status().as_u16() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
 
         if !resp.status().is_success() {
-            return Err(anyhow!("submit data fail {}", resp.status()));
+            let status_code = resp.status();
+            let contents =
+                String::from_utf8(resp.collect().await.map(Collected::to_bytes)?.to_vec())?;
+            return Err(anyhow!(
+                "get avaiable data fail {} {}",
+                status_code,
+                contents
+            ));
         }
 
         let contents = resp.collect().await.map(Collected::to_bytes)?;
         let avaiabel_data: AvaiableDataResponse = serde_json::from_slice(contents.as_ref())?;
-        Ok(avaiabel_data.id)
+        Ok(Some(avaiabel_data.id))
     }
 
     async fn complete_result(&self, id: &str) -> Result<()> {
         let req = CompleteDataReq::new(id);
         let json = serde_json::to_string(&req)?;
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data").into();
 
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::POST)
-            .uri(self.unix_socket_addr.clone() + "/api/v1/data")
+            .uri(url)
+            .header("Content-Type", "application/json")
             .body(Full::from(json))?;
 
         let resp = self.client.request(req).await.anyhow()?;
@@ -206,6 +343,24 @@ impl IPCClient for IPCClientImpl {
             return Ok(());
         }
 
-        Err(anyhow!("submit data fail {}", resp.status()))
+        let status_code = resp.status();
+        let contents = String::from_utf8(resp.collect().await.map(Collected::to_bytes)?.to_vec())?;
+        Err(anyhow!("completed data fail {} {}", status_code, contents))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use tracing_subscriber;
+
+    #[tokio::test]
+    async fn test_render() {
+        env::set_var("RUST_LOG", "DEBUG");
+        tracing_subscriber::fmt::init();
+
+        let client = IPCClientImpl::new("/home/hunjixin/code/jz-action/test.d".to_string());
+        client.complete_result("aaa").await.unwrap();
     }
 }

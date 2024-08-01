@@ -2,9 +2,6 @@ use anyhow::Ok;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use compute_unit_runner::ipc::{self, IPCClient};
-use jiaozifs_client_rs::apis::{self};
-use jiaozifs_client_rs::models::RefType;
-use jz_action::utils::IntoAnyhowResult;
 use jz_action::utils::StdIntoAnyhowResult;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -19,7 +16,7 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "jz_writer",
+    name = "dummy_out",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
     about = "embed in k8s images"
@@ -34,36 +31,6 @@ struct Args {
 
     #[arg(short, long, default_value = "/app/tmp")]
     tmp_path: String,
-
-    #[arg(long, default_value = "64")]
-    batch_size: usize,
-
-    #[arg(long)]
-    jiaozifs_url: String,
-
-    #[arg(long)]
-    username: String,
-
-    #[arg(long)]
-    password: String,
-
-    #[arg(long)]
-    owner: String,
-
-    #[arg(long)]
-    repo: String,
-
-    #[arg(long)]
-    ref_type: String,
-
-    #[arg(long, default_value = "main")]
-    source: String,
-
-    #[arg(long)]
-    ref_name: String,
-
-    #[arg(long, default_value = "*")]
-    pattern: String,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -78,8 +45,8 @@ async fn main() -> Result<()> {
     {
         let shutdown_tx = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
-            if let Err(e) = write_jz_fs(args).await {
-                let _ = shutdown_tx.send(Err(anyhow!("write jz fs {e}"))).await;
+            if let Err(e) = write_dummy(args).await {
+                let _ = shutdown_tx.send(Err(anyhow!("dummy out {e}"))).await;
             }
         });
     }
@@ -104,20 +71,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn write_jz_fs(args: Args) -> Result<()> {
-    let mut configuration = apis::configuration::Configuration::default();
-    configuration.base_path = args.jiaozifs_url;
-    configuration.basic_auth = Some((args.username, Some(args.password)));
-
-    match args.ref_type.as_str() {
-        "wip" => {
-            //ensure wip exit
-            apis::wip_api::get_wip(&configuration, &args.owner, &args.repo, &args.ref_name).await?;
-            Ok(RefType::Wip)
-        }
-        val => Err(anyhow!("ref type not support {}", val)),
-    }?;
-
+async fn write_dummy(args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
@@ -127,27 +81,17 @@ async fn write_jz_fs(args: Args) -> Result<()> {
             continue;
         }
         let id = id.unwrap();
-
         let path_str = tmp_path.join(&id);
         let root_input_dir = path_str.as_path();
+
         for entry in WalkDir::new(root_input_dir) {
             let entry = entry?;
             if entry.file_type().is_file() {
                 let path = entry.path();
-                let content = fs::read(path).await?;
-                let rel_path = path.strip_prefix(root_input_dir)?;
-                apis::objects_api::upload_object(
-                    &configuration,
-                    &args.owner,
-                    &args.repo,
-                    &args.ref_name,
-                    rel_path.to_str().anyhow("path must be validate")?,
-                    Some(true),
-                    Some(content),
-                )
-                .await?;
+                info!("read path {:?}", path);
             }
         }
+
         client.complete_result(&id).await?;
     }
 }

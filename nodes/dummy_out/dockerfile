@@ -1,0 +1,7 @@
+FROM jz-action/net-debug
+
+RUN mkdir -p /app
+
+WORKDIR /app
+
+ADD dist/dummy_out /dummy_out
