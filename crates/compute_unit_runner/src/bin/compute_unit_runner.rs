@@ -31,6 +31,9 @@ struct Args {
     #[arg(short, long, default_value = "/app/tmp")]
     tmp_path: String,
 
+    #[arg(short, long, default_value = "30")]
+    buf_size: usize,
+
     #[arg(short, long)]
     node_name: String,
 
@@ -61,6 +64,7 @@ async fn main() -> Result<()> {
         db_repo.clone(),
         &args.node_name,
         PathBuf::from_str(args.tmp_path.as_str())?,
+        args.buf_size,
     );
 
     let program_safe = Arc::new(Mutex::new(program));

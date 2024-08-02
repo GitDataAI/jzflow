@@ -42,6 +42,9 @@ struct Args {
     #[arg(short, long)]
     database: String,
 
+    #[arg(short, long, default_value = "30")]
+    buf_size: usize,
+
     #[arg(long, default_value = "0.0.0.0:80")]
     host_port: String,
 }
@@ -60,6 +63,7 @@ async fn main() -> Result<()> {
     let program = ChannelTracker::new(
         db_repo.clone(),
         &args.node_name,
+        args.buf_size,
         PathBuf::from_str(args.tmp_path.as_str())?,
     );
 

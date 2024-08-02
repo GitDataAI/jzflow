@@ -1,6 +1,6 @@
 use crate::ipc::{AvaiableDataResponse, CompleteDataReq, SubmitOuputDataReq};
 use crate::mprc::Mprs;
-use anyhow::{Ok, Result};
+use anyhow::{anyhow, Ok, Result};
 use jz_action::core::models::{DataRecord, DataState, DbRepo, Direction, NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
@@ -29,6 +29,8 @@ where
 {
     pub(crate) name: String,
 
+    pub(crate) buf_size: usize,
+
     pub(crate) tmp_store: PathBuf,
 
     pub(crate) repo: R,
@@ -55,9 +57,10 @@ impl<R> MediaDataTracker<R>
 where
     R: DbRepo,
 {
-    pub fn new(repo: R, name: &str, tmp_store: PathBuf) -> Self {
+    pub fn new(repo: R, name: &str, tmp_store: PathBuf, buf_size: usize) -> Self {
         MediaDataTracker {
             tmp_store,
+            buf_size,
             name: name.to_string(),
             repo: repo,
             local_state: TrackerState::Init,
@@ -143,7 +146,7 @@ where
                                         }
                                         Err(err) => {
                                             error!("walk out dir({:?}) fail {err}", &req.id);
-                                            if let Err(err) = db_repo.update_state(&node_name, &req.id, DataState::Error).await{
+                                            if let Err(err) = db_repo.update_state(&node_name, &req.id, Direction::Out, DataState::Error).await{
                                                 error!("mark data state error fail {err}");
                                             }
                                             break;
@@ -167,7 +170,7 @@ where
                                     info!("send data to downnstream successfully {} {:?}", &req.id, now.elapsed());
                                 }
 
-                                match db_repo.update_state(&node_name, &req.id, DataState::Sent).await{
+                                match db_repo.update_state(&node_name, &req.id,  Direction::Out,DataState::Sent).await{
                                     std::result::Result::Ok(_) =>{
                                             //remove input data
                                             let tmp_path = tmp_store.join(&req.id);
@@ -192,6 +195,61 @@ where
 
                             }
                         }
+                    }
+                }
+            });
+        }
+
+        {
+            //process submit data
+            let db_repo = self.repo.clone();
+            let node_name = self.name.clone();
+            let buf_size = self.buf_size;
+
+            tokio::spawn(async move {
+                loop {
+                    select! {
+                     Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
+                        loop {
+                            if let Err(err) =  db_repo.count_pending(&node_name,Direction::In).await.and_then(|count|{
+                                if count > buf_size {
+                                    Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
+                                } else {
+                                    Ok(())
+                                }
+                            }){
+                                warn!("fail with limit {err}");
+                                sleep(Duration::from_secs(10)).await;
+                                continue;
+                            }
+                            break;
+                        }
+
+                        // respose with nothing
+                        match db_repo.insert_new_path(&DataRecord{
+                            node_name:node_name.clone(),
+                            id:req.id.clone(),
+                            size: req.size,
+                            sent: vec![],
+                            state: DataState::Received,
+                            direction: Direction::Out,
+                        }).await{
+                            std::result::Result::Ok(_) =>{
+                                // respose with nothing
+                                resp.send(Ok(())).expect("channel only read once");
+                                info!("insert this data to path");
+                                match new_data_tx.try_send(()) {
+                                    Err(TrySendError::Closed(_)) =>{
+                                        error!("new data channel has been closed")
+                                    }
+                                    _=>{}
+                                }
+                            },
+                            Err(err) => {
+                                resp.send(Err(err)).expect("channel only read once");
+                            }
+                        }
+                    },
                     }
                 }
             });
@@ -232,7 +290,7 @@ where
                             }
                      },
                      Some((req, resp))  = ipc_process_completed_data_rx.recv() => {
-                        match db_repo.update_state(&node_name, &req.id, DataState::Processed).await{
+                        match db_repo.update_state(&node_name, &req.id, Direction::In, DataState::Processed).await{
                             std::result::Result::Ok(_) =>{
                                     // respose with nothing
                                     resp.send(Ok(())).expect("channel only read once");
@@ -246,33 +304,7 @@ where
                                 resp.send(Err(err)).expect("channel only read once");
                             }
                         }
-                     },
-                     Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
-                        // respose with nothing
-                        match db_repo.insert_new_path(&DataRecord{
-                            node_name:node_name.clone(),
-                            id:req.id.clone(),
-                            size: req.size,
-                            sent: vec![],
-                            state: DataState::Received,
-                            direction: Direction::Out,
-                        }).await{
-                            std::result::Result::Ok(_) =>{
-                                // respose with nothing
-                                resp.send(Ok(())).expect("channel only read once");
-                                println!("send signal");
-                                match new_data_tx.try_send(()) {
-                                    Err(TrySendError::Closed(_)) =>{
-                                        error!("new data channel has been closed")
-                                    }
-                                    _=>{}
-                                }
-                            },
-                            Err(err) => {
-                                resp.send(Err(err)).expect("channel only read once");
-                            }
-                        }
-                    },
+                     }
                     }
                 }
             });

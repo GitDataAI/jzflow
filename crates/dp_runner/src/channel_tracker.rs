@@ -23,6 +23,8 @@ where
 
     pub(crate) name: String,
 
+    pub(crate) buf_size: usize,
+
     pub(crate) tmp_store: PathBuf,
 
     pub(crate) local_state: TrackerState,
@@ -38,11 +40,12 @@ impl<R> ChannelTracker<R>
 where
     R: DbRepo,
 {
-    pub(crate) fn new(repo: R, name: &str, tmp_store: PathBuf) -> Self {
+    pub(crate) fn new(repo: R, name: &str, buf_size: usize, tmp_store: PathBuf) -> Self {
         ChannelTracker {
             name: name.to_string(),
             repo: repo,
             tmp_store,
+            buf_size,
             local_state: TrackerState::Init,
             upstreams: vec![],
             downstreams: vec![],
@@ -61,15 +64,29 @@ where
         let tmp_store = self.tmp_store.clone();
         let db_repo = self.repo.clone();
         let node_name = self.name.clone();
+        let buf_size = self.buf_size;
         tokio::spawn(async move {
             loop {
                 select! {
-                 Some((data_batch, resp)) = rx.recv() => {
+                 Some((data_batch, resp)) = rx.recv() => { //make this params
                     //save to fs
                     //create input directory
                     let now = Instant::now();
                     let id = data_batch.id;
-                    match db_repo.find_by_node_id(&node_name,&id).await  {
+                    //check limit
+                   if let Err(err) =  db_repo.count_pending(&node_name,Direction::In).await.and_then(|count|{
+                        if count > buf_size {
+                            Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
+                        } else {
+                            Ok(())
+                        }
+                    }){
+                        resp.send(Err(anyhow!("cannt query limit from mongo {err}"))).expect("request alread listen this channel");
+                        continue;
+                    }
+
+                    // processed before
+                    match db_repo.find_by_node_id(&node_name,&id,Direction::In).await  {
                         Ok(Some(_))=>{
                             warn!("data {} processed before", &id);
                             resp.send(Ok(())).expect("request alread listen this channel");
@@ -83,16 +100,17 @@ where
                        _=>{}
                     }
 
-                    let tmp_in_path = tmp_store.join(id.clone());
+                    // code below this can be move another coroutine
 
-                    debug!("try to create directory {:?}", tmp_in_path);
+                    //write batch files
+                    //write files is too slow. try to use mem cache
+                    let tmp_in_path = tmp_store.join(id.clone());
+                    debug!("try to create directory {:?} {:?}", tmp_in_path, now.elapsed());
                     if let Err(err) = fs::create_dir_all(&tmp_in_path).await {
                         error!("create input dir {:?} fail {}", tmp_in_path, err);
                         resp.send(Err(err.into())).expect("request alread listen this channel");
                         continue;
                     }
-
-                    //write batch files
 
                     let mut is_write_err = false;
                     for (entry_path, entry) in  data_batch.cells.iter().map(|entry|(tmp_in_path.join(entry.path.clone()), entry)) {
@@ -106,7 +124,6 @@ where
                         resp.send(Err(anyhow!("write file "))).expect("request alread listen this channel");
                         continue;
                     }
-                    
                     info!("write files to disk in {} {:?}", &id, now.elapsed());
 
                     //insert record to database

@@ -99,7 +99,14 @@ pub trait DataRepo {
         &self,
         node_name: &str,
         id: &str,
+        direction: Direction,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
+
+    fn count_pending(
+        &self,
+        node_name: &str,
+        direction: Direction,
+    ) -> impl std::future::Future<Output = Result<usize>> + Send;
 
     fn mark_partial_sent(
         &self,
@@ -117,6 +124,7 @@ pub trait DataRepo {
         &self,
         node_name: &str,
         id: &str,
+        direction: Direction,
         state: DataState,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 }

@@ -1,12 +1,13 @@
 use crate::{
-    core::models::{DBConfig, DataRecord, DataRepo, DataState, Graph, GraphRepo, Node, NodeRepo},
+    core::models::{
+        DBConfig, DataRecord, DataRepo, DataState, Direction, Graph, GraphRepo, Node, NodeRepo,
+    },
     utils::StdIntoAnyhowResult,
 };
 use anyhow::{anyhow, Result};
 use mongodb::{bson::doc, error::ErrorKind, options::IndexOptions, Client, Collection, IndexModel};
 use serde::Serialize;
 use serde_variant::to_variant_name;
-use std::{ops::Deref, sync::Arc};
 
 const GRAPH_COL_NAME: &'static str = "graph";
 const NODE_COL_NAME: &'static str = "node";
@@ -47,22 +48,66 @@ impl MongoRepo {
         let node_col: Collection<Node> = database.collection(&NODE_COL_NAME);
         let data_col: Collection<DataRecord> = database.collection(&DATA_COL_NAME);
 
-        //create index
-        let idx_opts = IndexOptions::builder()
-            .unique(true)
-            .name("idx_node_name_unique".to_owned())
-            .build();
+        {
+            //create index for nodes
+            let idx_opts = IndexOptions::builder()
+                .unique(true)
+                .name("idx_node_name_unique".to_owned())
+                .build();
 
-        let index = IndexModel::builder()
-            .keys(doc! { "node_name": 1 })
-            .options(idx_opts)
-            .build();
+            let index = IndexModel::builder()
+                .keys(doc! { "node_name": 1 })
+                .options(idx_opts)
+                .build();
 
-        if let Err(e) = node_col.create_index(index).await {
-            match *e.kind {
-                ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                e => {
-                    return Err(anyhow!("create index error {}", e));
+            if let Err(e) = node_col.create_index(index).await {
+                match *e.kind {
+                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
+                    e => {
+                        return Err(anyhow!("create index error {}", e));
+                    }
+                }
+            }
+        }
+
+        {
+            //create  index  for data
+            let idx_opts = IndexOptions::builder()
+                .name("idx_node_name_state_direction".to_owned())
+                .build();
+
+            let index = IndexModel::builder()
+                .keys(doc! { "node_name": 1,"state": 1,"direction": 1})
+                .options(idx_opts)
+                .build();
+
+            if let Err(e) = data_col.create_index(index).await {
+                match *e.kind {
+                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
+                    e => {
+                        return Err(anyhow!("create index error {}", e));
+                    }
+                }
+            }
+        }
+
+        {
+            //create  index  for data
+            let idx_opts = IndexOptions::builder()
+                .name("idx_node_name_id_direction".to_owned())
+                .build();
+
+            let index = IndexModel::builder()
+                .keys(doc! { "node_name": 1,"id": 1,"direction": 1})
+                .options(idx_opts)
+                .build();
+
+            if let Err(e) = data_col.create_index(index).await {
+                match *e.kind {
+                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
+                    e => {
+                        return Err(anyhow!("create index error {}", e));
+                    }
                 }
             }
         }
@@ -109,14 +154,13 @@ impl DataRepo for MongoRepo {
             "$set": { "state": "Assigned" },
         };
 
-        let result = self
-            .data_col
+        self.data_col
             .find_one_and_update(
                 doc! {"node_name":node_name,"state": "Received", "direction":"In"},
                 update,
             )
-            .await?;
-        Ok(result)
+            .await
+            .anyhow()
     }
 
     async fn find_and_sent_output_data(&self, node_name: &str) -> Result<Option<DataRecord>> {
@@ -124,27 +168,49 @@ impl DataRepo for MongoRepo {
             "$set": { "state": "PartialSent" },
         };
 
-        let result = self
+        self
             .data_col
             .find_one_and_update(
                 doc! {"node_name":node_name, "state": doc! {"$in": ["Received","PartialSent"]}, "direction":"Out"},
                 update,
             )
-            .await?;
-        Ok(result)
+            .await.anyhow()
     }
 
-    async fn insert_new_path(&self, record: &DataRecord) -> Result<()> {
-        self.data_col.insert_one(record).await.map(|_| ()).anyhow()
+    async fn find_by_node_id(
+        &self,
+        node_name: &str,
+        id: &str,
+        direction: Direction,
+    ) -> Result<Option<DataRecord>> {
+        self.data_col
+            .find_one(
+                doc! {"id": id,"node_name":node_name, "direction": to_variant_name(&direction)?},
+            )
+            .await
+            .anyhow()
     }
 
-    async fn update_state(&self, node_name: &str, id: &str, state: DataState) -> Result<()> {
+    async fn count_pending(&self, node_name: &str, direction: Direction) -> Result<usize> {
+        self.data_col.count_documents(doc! {"node_name":node_name,"state": doc! {"$in": ["Received","PartialSent"]}, "direction": to_variant_name(&direction)?}).await.map(|count|count as usize).anyhow()
+    }
+
+    async fn update_state(
+        &self,
+        node_name: &str,
+        id: &str,
+        direction: Direction,
+        state: DataState,
+    ) -> Result<()> {
         let update = doc! {
             "$set": { "state":  to_variant_name(&state)?  },
         };
 
         self.data_col
-            .find_one_and_update(doc! {"node_name":node_name,"id": id}, update)
+            .find_one_and_update(
+                doc! {"node_name":node_name,"id": id, "direction": to_variant_name(&direction)?},
+                update,
+            )
             .await
             .map(|_| ())
             .anyhow()
@@ -162,12 +228,8 @@ impl DataRepo for MongoRepo {
             .anyhow()
     }
 
-    async fn find_by_node_id(&self, node_name: &str, id: &str) -> Result<Option<DataRecord>> {
-        let result = self
-            .data_col
-            .find_one(doc! {"id": id,"node_name":node_name})
-            .await?;
-        Ok(result)
+    async fn insert_new_path(&self, record: &DataRecord) -> Result<()> {
+        self.data_col.insert_one(record).await.map(|_| ()).anyhow()
     }
 }
 
