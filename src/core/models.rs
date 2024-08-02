@@ -36,13 +36,14 @@ pub struct Node {
 
 /// DataState use to represent databatch state
 /// for incoming data:  Received(channel receive data) -> Assigned(assigned to user containerd) -> Processed(user containerd has processed)
-/// for outgoing data:  Received(user container product) -> Sent(send to channel)
+/// for outgoing data:  Received(user container product) -> ->PartialSent(send to channel) -> Sent(send to channel)
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum DataState {
     Received,
     Assigned,
     Processed,
+    PartialSent,
     Sent,
     Error,
 }
@@ -60,6 +61,7 @@ pub struct DataRecord {
     pub size: u32,
     pub state: DataState,
     pub direction: Direction,
+    pub sent: Vec<String>,
 }
 
 pub trait DBConfig {
@@ -92,6 +94,19 @@ pub trait DataRepo {
         &self,
         node_name: &str,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
+
+    fn find_by_node_id(
+        &self,
+        node_name: &str,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
+
+    fn mark_partial_sent(
+        &self,
+        node_name: &str,
+        id: &str,
+        sent: Vec<&str>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     fn insert_new_path(
         &self,

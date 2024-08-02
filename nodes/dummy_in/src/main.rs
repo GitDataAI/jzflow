@@ -10,6 +10,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::select;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tracing::error;
 use tracing::{info, Level};
 
@@ -74,6 +75,7 @@ async fn dummy_in(args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
+        let instant = Instant::now();
         let id = uuid::Uuid::new_v4().to_string();
         let output_dir = tmp_path.join(&id);
         fs::create_dir_all(output_dir.clone()).await?;
@@ -86,9 +88,12 @@ async fn dummy_in(args: Args) -> Result<()> {
                 tmp_file.write(word.as_bytes()).await.unwrap();
             }
         }
+
+        info!("generate new data spent {:?}", instant.elapsed());
         //submit directory after completed a batch
         client
             .submit_output(SubmitOuputDataReq::new(&id, 30))
             .await?;
+        info!("submit new data {:?}", instant.elapsed());
     }
 }

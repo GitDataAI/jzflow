@@ -1,4 +1,5 @@
 use crate::ipc::{AvaiableDataResponse, CompleteDataReq, SubmitOuputDataReq};
+use crate::mprc::Mprs;
 use anyhow::{Ok, Result};
 use jz_action::core::models::{DataRecord, DataState, DbRepo, Direction, NodeRepo, TrackerState};
 use jz_action::network::common::Empty;
@@ -9,17 +10,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::TrySendError;
+use tonic::Status;
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
+use crate::multi_sender::MultiSender;
 use tokio::fs;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio::sync::{broadcast, oneshot};
-use tokio::time::{self, sleep};
+use tokio::time::{self, sleep, Instant};
 use tokio_stream::StreamExt;
-
 
 pub struct MediaDataTracker<R>
 where
@@ -48,16 +50,12 @@ where
     // channel for submit output data
     pub(crate) ipc_process_submit_output_tx:
         Option<mpsc::Sender<(SubmitOuputDataReq, oneshot::Sender<Result<()>>)>>,
-
-    pub(crate) out_going_tx: broadcast::Sender<MediaDataBatchResponse>, //receive data from upstream and send it to program with this
 }
 impl<R> MediaDataTracker<R>
 where
     R: DbRepo,
 {
     pub fn new(repo: R, name: &str, tmp_store: PathBuf) -> Self {
-        let out_going_tx = broadcast::Sender::new(128);
-
         MediaDataTracker {
             tmp_store,
             name: name.to_string(),
@@ -68,7 +66,6 @@ where
             ipc_process_submit_output_tx: None,
             ipc_process_completed_data_tx: None,
             ipc_process_data_req_tx: None,
-            out_going_tx: out_going_tx,
         }
     }
 }
@@ -93,7 +90,6 @@ where
             //process outgoing data
             let db_repo = self.repo.clone();
             let tmp_store = self.tmp_store.clone();
-            let out_going_tx = self.out_going_tx.clone();
             let downstreams = self.downstreams.clone(); //make dynamic downstreams?
             let node_name = self.name.clone();
             let new_data_tx = new_data_tx.clone();
@@ -114,14 +110,15 @@ where
                 }
             });
 
+            let mut multi_sender = MultiSender::new(downstreams.clone());
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
                         Some(()) = new_data_rx.recv() => {
-                            println!("start to send data");
                             //reconstruct batch
                             //TODO combine multiple batch
                             loop {
+                                let now = Instant::now();
                                 match db_repo.find_and_sent_output_data(&node_name).await {
                                     std::result::Result::Ok(Some(req)) =>{
                                 let tmp_out_path = tmp_store.join(&req.id);
@@ -154,25 +151,22 @@ where
                                     }
                                 }
                                 new_batch.size  = req.size;
+                                new_batch.id  = req.id.clone();
 
-                                println!("start to send data2 ");
                                  //write outgoing
                                 if new_batch.size >0 && downstreams.len()>0 {
-                                    //TODO change a more predicatable and reliable way to broadcase data message.
-                                    //must ensure every downstream node receive this message?
-                                    println!("start to send data3");
-                                    if let Err(_) = out_going_tx.send(new_batch) {
-                                        //no receiver
-                                        warn!("broadcast data fail due to no receiver, revert this data state to Processed");
-                                        if let Err(err) = db_repo.update_state(&node_name, &req.id, DataState::Received).await{
+                                    info!("start to send data {} {:?}", &req.id, now.elapsed());
+                                    if let Err(sent_nodes) =  multi_sender.send(new_batch).await {
+                                        if let Err(err) = db_repo.mark_partial_sent(&node_name, &req.id, sent_nodes.iter().map(|key|key.as_str()).collect()).await{
                                             error!("revert data state fail {err}");
                                         }
+                                        warn!("send data to partial downnstream {:?}",sent_nodes);
                                         break;
                                     }
-                                    info!("send data to downnstream successfully");
+
+                                    info!("send data to downnstream successfully {} {:?}", &req.id, now.elapsed());
                                 }
 
-                                println!("start to send data4");
                                 match db_repo.update_state(&node_name, &req.id, DataState::Sent).await{
                                     std::result::Result::Ok(_) =>{
                                             //remove input data
@@ -185,6 +179,7 @@ where
                                         error!("update state to process fail {} {}", &req.id, err)
                                     }
                                 }
+                                    info!("fetch and send a batch {:?}", now.elapsed());
                                     },
                                     std::result::Result::Ok(None)=>{
                                         break;
@@ -258,6 +253,7 @@ where
                             node_name:node_name.clone(),
                             id:req.id.clone(),
                             size: req.size,
+                            sent: vec![],
                             state: DataState::Received,
                             direction: Direction::Out,
                         }).await{

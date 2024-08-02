@@ -5,8 +5,8 @@ package datatransfer;
 import "common.proto";
 
 service DataStream {
-  rpc subscribeMediaData(common.Empty) returns (stream MediaDataBatchResponse) {}
-  rpc subscribeTabularData(common.Empty) returns (stream TabularDataBatchResponse) {}
+  rpc transferMediaData(MediaDataBatchResponse) returns (common.Empty) {}
+  rpc transferTabularData(TabularDataBatchResponse) returns (common.Empty) {}
 }
 
 message MediaDataCell {
@@ -16,8 +16,9 @@ message MediaDataCell {
 }
 
 message MediaDataBatchResponse {
-    uint32 size = 1;
-    repeated MediaDataCell cells = 2;
+    string id = 1;
+    uint32 size = 2;
+    repeated MediaDataCell cells = 3;
 }
 
 

@@ -121,13 +121,13 @@ impl DataRepo for MongoRepo {
 
     async fn find_and_sent_output_data(&self, node_name: &str) -> Result<Option<DataRecord>> {
         let update = doc! {
-            "$set": { "state": "Sent" },
+            "$set": { "state": "PartialSent" },
         };
 
         let result = self
             .data_col
             .find_one_and_update(
-                doc! {"node_name":node_name,"state": "Received", "direction":"Out"},
+                doc! {"node_name":node_name, "state": doc! {"$in": ["Received","PartialSent"]}, "direction":"Out"},
                 update,
             )
             .await?;
@@ -148,6 +148,26 @@ impl DataRepo for MongoRepo {
             .await
             .map(|_| ())
             .anyhow()
+    }
+
+    async fn mark_partial_sent(&self, node_name: &str, id: &str, sent: Vec<&str>) -> Result<()> {
+        let update = doc! {
+            "$set": { "sent": sent },
+        };
+
+        self.data_col
+            .update_one(doc! {"node_name":node_name, "id":id}, update)
+            .await
+            .map(|_| ())
+            .anyhow()
+    }
+
+    async fn find_by_node_id(&self, node_name: &str, id: &str) -> Result<Option<DataRecord>> {
+        let result = self
+            .data_col
+            .find_one(doc! {"id": id,"node_name":node_name})
+            .await?;
+        Ok(result)
     }
 }
 

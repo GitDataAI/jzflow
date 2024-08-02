@@ -2,7 +2,7 @@ use anyhow::Result;
 use jz_action::core::models::DbRepo;
 use jz_action::network::datatransfer::data_stream_server::DataStream;
 use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
-use jz_action::utils::AnyhowToGrpc;
+use jz_action::utils::{AnyhowToGrpc, IntoAnyhowResult};
 use jz_action::{network::common::Empty, utils::StdIntoAnyhowResult};
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -40,39 +40,18 @@ impl<R> DataStream for UnitDataStream<R>
 where
     R: DbRepo + Clone + Send + Sync + 'static,
 {
-    type subscribeMediaDataStream = ReceiverStream<Result<MediaDataBatchResponse, Status>>;
-    async fn subscribe_media_data(
+    async fn transfer_media_data(
         &self,
-        request: Request<Empty>,
-    ) -> Result<Response<Self::subscribeMediaDataStream>, Status> {
-        info!("receive media subscribe request {:?}", request);
-
-        let (tx, rx) = mpsc::channel(4);
-        let program_guard = self.program.lock().await;
-        let mut data_rx = program_guard.out_going_tx.subscribe();
-        tokio::spawn(async move {
-            loop {
-                select! {
-                 data_batch = data_rx.recv() => {
-                    if let Err(err) = tx.send(data_batch.anyhow().to_rpc(Code::Internal)).await {
-                        //todo handle disconnect
-                        error!("unable to send data to downstream {}", err);
-                        return
-                    }
-                 },
-                }
-            }
-        });
-
-        Ok(Response::new(ReceiverStream::new(rx)))
+        req: Request<MediaDataBatchResponse>,
+    ) -> Result<Response<Empty>, Status> {
+        //channel and compputeunit share a pv. so not use network to fetch data between channlle and computeunit.
+        //if plan to support networks seperate, impl this
+        todo!()
     }
-
-    type subscribeTabularDataStream = ReceiverStream<Result<TabularDataBatchResponse, Status>>;
-
-    async fn subscribe_tabular_data(
+    async fn transfer_tabular_data(
         &self,
-        _request: Request<Empty>,
-    ) -> Result<Response<Self::subscribeTabularDataStream>, Status> {
+        req: Request<TabularDataBatchResponse>,
+    ) -> Result<Response<Empty>, tonic::Status> {
         todo!()
     }
 }

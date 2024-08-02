@@ -1,5 +1,4 @@
 mod channel_tracker;
-mod mprc;
 mod stream;
 
 use jz_action::dbrepo::mongo::{MongoConfig, MongoRepo};
@@ -63,8 +62,8 @@ async fn main() -> Result<()> {
         &args.node_name,
         PathBuf::from_str(args.tmp_path.as_str())?,
     );
-    let program_safe = Arc::new(Mutex::new(program));
 
+    let program_safe = Arc::new(Mutex::new(program));
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
         let shutdown_tx = shutdown_tx.clone();

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use jz_action::core::models::{DataRecord, DataState, DbRepo, Direction, TrackerState};
 use jz_action::network::common::Empty;
 use jz_action::network::datatransfer::data_stream_client::DataStreamClient;
@@ -6,15 +6,15 @@ use jz_action::network::datatransfer::MediaDataBatchResponse;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, Mutex};
-use tokio::time::{self, sleep};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::time::{self, sleep, Instant};
 use tokio::{fs, select};
 use tokio_stream::StreamExt;
 use tonic::Status;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::mprc;
 pub struct ChannelTracker<R>
 where
     R: DbRepo,
@@ -31,8 +31,7 @@ where
 
     pub(crate) downstreams: Vec<String>,
 
-    pub receivers:
-        Arc<Mutex<mprc::Mprs<String, mpsc::Sender<Result<MediaDataBatchResponse, Status>>>>>,
+    pub(crate) receiver_rx: Option<Sender<(MediaDataBatchResponse, oneshot::Sender<Result<()>>)>>,
 }
 
 impl<R> ChannelTracker<R>
@@ -47,52 +46,17 @@ where
             local_state: TrackerState::Init,
             upstreams: vec![],
             downstreams: vec![],
-            receivers: Arc::new(Mutex::new(mprc::Mprs::new())),
+            receiver_rx: None,
         }
     }
 
-    pub(crate) async fn route_data(&self) -> Result<()> {
+    pub(crate) async fn route_data(&mut self) -> Result<()> {
         if self.upstreams.len() == 0 {
             return Err(anyhow!("no upstream"));
         }
 
         let (tx, mut rx) = mpsc::channel(1);
-        for upstream in &self.upstreams {
-            let upstream = upstream.clone();
-            let tx_clone = tx.clone();
-            let _ = tokio::spawn(async move {
-                loop {
-                    //todo handle network disconnect
-                    match DataStreamClient::connect(upstream.clone()).await {
-                        Ok(mut client) => {
-                            match client.subscribe_media_data(Empty {}).await {
-                                Ok(stream) => {
-                                    let mut stream = stream.into_inner();
-                                    info!("start to listen new data from upstream {}", upstream);
-                                    while let Some(resp) = stream.next().await {
-                                        //TODO need to confirm item why can be ERR
-                                        match resp {
-                                            Ok(resp) => tx_clone.send(resp).await.unwrap(),
-                                            Err(err) => {
-                                                error!("receive a error from stream {err}");
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    error!("subscribe_media_data fail {} {err}", upstream.clone())
-                                }
-                            }
-                        }
-                        Err(err) => error!("connect upstream fail {} {err}", upstream.clone()),
-                    }
-
-                    error!("unable read data from stream, reconnect in 2s");
-                    sleep(Duration::from_secs(2)).await;
-                }
-            });
-        }
+        self.receiver_rx = Some(tx);
 
         let tmp_store = self.tmp_store.clone();
         let db_repo = self.repo.clone();
@@ -100,35 +64,67 @@ where
         tokio::spawn(async move {
             loop {
                 select! {
-                 Some(data_batch) = rx.recv() => {
+                 Some((data_batch, resp)) = rx.recv() => {
                     //save to fs
                     //create input directory
-                    let id = Uuid::new_v4().to_string();
+                    let now = Instant::now();
+                    let id = data_batch.id;
+                    match db_repo.find_by_node_id(&node_name,&id).await  {
+                        Ok(Some(_))=>{
+                            warn!("data {} processed before", &id);
+                            resp.send(Ok(())).expect("request alread listen this channel");
+                            continue;
+                        }
+                        Err(err)=>{
+                            error!("query mongo by id {err}");
+                            resp.send(Err(err)).expect("request alread listen this channel");
+                            continue;
+                        }
+                       _=>{}
+                    }
+
                     let tmp_in_path = tmp_store.join(id.clone());
 
                     debug!("try to create directory {:?}", tmp_in_path);
-                    if let Err(e) = fs::create_dir_all(&tmp_in_path).await {
-                        error!("create input dir {:?} fail {}", tmp_in_path, e);
-                        return
+                    if let Err(err) = fs::create_dir_all(&tmp_in_path).await {
+                        error!("create input dir {:?} fail {}", tmp_in_path, err);
+                        resp.send(Err(err.into())).expect("request alread listen this channel");
+                        continue;
                     }
 
                     //write batch files
-                    for entry in  data_batch.cells.iter() {
-                        let entry_path = tmp_in_path.join(entry.path.clone());
-                        if let Err(e) = fs::write(entry_path.clone(), &entry.data).await {
-                            error!("write file {:?} fail {}", entry_path, e);
+
+                    let mut is_write_err = false;
+                    for (entry_path, entry) in  data_batch.cells.iter().map(|entry|(tmp_in_path.join(entry.path.clone()), entry)) {
+                        if let Err(err) = fs::write(entry_path.clone(), &entry.data).await {
+                            error!("write file {:?} fail {}", entry_path, err);
+                            is_write_err = true;
+                            break;
                         }
                     }
+                    if is_write_err {
+                        resp.send(Err(anyhow!("write file "))).expect("request alread listen this channel");
+                        continue;
+                    }
+                    
+                    info!("write files to disk in {} {:?}", &id, now.elapsed());
 
-                    info!("insert a data batch in {}", &id);
                     //insert record to database
-                    db_repo.insert_new_path(&DataRecord{
+                    if let Err(err) = db_repo.insert_new_path(&DataRecord{
                         node_name: node_name.clone(),
                         id:id.clone(),
                         size: data_batch.size,
                         state: DataState::Received,
+                        sent: vec![],
                         direction:Direction::In,
-                    }).await.unwrap();
+                    }).await{
+                        error!("insert a databatch {err}");
+                        resp.send(Err(err)).expect("request alread listen this channel");
+                        continue;
+                    }
+
+                    resp.send(Ok(())).expect("request alread listen this channel ");
+                    info!("insert a data batch in {} {:?}", &id, now.elapsed());
                  },
                 }
             }
