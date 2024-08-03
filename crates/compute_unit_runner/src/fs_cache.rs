@@ -6,7 +6,6 @@ use jz_action::{
 };
 use std::{
     collections::HashMap,
-    hash::Hash,
     path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
@@ -132,7 +131,7 @@ impl FileCache for MemCache {
 
     async fn read(&self, id: &str) -> Result<MediaDataBatchResponse> {
         let now = Instant::now();
-        let mut store = self.0.lock().await;
+        let store = self.0.lock().await;
         let result = match store.get(id) {
             Some(val) => Ok(val.clone()),
             None => Err(anyhow!("data {} not foud", id)),

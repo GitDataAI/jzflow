@@ -8,8 +8,6 @@ use anyhow::{anyhow, Result};
 use channel_tracker::ChannelTracker;
 use clap::Parser;
 use compute_unit_runner::fs_cache::*;
-use std::fs::File;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use stream::ChannelDataStream;

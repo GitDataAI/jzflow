@@ -6,7 +6,6 @@ use jz_action::utils::StdIntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use media_data_tracker::MediaDataTracker;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::select;

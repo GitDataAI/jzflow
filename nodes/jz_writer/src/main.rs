@@ -6,7 +6,7 @@ use jiaozifs_client_rs::apis::{self};
 use jiaozifs_client_rs::models::RefType;
 use jz_action::utils::IntoAnyhowResult;
 use jz_action::utils::StdIntoAnyhowResult;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::fs;
