@@ -132,6 +132,9 @@ where
                                             Err(err) => {
                                                 warn!("Failed to read batch: {}", err);
                                                 //todo how to handle missing data
+                                                if let Err(err) = db_repo.update_state(&node_name, &req.id,  Direction::Out, DataState::Error, None).await {
+                                                    error!("mark data {} to fail {}", &req.id, err);
+                                                }
                                                 break;
                                             }
                                         };
@@ -141,7 +144,7 @@ where
                                             info!("start to send data {} {:?}", &req.id, now.elapsed());
                                             let sent_nodes: Vec<_>=  req.sent.iter().map(|v|v.as_str()).collect();
                                             if let Err(sent_nodes) =  multi_sender.send(new_batch, &sent_nodes).await {
-                                                if let Err(err) = db_repo.mark_partial_sent(&node_name, &req.id, sent_nodes.iter().map(|key|key.as_str()).collect()).await{
+                                                if let Err(err) = db_repo.update_state(&node_name, &req.id, Direction::Out,  DataState::PartialSent, Some(sent_nodes.iter().map(|key|key.as_str()).collect())).await{
                                                     error!("revert data state fail {err}");
                                                 }
                                                 warn!("send data to partial downnstream {:?}",sent_nodes);
@@ -151,7 +154,7 @@ where
                                             info!("send data to downnstream successfully {} {:?}", &req.id, now.elapsed());
                                         }
 
-                                        match db_repo.update_state(&node_name, &req.id,  Direction::Out,DataState::Sent).await{
+                                        match db_repo.update_state(&node_name, &req.id,  Direction::Out,DataState::Sent, Some(downstreams.iter().map(|key|key.as_str()).collect())).await{
                                             std::result::Result::Ok(_) =>{
                                                     //remove input data
                                                     if let Err(err) =  fs_cache.remove(&req.id).await {
@@ -300,7 +303,7 @@ where
                                     }
 
                                     //insert a new incoming data record
-                                    if let Err(err) =  db_repo.update_state(&(node_name.clone() +"-channel"), &res_data.id, Direction::In, DataState::EndRecieved).await{
+                                    if let Err(err) =  db_repo.update_state(&(node_name.clone() +"-channel"), &res_data.id, Direction::In, DataState::EndRecieved,None).await{
                                         error!("mark data as client receive {err}");
                                         resp.send(Err(anyhow!("mark data as client receive {err}"))).expect("channel only read once");
                                         continue;
@@ -332,7 +335,7 @@ where
                             }
                      },
                      Some((req, resp))  = ipc_process_completed_data_rx.recv() => {
-                        match db_repo.update_state(&node_name, &req.id, Direction::In, DataState::Processed).await{
+                        match db_repo.update_state(&node_name, &req.id, Direction::In, DataState::Processed, None).await{
                             std::result::Result::Ok(_) =>{
                                     // respose with nothing
                                     resp.send(Ok(())).expect("channel only read once");

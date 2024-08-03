@@ -206,28 +206,18 @@ impl DataRepo for MongoRepo {
         id: &str,
         direction: Direction,
         state: DataState,
+        sent: Option<Vec<&str>>,
     ) -> Result<()> {
-        let update = doc! {
-            "$set": { "state":  to_variant_name(&state)?  },
-        };
+        let mut update_fields = doc! {"state":  to_variant_name(&state)?};
+        if let Some(sent) = sent {
+            update_fields.insert("sent", sent);
+        }
 
         self.data_col
             .find_one_and_update(
                 doc! {"node_name":node_name,"id": id, "direction": to_variant_name(&direction)?},
-                update,
+                doc! {"$set": update_fields},
             )
-            .await
-            .map(|_| ())
-            .anyhow()
-    }
-
-    async fn mark_partial_sent(&self, node_name: &str, id: &str, sent: Vec<&str>) -> Result<()> {
-        let update = doc! {
-            "$set": { "sent": sent },
-        };
-
-        self.data_col
-            .update_one(doc! {"node_name":node_name, "id":id}, update)
             .await
             .map(|_| ())
             .anyhow()

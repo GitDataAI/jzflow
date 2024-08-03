@@ -23,7 +23,11 @@ impl MultiSender {
 }
 
 impl MultiSender {
-    pub async fn send(&mut self, val: MediaDataBatchResponse, sent_nodes: &[&str]) -> Result<(), Vec<String>> {
+    pub async fn send(
+        &mut self,
+        val: MediaDataBatchResponse,
+        sent_nodes: &[&str],
+    ) -> Result<(), Vec<String>> {
         let mut sent = vec![];
         for (index, stream) in self.connects.iter_mut().enumerate() {
             let url = &self.streams[index];

@@ -87,7 +87,7 @@ where
                                     for data in datas {
                                         match fs_cache.remove(&data.id).await {
                                             Ok(_)=>{
-                                                if let Err(err) =  db_repo.update_state(&node_name, &data.id, Direction::In, DataState::Clean).await{
+                                                if let Err(err) =  db_repo.update_state(&node_name, &data.id, Direction::In, DataState::Clean, None).await{
                                                     error!("mark data as client receive {err}");
                                                     continue;
                                                 }

@@ -117,13 +117,6 @@ pub trait DataRepo {
         direction: Direction,
     ) -> impl std::future::Future<Output = Result<usize>> + Send;
 
-    fn mark_partial_sent(
-        &self,
-        node_name: &str,
-        id: &str,
-        sent: Vec<&str>,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-
     fn insert_new_path(
         &self,
         record: &DataRecord,
@@ -135,6 +128,7 @@ pub trait DataRepo {
         id: &str,
         direction: Direction,
         state: DataState,
+        sent: Option<Vec<&str>>,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 

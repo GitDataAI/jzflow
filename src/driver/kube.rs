@@ -341,7 +341,6 @@ where
                         )
                     })
                     .collect::<Vec<_>>();
-
                 let channel_record = Node {
                     node_name: node.name.clone() + "-channel",
                     state: TrackerState::Init,
