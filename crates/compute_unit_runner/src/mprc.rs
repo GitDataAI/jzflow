@@ -1,6 +1,9 @@
 use rand::Rng;
-use std::hash::Hash;
-use std::{borrow::Borrow, vec};
+use std::{
+    borrow::Borrow,
+    hash::Hash,
+    vec,
+};
 
 pub(crate) struct Mprs<K, T>
 where
@@ -66,11 +69,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
-    use std::time::Duration;
-    use tokio::sync::mpsc;
-    use tokio::time::sleep;
+    use std::{
+        sync::{
+            atomic::{
+                AtomicUsize,
+                Ordering,
+            },
+            Arc,
+        },
+        time::Duration,
+    };
+    use tokio::{
+        sync::mpsc,
+        time::sleep,
+    };
 
     #[tokio::test]
     async fn test_mprs_insert_remove() {

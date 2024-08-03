@@ -24,7 +24,11 @@ node1->node2->node3->node4->node5->node6->node7->node8->node9
 */
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{
+        HashMap,
+        HashSet,
+        VecDeque,
+    },
     vec,
 };
 
@@ -104,19 +108,22 @@ impl Graph {
     /// returns Some(Possible Sequence) if yes, and None if no.
     ///
     ///
-    /// **Note**: this function can only be called after graph's initialization (add nodes and edges, etc.) is done.
+    /// **Note**: this function can only be called after graph's initialization (add nodes and
+    /// edges, etc.) is done.
     ///
     /// # Principle
     /// Reference: [Topological Sorting](https://www.jianshu.com/p/b59db381561a)
     ///
     /// 1. For a graph g, we record the in-degree of every node.
     ///
-    /// 2. Each time we start from a node with zero in-degree, name it N0, and N0 can be executed since it has no dependency.
+    /// 2. Each time we start from a node with zero in-degree, name it N0, and N0 can be executed
+    ///    since it has no dependency.
     ///
-    /// 3. And then we decrease the in-degree of N0's children (those nodes depend on N0), this would create some new zero in-degree nodes.
+    /// 3. And then we decrease the in-degree of N0's children (those nodes depend on N0), this
+    ///    would create some new zero in-degree nodes.
     ///
-    /// 4. Just repeat step 2, 3 until no more zero degree nodes can be generated.
-    ///    If all nodes have been executed, then it's a DAG, or there must be a loop in the graph.
+    /// 4. Just repeat step 2, 3 until no more zero degree nodes can be generated. If all nodes have
+    ///    been executed, then it's a DAG, or there must be a loop in the graph.
     pub(crate) fn topo_sort(&self) -> Vec<String> {
         let mut queue = self
             .in_degree

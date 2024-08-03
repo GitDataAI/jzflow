@@ -1,5 +1,8 @@
 use super::MachineSpec;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 // DataPoint use to definite data transfer channel
 #[derive(Serialize, Deserialize, Debug, Clone)]

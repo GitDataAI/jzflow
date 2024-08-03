@@ -1,5 +1,8 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum NodeType {
@@ -35,9 +38,11 @@ pub struct Node {
 }
 
 /// DataState use to represent databatch state
-/// for incoming data in compute unit:  Received(compute data) -> Assigned(assigned to user containerd) -> Processed(user containerd has processed)
-/// for channel dataflow  :  Received(channel) -> Assigned(channel)->Sent(send to channel) -> EndRecieved(compute unit)-> Clean(channel clean data)
-/// for outgoing data flow of compute unit:  Received(compute unit) -> SelectForSend(compute unit) -> PartialSent(compute unit)->Sent(compute unit)
+/// for incoming data in compute unit:  Received(compute data) -> Assigned(assigned to user
+/// containerd) -> Processed(user containerd has processed) for channel dataflow  :
+/// Received(channel) -> Assigned(channel)->Sent(send to channel) -> EndRecieved(compute unit)->
+/// Clean(channel clean data) for outgoing data flow of compute unit:  Received(compute unit) ->
+/// SelectForSend(compute unit) -> PartialSent(compute unit)->Sent(compute unit)
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum DataState {
     Received,

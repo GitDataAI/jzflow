@@ -1,18 +1,36 @@
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use async_trait::async_trait;
 use jz_action::{
-    network::datatransfer::{MediaDataBatchResponse, MediaDataCell},
-    utils::{IntoAnyhowResult, StdIntoAnyhowResult},
+    network::datatransfer::{
+        MediaDataBatchResponse,
+        MediaDataCell,
+    },
+    utils::{
+        IntoAnyhowResult,
+        StdIntoAnyhowResult,
+    },
 };
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::{
+        Path,
+        PathBuf,
+    },
     sync::Arc,
     time::Instant,
 };
-use tokio::fs;
-use tokio::sync::Mutex;
-use tracing::{debug, error, info};
+use tokio::{
+    fs,
+    sync::Mutex,
+};
+use tracing::{
+    debug,
+    error,
+    info,
+};
 use walkdir::WalkDir;
 
 #[async_trait]

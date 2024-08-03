@@ -1,18 +1,46 @@
-use compute_unit_runner::fs_cache::{FSCache, FileCache, MemCache};
-use compute_unit_runner::{ipc, media_data_tracker};
-use jz_action::dbrepo::mongo::{MongoConfig, MongoRepo};
-use jz_action::utils::StdIntoAnyhowResult;
+use compute_unit_runner::{
+    fs_cache::{
+        FSCache,
+        FileCache,
+        MemCache,
+    },
+    ipc,
+    media_data_tracker,
+};
+use jz_action::{
+    dbrepo::mongo::{
+        MongoConfig,
+        MongoRepo,
+    },
+    utils::StdIntoAnyhowResult,
+};
 
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use clap::Parser;
 use media_data_tracker::MediaDataTracker;
-use std::str::FromStr;
-use std::sync::Arc;
-use tokio::select;
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tracing::{error, info, Level};
+use std::{
+    str::FromStr,
+    sync::Arc,
+};
+use tokio::{
+    select,
+    signal::unix::{
+        signal,
+        SignalKind,
+    },
+    sync::{
+        mpsc,
+        Mutex,
+    },
+};
+use tracing::{
+    error,
+    info,
+    Level,
+};
 
 #[derive(Debug, Parser)]
 #[command(

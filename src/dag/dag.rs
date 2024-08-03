@@ -1,7 +1,13 @@
 use super::graph::Graph;
-use crate::core::ComputeUnit;
-use crate::utils::IntoAnyhowResult;
-use anyhow::{anyhow, Ok, Result};
+use crate::{
+    core::ComputeUnit,
+    utils::IntoAnyhowResult,
+};
+use anyhow::{
+    anyhow,
+    Ok,
+    Result,
+};
 use std::collections::HashMap;
 
 pub struct Dag {

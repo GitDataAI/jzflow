@@ -1,26 +1,60 @@
 use crate::media_data_tracker::MediaDataTracker;
-use actix_web::http::StatusCode;
-use actix_web::web::Data;
-use actix_web::{error, middleware, web, App, HttpRequest, HttpResponse, HttpServer};
-use anyhow::anyhow;
-use anyhow::Result;
+use actix_web::{
+    error,
+    http::StatusCode,
+    middleware,
+    web,
+    web::Data,
+    App,
+    HttpRequest,
+    HttpResponse,
+    HttpServer,
+};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use core::str;
 use http_body_util::Collected;
-use jz_action::core::models::{DbRepo, TrackerState};
-use jz_action::utils::StdIntoAnyhowResult;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::oneshot;
-use tokio::sync::Mutex;
-use tokio::time::sleep;
+use jz_action::{
+    core::models::{
+        DbRepo,
+        TrackerState,
+    },
+    utils::StdIntoAnyhowResult,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use std::{
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    sync::{
+        oneshot,
+        Mutex,
+    },
+    time::sleep,
+};
 use tracing::info;
 
-use http_body_util::{BodyExt, Full};
-use hyper::body::Bytes;
-use hyper::{Method, Request};
+use http_body_util::{
+    BodyExt,
+    Full,
+};
+use hyper::{
+    body::Bytes,
+    Method,
+    Request,
+};
 use hyper_util::client::legacy::Client;
-use hyperlocal::{UnixClientExt, UnixConnector, Uri};
+use hyperlocal::{
+    UnixClientExt,
+    UnixConnector,
+    Uri,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AvaiableDataResponse {

@@ -1,18 +1,35 @@
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use clap::Parser;
-use compute_unit_runner::ipc::{self, IPCClient, SubmitOuputDataReq};
+use compute_unit_runner::ipc::{
+    self,
+    IPCClient,
+    SubmitOuputDataReq,
+};
 use jz_action::utils::StdIntoAnyhowResult;
 use random_word::Lang;
-use std::path::Path;
-use std::str::FromStr;
-use tokio::fs;
-use tokio::io::AsyncWriteExt;
-use tokio::select;
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::mpsc;
-use tokio::time::Instant;
-use tracing::error;
-use tracing::{info, Level};
+use std::{
+    path::Path,
+    str::FromStr,
+};
+use tokio::{
+    fs,
+    io::AsyncWriteExt,
+    select,
+    signal::unix::{
+        signal,
+        SignalKind,
+    },
+    sync::mpsc,
+    time::Instant,
+};
+use tracing::{
+    error,
+    info,
+    Level,
+};
 
 #[derive(Debug, Parser)]
 #[command(

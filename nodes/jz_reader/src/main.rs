@@ -1,19 +1,37 @@
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use clap::Parser;
-use compute_unit_runner::ipc::SubmitOuputDataReq;
-use compute_unit_runner::ipc::{self, IPCClient};
-use jiaozifs_client_rs::apis;
-use jiaozifs_client_rs::models::RefType;
+use compute_unit_runner::ipc::{
+    self,
+    IPCClient,
+    SubmitOuputDataReq,
+};
+use jiaozifs_client_rs::{
+    apis,
+    models::RefType,
+};
 use jz_action::utils::StdIntoAnyhowResult;
-use std::path::Path;
-use std::str::FromStr;
-use tokio::fs;
-use tokio::select;
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::mpsc;
+use std::{
+    path::Path,
+    str::FromStr,
+};
+use tokio::{
+    fs,
+    select,
+    signal::unix::{
+        signal,
+        SignalKind,
+    },
+    sync::mpsc,
+};
 use tokio_stream::StreamExt;
-use tracing::error;
-use tracing::{info, Level};
+use tracing::{
+    error,
+    info,
+    Level,
+};
 
 #[derive(Debug, Parser)]
 #[command(

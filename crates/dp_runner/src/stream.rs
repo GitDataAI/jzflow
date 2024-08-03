@@ -1,12 +1,25 @@
 use anyhow::Result;
-use jz_action::core::models::DbRepo;
-use jz_action::network::common::Empty;
-use jz_action::network::datatransfer::data_stream_server::DataStream;
-use jz_action::network::datatransfer::{MediaDataBatchResponse, TabularDataBatchResponse};
+use jz_action::{
+    core::models::DbRepo,
+    network::{
+        common::Empty,
+        datatransfer::{
+            data_stream_server::DataStream,
+            MediaDataBatchResponse,
+            TabularDataBatchResponse,
+        },
+    },
+};
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::sync::oneshot;
-use tonic::{Request, Response, Status};
+use tokio::sync::{
+    oneshot,
+    Mutex,
+};
+use tonic::{
+    Request,
+    Response,
+    Status,
+};
 
 use super::channel_tracker::ChannelTracker;
 

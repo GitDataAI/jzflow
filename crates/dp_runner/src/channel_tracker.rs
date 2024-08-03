@@ -1,14 +1,41 @@
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use compute_unit_runner::fs_cache::FileCache;
-use jz_action::core::models::{DataRecord, DataState, DbRepo, Direction, TrackerState};
-use jz_action::network::datatransfer::MediaDataBatchResponse;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio::time::{self, Instant};
-use tokio::select;
-use tracing::{debug, error, info, warn};
+use jz_action::{
+    core::models::{
+        DataRecord,
+        DataState,
+        DbRepo,
+        Direction,
+        TrackerState,
+    },
+    network::datatransfer::MediaDataBatchResponse,
+};
+use std::{
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    select,
+    sync::{
+        mpsc,
+        mpsc::Sender,
+        oneshot,
+        Mutex,
+    },
+    time::{
+        self,
+        Instant,
+    },
+};
+use tracing::{
+    debug,
+    error,
+    info,
+    warn,
+};
 
 pub struct ChannelTracker<R>
 where

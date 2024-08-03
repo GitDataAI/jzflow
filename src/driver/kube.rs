@@ -1,23 +1,70 @@
-use super::{ChannelHandler, Driver, PipelineController, UnitHandler};
-use crate::core::models::{DBConfig, Graph, GraphRepo, Node, NodeRepo, NodeType, TrackerState};
-use crate::core::{models::DbRepo, ComputeUnit};
-use crate::dag::Dag;
-use crate::dbrepo::mongo::MongoRepo;
-use crate::utils::IntoAnyhowResult;
-use anyhow::{anyhow, Result};
+use super::{
+    ChannelHandler,
+    Driver,
+    PipelineController,
+    UnitHandler,
+};
+use crate::{
+    core::{
+        models::{
+            DBConfig,
+            DbRepo,
+            Graph,
+            GraphRepo,
+            Node,
+            NodeRepo,
+            NodeType,
+            TrackerState,
+        },
+        ComputeUnit,
+    },
+    dag::Dag,
+    dbrepo::mongo::MongoRepo,
+    utils::IntoAnyhowResult,
+};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use chrono::prelude::*;
-use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError};
-use k8s_openapi::api::apps::v1::StatefulSet;
-use k8s_openapi::api::core::v1::{Namespace, PersistentVolumeClaim, Service};
-use kube::api::{DeleteParams, PostParams};
-use kube::{Api, Client};
+use handlebars::{
+    Context,
+    Handlebars,
+    Helper,
+    Output,
+    RenderContext,
+    RenderError,
+};
+use k8s_openapi::api::{
+    apps::v1::StatefulSet,
+    core::v1::{
+        Namespace,
+        PersistentVolumeClaim,
+        Service,
+    },
+};
+use kube::{
+    api::{
+        DeleteParams,
+        PostParams,
+    },
+    Api,
+    Client,
+};
 use serde::Serialize;
-use std::collections::HashMap;
-use std::default::Default;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
-use tokio_retry::strategy::ExponentialBackoff;
-use tokio_retry::Retry;
+use std::{
+    collections::HashMap,
+    default::Default,
+    marker::PhantomData,
+    sync::{
+        Arc,
+        Mutex,
+    },
+};
+use tokio_retry::{
+    strategy::ExponentialBackoff,
+    Retry,
+};
 use tracing::debug;
 
 pub struct KubeChannelHander<R>
@@ -493,7 +540,10 @@ mod tests {
     use std::env;
 
     use super::*;
-    use crate::dbrepo::mongo::{MongoConfig, MongoRepo};
+    use crate::dbrepo::mongo::{
+        MongoConfig,
+        MongoRepo,
+    };
     use mongodb::Client as MongoClient;
     use tracing_subscriber;
     #[tokio::test]

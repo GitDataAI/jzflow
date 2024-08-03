@@ -1,20 +1,43 @@
-use anyhow::Ok;
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Ok,
+    Result,
+};
 use clap::Parser;
-use compute_unit_runner::ipc::{self, IPCClient};
-use jiaozifs_client_rs::apis::{self};
-use jiaozifs_client_rs::models::RefType;
-use jz_action::utils::IntoAnyhowResult;
-use jz_action::utils::StdIntoAnyhowResult;
-use std::path::Path;
-use std::str::FromStr;
-use std::time::Duration;
-use tokio::fs;
-use tokio::select;
-use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::mpsc;
-use tokio::time::sleep;
-use tracing::{error, info, Level};
+use compute_unit_runner::ipc::{
+    self,
+    IPCClient,
+};
+use jiaozifs_client_rs::{
+    apis::{
+        self,
+    },
+    models::RefType,
+};
+use jz_action::utils::{
+    IntoAnyhowResult,
+    StdIntoAnyhowResult,
+};
+use std::{
+    path::Path,
+    str::FromStr,
+    time::Duration,
+};
+use tokio::{
+    fs,
+    select,
+    signal::unix::{
+        signal,
+        SignalKind,
+    },
+    sync::mpsc,
+    time::sleep,
+};
+use tracing::{
+    error,
+    info,
+    Level,
+};
 use walkdir::WalkDir;
 
 #[derive(Debug, Parser)]

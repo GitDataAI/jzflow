@@ -1,7 +1,13 @@
 use core::fmt;
 
-use anyhow::{anyhow, Result};
-use tonic::{Code, Status};
+use anyhow::{
+    anyhow,
+    Result,
+};
+use tonic::{
+    Code,
+    Status,
+};
 
 pub trait IntoAnyhowResult<T> {
     fn anyhow(self, msg: impl ToString) -> Result<T>;

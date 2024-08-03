@@ -1,9 +1,13 @@
 use jz_action::network::datatransfer::{
-    data_stream_client::DataStreamClient, MediaDataBatchResponse,
+    data_stream_client::DataStreamClient,
+    MediaDataBatchResponse,
 };
 use tokio::time::Instant;
 use tonic::transport::Channel;
-use tracing::{debug, error};
+use tracing::{
+    debug,
+    error,
+};
 
 pub struct MultiSender {
     streams: Vec<String>,

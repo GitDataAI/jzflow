@@ -2,7 +2,10 @@ use crate::dag::Dag;
 use anyhow::Result;
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc,
+        Mutex,
+    },
 };
 pub trait UnitHandler {
     //pause graph running for now

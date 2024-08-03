@@ -1,12 +1,30 @@
 use crate::{
     core::models::{
-        DBConfig, DataRecord, DataRepo, DataState, Direction, Graph, GraphRepo, Node, NodeRepo,
+        DBConfig,
+        DataRecord,
+        DataRepo,
+        DataState,
+        Direction,
+        Graph,
+        GraphRepo,
+        Node,
+        NodeRepo,
     },
     utils::StdIntoAnyhowResult,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use futures::TryStreamExt;
-use mongodb::{bson::doc, error::ErrorKind, options::IndexOptions, Client, Collection, IndexModel};
+use mongodb::{
+    bson::doc,
+    error::ErrorKind,
+    options::IndexOptions,
+    Client,
+    Collection,
+    IndexModel,
+};
 use serde::Serialize;
 use serde_variant::to_variant_name;
 use tokio_stream::StreamExt;
@@ -231,8 +249,6 @@ impl DataRepo for MongoRepo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
 
     fn is_send<T>()
     where
