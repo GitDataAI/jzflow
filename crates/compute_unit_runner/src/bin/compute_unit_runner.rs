@@ -1,6 +1,6 @@
-use compute_unit_runner::{ipc, media_data_tracker, stream};
+use compute_unit_runner::fs_cache::{FSCache, FileCache, MemCache};
+use compute_unit_runner::{ipc, media_data_tracker};
 use jz_action::dbrepo::mongo::{MongoConfig, MongoRepo};
-use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::utils::StdIntoAnyhowResult;
 
 use anyhow::{anyhow, Result};
@@ -9,12 +9,10 @@ use media_data_tracker::MediaDataTracker;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use stream::UnitDataStream;
 use tokio::select;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
-use tonic::transport::Server;
 use tracing::{error, info, Level};
 
 #[derive(Debug, Parser)]
@@ -28,8 +26,8 @@ struct Args {
     #[arg(short, long, default_value = "INFO")]
     log_level: String,
 
-    #[arg(short, long, default_value = "/app/tmp")]
-    tmp_path: String,
+    #[arg(short, long)]
+    tmp_path: Option<String>,
 
     #[arg(short, long, default_value = "30")]
     buf_size: usize,
@@ -45,9 +43,6 @@ struct Args {
 
     #[arg(short, long, default_value = "/unix_socket/compute_unit_runner_d")]
     unix_socket_addr: String,
-
-    #[arg(long, default_value = "0.0.0.0:80")]
-    host_port: String,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -58,18 +53,16 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
+    let fs_cache: Arc<dyn FileCache> = match args.tmp_path {
+        Some(path) => Arc::new(FSCache::new(path)),
+        None => Arc::new(MemCache::new()),
+    };
+
     let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
-    let program = MediaDataTracker::new(
-        db_repo.clone(),
-        &args.node_name,
-        PathBuf::from_str(args.tmp_path.as_str())?,
-        args.buf_size,
-    );
+    let program = MediaDataTracker::new(db_repo.clone(), &args.node_name, fs_cache, args.buf_size);
 
     let program_safe = Arc::new(Mutex::new(program));
-    let data_stream = UnitDataStream::<MongoRepo>::new(program_safe.clone());
-
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
         let shutdown_tx = shutdown_tx.clone();
@@ -83,24 +76,6 @@ async fn main() -> Result<()> {
                 let _ = shutdown_tx.send(Err(anyhow!("apply db state {err}"))).await;
             }
         });
-    }
-
-    {
-        let addr = args.host_port.parse()?;
-        //listen port
-        let shutdown_tx = shutdown_tx.clone();
-        let _ = tokio::spawn(async move {
-            if let Err(e) = Server::builder()
-                .add_service(DataStreamServer::new(data_stream))
-                .serve(addr)
-                .await
-                .anyhow()
-            {
-                let _ = shutdown_tx.send(Err(anyhow!("data controller {e}"))).await;
-            }
-        });
-
-        info!("node listening on {}", addr);
     }
 
     {

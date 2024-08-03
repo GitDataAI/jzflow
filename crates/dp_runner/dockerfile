@@ -1,7 +1,7 @@
 FROM jz-action/net-debug
 
-RUN mkdir -p /app
-
 WORKDIR /app
+
+RUN mkdir -p /app
 
 ADD dist/dp_runner /dp_runner

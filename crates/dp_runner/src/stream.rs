@@ -31,10 +31,10 @@ where
     ) -> Result<Response<Empty>, Status> {
         let send_tx = {
             let program = self.program.lock().await;
-            if program.receiver_rx.is_none() {
+            if program.incoming_tx.is_none() {
                 return Err(Status::internal("not ready"));
             }
-            program.receiver_rx.as_ref().unwrap().clone()
+            program.incoming_tx.as_ref().unwrap().clone()
         };
 
         let (tx, rx) = oneshot::channel::<Result<()>>();
@@ -49,6 +49,32 @@ where
             Err(err) => Err(Status::from_error(Box::new(err))),
         }
     }
+
+    async fn request_media_data(
+        &self,
+        req: Request<Empty>,
+    ) -> Result<Response<MediaDataBatchResponse>, Status> {
+        let send_tx = {
+            let program = self.program.lock().await;
+            if program.request_tx.is_none() {
+                return Err(Status::internal("not ready"));
+            }
+            program.request_tx.as_ref().unwrap().clone()
+        };
+
+        let (tx, rx) = oneshot::channel::<Result<Option<MediaDataBatchResponse>>>();
+        if let Err(err) = send_tx.send(((), tx)).await {
+            return Err(Status::from_error(Box::new(err)));
+        }
+
+        match rx.await {
+            Ok(Ok(Some(resp))) => Ok(Response::new(resp)),
+            Ok(Ok(None)) => Err(Status::not_found("no avaiable data")),
+            Ok(Err(err)) => Err(Status::from_error(err.into())),
+            Err(err) => Err(Status::from_error(Box::new(err))),
+        }
+    }
+
     async fn transfer_tabular_data(
         &self,
         req: Request<TabularDataBatchResponse>,

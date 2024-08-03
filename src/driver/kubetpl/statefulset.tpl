@@ -33,7 +33,8 @@
               "--node-name={{{node.name}}}",
               "--log-level={{{log_level}}}",
               "--mongo-url={{{db.mongo_url}}}",
-              "--database={{{run_id}}}"
+              "--database={{{run_id}}}",
+              "--tmp-path=/app/tmp"
             ],
             "imagePullPolicy": "IfNotPresent",
             "ports": [
@@ -80,7 +81,7 @@
           {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName": "{{{node.name}}}-claim"
+              "claimName": "{{{node.name}}}-node-claim"
             }
           }
         ]

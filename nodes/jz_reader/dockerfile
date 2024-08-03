@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
-RUN mkdir -p /app
-
 WORKDIR /app
+
+RUN mkdir -p /app
 
 ADD dist/jz_reader /jz_reader

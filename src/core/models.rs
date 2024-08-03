@@ -35,16 +35,19 @@ pub struct Node {
 }
 
 /// DataState use to represent databatch state
-/// for incoming data:  Received(channel receive data) -> Assigned(assigned to user containerd) -> Processed(user containerd has processed)
-/// for outgoing data:  Received(user container product) -> ->PartialSent(send to channel) -> Sent(send to channel)
-
+/// for incoming data in compute unit:  Received(compute data) -> Assigned(assigned to user containerd) -> Processed(user containerd has processed)
+/// for channel dataflow  :  Received(channel) -> Assigned(channel)->Sent(send to channel) -> EndRecieved(compute unit)-> Clean(channel clean data)
+/// for outgoing data flow of compute unit:  Received(compute unit) -> SelectForSend(compute unit) -> PartialSent(compute unit)->Sent(compute unit)
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum DataState {
     Received,
     Assigned,
     Processed,
+    SelectForSend,
     PartialSent,
     Sent,
+    EndRecieved,
+    Clean,
     Error,
 }
 
@@ -56,8 +59,11 @@ pub enum Direction {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DataRecord {
+    /// node's for compute unit its a name,  for channel its node_name+ "-channel"
     pub node_name: String,
+    /// data id but not unique, becase the id in channel wiil transfer to compute unit
     pub id: String,
+
     pub size: u32,
     pub state: DataState,
     pub direction: Direction,
@@ -85,14 +91,11 @@ pub trait NodeRepo {
 }
 
 pub trait DataRepo {
-    fn find_and_assign_input_data(
+    fn find_data_and_mark_state(
         &self,
         node_name: &str,
-    ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
-
-    fn find_and_sent_output_data(
-        &self,
-        node_name: &str,
+        direction: Direction,
+        state: DataState,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
 
     fn find_by_node_id(
@@ -101,6 +104,12 @@ pub trait DataRepo {
         id: &str,
         direction: Direction,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
+
+    fn list_by_node_name_and_state(
+        &self,
+        node_name: &str,
+        state: DataState,
+    ) -> impl std::future::Future<Output = Result<Vec<DataRecord>>> + Send;
 
     fn count_pending(
         &self,

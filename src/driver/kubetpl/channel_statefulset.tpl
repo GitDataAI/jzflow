@@ -32,10 +32,11 @@
               "/dp_runner"
             ],
             "args": [
-              "--node-name={{{node.name}}}",
+              "--node-name={{{node.name}}}-channel",
               "--log-level={{{log_level}}}",
               "--mongo-url={{{db.mongo_url}}}",
-              "--database={{{run_id}}}"
+              "--database={{{run_id}}}",
+              "--tmp-path=/app/tmp"
             ],
             "ports": [
               {
@@ -54,7 +55,7 @@
           {
             "name": "tmpstore",
             "persistentVolumeClaim": {
-              "claimName": "{{node.name}}-claim"
+              "claimName": "{{node.name}}-channel-claim"
             }
           }
         ]

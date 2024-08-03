@@ -1,3 +1,4 @@
+use crate::fs_cache::FileCache;
 use crate::ipc::{AvaiableDataResponse, CompleteDataReq, SubmitOuputDataReq};
 use crate::mprc::Mprs;
 use anyhow::{anyhow, Ok, Result};
@@ -10,7 +11,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::TrySendError;
-use tonic::Status;
+use tonic::transport::Channel;
+use tonic::{Code, Status};
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
@@ -31,7 +33,7 @@ where
 
     pub(crate) buf_size: usize,
 
-    pub(crate) tmp_store: PathBuf,
+    pub(crate) fs_cache: Arc<dyn FileCache>,
 
     pub(crate) repo: R,
 
@@ -57,9 +59,9 @@ impl<R> MediaDataTracker<R>
 where
     R: DbRepo,
 {
-    pub fn new(repo: R, name: &str, tmp_store: PathBuf, buf_size: usize) -> Self {
+    pub fn new(repo: R, name: &str, fs_cache: Arc<dyn FileCache>, buf_size: usize) -> Self {
         MediaDataTracker {
-            tmp_store,
+            fs_cache,
             buf_size,
             name: name.to_string(),
             repo: repo,
@@ -92,7 +94,6 @@ where
         {
             //process outgoing data
             let db_repo = self.repo.clone();
-            let tmp_store = self.tmp_store.clone();
             let downstreams = self.downstreams.clone(); //make dynamic downstreams?
             let node_name = self.name.clone();
             let new_data_tx = new_data_tx.clone();
@@ -114,75 +115,55 @@ where
             });
 
             let mut multi_sender = MultiSender::new(downstreams.clone());
+            let fs_cache = self.fs_cache.clone();
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
                         Some(()) = new_data_rx.recv() => {
+                            info!("try to send data");
                             //reconstruct batch
                             //TODO combine multiple batch
                             loop {
                                 let now = Instant::now();
-                                match db_repo.find_and_sent_output_data(&node_name).await {
+                                match db_repo.find_data_and_mark_state(&node_name, Direction::Out, DataState::SelectForSend).await {
                                     std::result::Result::Ok(Some(req)) =>{
-                                let tmp_out_path = tmp_store.join(&req.id);
-                                let mut new_batch = MediaDataBatchResponse::default();
-                                for entry in WalkDir::new(&tmp_out_path) {
-                                    match entry {
-                                        std::result::Result::Ok(entry) => {
-                                            if entry.file_type().is_file() {
-                                                let mut path  = entry.path();
-                                                match fs::read(path).await {
-                                                    std::result::Result::Ok(content) => {
-                                                        path = path.strip_prefix(&tmp_out_path).expect("file is in the folder");
-                                                        new_batch.cells.push(MediaDataCell{
-                                                            size: content.len() as i32,
-                                                            path: path.to_str().unwrap().to_string(),
-                                                            data: content,
-                                                        });
-                                                    }
-                                                    Err(err) => error!("read file({:?}) fail {err}", path),
+                                        let new_batch = match fs_cache.read(&req.id).await {
+                                            std::result::Result::Ok(batch) => batch,
+                                            Err(err) => {
+                                                warn!("Failed to read batch: {}", err);
+                                                //todo how to handle missing data
+                                                break;
+                                            }
+                                        };
+
+                                        //write outgoing
+                                        if new_batch.size >0 && downstreams.len()>0 {
+                                            info!("start to send data {} {:?}", &req.id, now.elapsed());
+                                            let sent_nodes: Vec<_>=  req.sent.iter().map(|v|v.as_str()).collect();
+                                            if let Err(sent_nodes) =  multi_sender.send(new_batch, &sent_nodes).await {
+                                                if let Err(err) = db_repo.mark_partial_sent(&node_name, &req.id, sent_nodes.iter().map(|key|key.as_str()).collect()).await{
+                                                    error!("revert data state fail {err}");
                                                 }
+                                                warn!("send data to partial downnstream {:?}",sent_nodes);
+                                                break;
+                                            }
+
+                                            info!("send data to downnstream successfully {} {:?}", &req.id, now.elapsed());
+                                        }
+
+                                        match db_repo.update_state(&node_name, &req.id,  Direction::Out,DataState::Sent).await{
+                                            std::result::Result::Ok(_) =>{
+                                                    //remove input data
+                                                    if let Err(err) =  fs_cache.remove(&req.id).await {
+                                                        error!("remove template batch fail {}", err);
+                                                    }
+
+                                            },
+                                            Err(err) => {
+                                                error!("update state to process fail {} {}", &req.id, err)
                                             }
                                         }
-                                        Err(err) => {
-                                            error!("walk out dir({:?}) fail {err}", &req.id);
-                                            if let Err(err) = db_repo.update_state(&node_name, &req.id, Direction::Out, DataState::Error).await{
-                                                error!("mark data state error fail {err}");
-                                            }
-                                            break;
-                                        },
-                                    }
-                                }
-                                new_batch.size  = req.size;
-                                new_batch.id  = req.id.clone();
-
-                                 //write outgoing
-                                if new_batch.size >0 && downstreams.len()>0 {
-                                    info!("start to send data {} {:?}", &req.id, now.elapsed());
-                                    if let Err(sent_nodes) =  multi_sender.send(new_batch).await {
-                                        if let Err(err) = db_repo.mark_partial_sent(&node_name, &req.id, sent_nodes.iter().map(|key|key.as_str()).collect()).await{
-                                            error!("revert data state fail {err}");
-                                        }
-                                        warn!("send data to partial downnstream {:?}",sent_nodes);
-                                        break;
-                                    }
-
-                                    info!("send data to downnstream successfully {} {:?}", &req.id, now.elapsed());
-                                }
-
-                                match db_repo.update_state(&node_name, &req.id,  Direction::Out,DataState::Sent).await{
-                                    std::result::Result::Ok(_) =>{
-                                            //remove input data
-                                            let tmp_path = tmp_store.join(&req.id);
-                                            if let Err(err) = fs::remove_dir_all(&tmp_path).await {
-                                                error!("remove tmp dir{:?} fail {}", tmp_path, err);
-                                            }
-                                    },
-                                    Err(err) => {
-                                        error!("update state to process fail {} {}", &req.id, err)
-                                    }
-                                }
-                                    info!("fetch and send a batch {:?}", now.elapsed());
+                                        info!("fetch and send a batch {:?}", now.elapsed());
                                     },
                                     std::result::Result::Ok(None)=>{
                                         break;
@@ -211,10 +192,11 @@ where
                     select! {
                      Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
                         loop {
-                            if let Err(err) =  db_repo.count_pending(&node_name,Direction::In).await.and_then(|count|{
+                            if let Err(err) =  db_repo.count_pending(&node_name,Direction::Out).await.and_then(|count|{
                                 if count > buf_size {
                                     Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
                                 } else {
+                                    info!("ggggggggggggg current:{count} limit:{buf_size}");
                                     Ok(())
                                 }
                             }){
@@ -225,6 +207,7 @@ where
                             break;
                         }
 
+                        info!("start to insert data {}", &req.id);
                         // respose with nothing
                         match db_repo.insert_new_path(&DataRecord{
                             node_name:node_name.clone(),
@@ -237,7 +220,7 @@ where
                             std::result::Result::Ok(_) =>{
                                 // respose with nothing
                                 resp.send(Ok(())).expect("channel only read once");
-                                info!("insert this data to path");
+                                info!("insert data batch {}", req.id);
                                 match new_data_tx.try_send(()) {
                                     Err(TrySendError::Closed(_)) =>{
                                         error!("new data channel has been closed")
@@ -257,35 +240,94 @@ where
 
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
-        {
+        if self.upstreams.len() > 0 {
             //process user contaienr request
-            let tmp_store = self.tmp_store.clone();
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
+            let url = self.upstreams[0].clone();
+            let fs_cache = self.fs_cache.clone();
 
             tokio::spawn(async move {
+                //    let mut client = DataStreamClient::connect(url.clone()).await;
+
+                let mut client: Option<DataStreamClient<Channel>> = None;
                 loop {
                     select! {
                      Some((_, resp)) = ipc_process_data_req_rx.recv() => {
                             //select a unassgined data
                             info!("try to find avaiable data");
-                            match db_repo.find_and_assign_input_data(&node_name).await {
-                                std::result::Result::Ok(Some(record)) =>{
-                                    info!("get data batch {} to user", &record.id);
-                                        //response this data's position
-                                        resp.send(Ok(Some(AvaiableDataResponse{
-                                            id:   record.id.clone(),
-                                            size: record.size,
-                                        }))).expect("channel only read once");
-                                },
-                                std::result::Result::Ok(None)=>{
-
-                                    resp.send(Ok(None)).expect("channel only read once");
+                            if client.is_none() {
+                                match DataStreamClient::connect(url.clone()).await{
+                                    core::result::Result::Ok(new_client)=>{
+                                        client = Some(new_client)
+                                    },
+                                    Err(err) =>{
+                                        error!("cannt connect upstream {err}");
+                                        resp.send(Ok(None)).expect("channel only read once");
+                                        continue;
+                                    }
                                 }
-                                Err(err)=>{
-                                    error!("insert  incoming data record to mongo {err}");
-                                    //TODO send error message?
-                                    resp.send(Err(err)).expect("channel only read once");
+                            }
+
+                            let client_non = client.as_mut().unwrap();
+                            match client_non.request_media_data(Empty{}).await {
+                                std::result::Result::Ok(record) =>{
+                                    let data = record.into_inner();
+                                    let res_data = AvaiableDataResponse{
+                                        id:   data.id.clone(),
+                                        size: data.size,
+                                    };
+
+                                    if let Err(err) = fs_cache.write(data).await {
+                                        error!("write cache files {err}");
+                                        resp.send(Err(anyhow!("write cache files {err}"))).expect("channel only read once");
+                                        continue;
+                                    }
+                                    //mark data as received
+                                    //TODO bellow can combined
+                                    //node_name, &res_data.id, Direction::In, DataState::Received
+                                    if let Err(err) =  db_repo.insert_new_path(&DataRecord{
+                                        node_name:node_name.clone(),
+                                        id :res_data.id.clone(),
+                                        size: res_data.size,
+                                        sent: vec![],
+                                        state: DataState::Received,
+                                        direction: Direction::In,
+                                    }).await{
+                                        error!("mark data as client receive {err}");
+                                        resp.send(Err(anyhow!("mark data as client receive {err}"))).expect("channel only read once");
+                                        continue;
+                                    }
+
+                                    //insert a new incoming data record
+                                    if let Err(err) =  db_repo.update_state(&(node_name.clone() +"-channel"), &res_data.id, Direction::In, DataState::EndRecieved).await{
+                                        error!("mark data as client receive {err}");
+                                        resp.send(Err(anyhow!("mark data as client receive {err}"))).expect("channel only read once");
+                                        continue;
+                                    }
+
+                                    info!("get data batch {} to user", &res_data.id);
+                                    //response this data's position
+                                    resp.send(Ok(Some(res_data))).expect("channel only read once");
+                                },
+                                Err(status)=>{
+                                    match status.code() {
+                                        Code::NotFound =>{
+                                            resp.send(Ok(None)).expect("channel only read once");
+                                        },
+                                        Code::DeadlineExceeded =>{
+                                            client  = None;
+                                            resp.send(Err(anyhow!("network deadline exceeded"))).expect("channel only read once");
+                                        },
+                                        Code::Unavailable =>{
+                                            client  = None;
+                                            resp.send(Err(anyhow!("connect break"))).expect("channel only read once");
+                                        },
+                                        _=>{
+                                            error!("unable to retrieval data from channel {:?}", status);
+                                            resp.send(Err(anyhow!("unable to retrieval data"))).expect("channel only read once");
+                                        }
+                                    }
                                 }
                             }
                      },
@@ -294,10 +336,9 @@ where
                             std::result::Result::Ok(_) =>{
                                     // respose with nothing
                                     resp.send(Ok(())).expect("channel only read once");
-                                    //remove input data
-                                    let tmp_path = tmp_store.join(req.id.clone());
-                                    if let Err(err) = fs::remove_dir_all(&tmp_path).await {
-                                        error!("remove tmp dir{:?} fail {}", tmp_path, err);
+                                    if let Err(err) = fs_cache.remove(&req.id).await {
+                                        error!("remove tmp fs fail {}", err);
+                                        continue;
                                     }
                             },
                             Err(err) => {

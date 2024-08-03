@@ -235,10 +235,15 @@ where
 }
 
 pub trait IPCClient {
-    async fn status(&self) -> Result<Status>;
-    async fn submit_output(&self, req: SubmitOuputDataReq) -> Result<()>;
-    async fn complete_result(&self, id: &str) -> Result<()>;
-    async fn request_avaiable_data(&self) -> Result<Option<AvaiableDataResponse>>;
+    fn status(&self) -> impl std::future::Future<Output = Result<Status>> + Send;
+    fn submit_output(
+        &self,
+        req: SubmitOuputDataReq,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn complete_result(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn request_avaiable_data(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Option<AvaiableDataResponse>>> + Send;
 }
 
 pub struct IPCClientImpl {

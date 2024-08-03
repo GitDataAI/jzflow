@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 jz_action = { path = "../../"}
+compute_unit_runner = { path = "../compute_unit_runner"}
 
 tokio = { workspace = true }
 tokio-retry = {workspace = true}
@@ -14,6 +15,7 @@ tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 tonic = {workspace = true}
 uuid =  {workspace = true}
+async-trait = {workspace = true}
 
 clap = {version="4.5.7", features=["derive"]}
 rand = "0.8.5"

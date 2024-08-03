@@ -5,9 +5,11 @@ use crate::{
     utils::StdIntoAnyhowResult,
 };
 use anyhow::{anyhow, Result};
+use futures::TryStreamExt;
 use mongodb::{bson::doc, error::ErrorKind, options::IndexOptions, Client, Collection, IndexModel};
 use serde::Serialize;
 use serde_variant::to_variant_name;
+use tokio_stream::StreamExt;
 
 const GRAPH_COL_NAME: &'static str = "graph";
 const NODE_COL_NAME: &'static str = "node";
@@ -149,30 +151,21 @@ impl NodeRepo for MongoRepo {
 }
 
 impl DataRepo for MongoRepo {
-    async fn find_and_assign_input_data(&self, node_name: &str) -> Result<Option<DataRecord>> {
+    async fn find_data_and_mark_state(
+        &self,
+        node_name: &str,
+        direction: Direction,
+        state: DataState,
+    ) -> Result<Option<DataRecord>> {
         let update = doc! {
-            "$set": { "state": "Assigned" },
-        };
-
-        self.data_col
-            .find_one_and_update(
-                doc! {"node_name":node_name,"state": "Received", "direction":"In"},
-                update,
-            )
-            .await
-            .anyhow()
-    }
-
-    async fn find_and_sent_output_data(&self, node_name: &str) -> Result<Option<DataRecord>> {
-        let update = doc! {
-            "$set": { "state": "PartialSent" },
+            "$set": { "state": to_variant_name(&state)? },
         };
 
         self
             .data_col
             .find_one_and_update(
-                doc! {"node_name":node_name, "state": doc! {"$in": ["Received","PartialSent"]}, "direction":"Out"},
-                update,
+                doc! {"node_name":node_name, "state": doc! {"$in": ["Received","PartialSent"]}, "direction":to_variant_name(&direction)?},
+                update
             )
             .await.anyhow()
     }
@@ -189,6 +182,18 @@ impl DataRepo for MongoRepo {
             )
             .await
             .anyhow()
+    }
+
+    async fn list_by_node_name_and_state(
+        &self,
+        node_name: &str,
+        state: DataState,
+    ) -> Result<Vec<DataRecord>> {
+        let cursor = self
+            .data_col
+            .find(doc! {"node_name":node_name, "state": to_variant_name(&state)?})
+            .await?;
+        cursor.try_collect().await.anyhow()
     }
 
     async fn count_pending(&self, node_name: &str, direction: Direction) -> Result<usize> {

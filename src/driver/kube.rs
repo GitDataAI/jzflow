@@ -310,16 +310,6 @@ where
             };
             let upstreams = graph.get_incomming_nodes(&node.name);
             let downstreams = graph.get_outgoing_nodes(&node.name);
-
-            let claim_string = self.reg.render(
-                "claim",
-                &ClaimRenderParams {
-                    name: node.name.clone() + "-claim",
-                },
-            )?;
-            debug!("rendered channel claim string {}", claim_string);
-            let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
-            let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
             // apply channel
             let channel_handler = if upstreams.len() > 0 {
                 //if node have no upstream node, no need to create channel points
@@ -363,6 +353,16 @@ where
                 };
                 repo.insert_node(channel_record).await?;
 
+                let claim_string = self.reg.render(
+                    "claim",
+                    &ClaimRenderParams {
+                        name: node.name.clone() + "-channel-claim",
+                    },
+                )?;
+                debug!("rendered channel claim string {}", claim_string);
+                let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
+                let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
+
                 let channel_statefulset_string = self
                     .reg
                     .render("channel_statefulset", &data_unit_render_args)?;
@@ -386,7 +386,7 @@ where
                     .create(&PostParams::default(), &channel_service)
                     .await?;
                 Some(KubeChannelHander {
-                    claim: claim_deployment.clone(),
+                    claim: claim_deployment,
                     statefulset: channel_statefulset,
                     service: channel_service,
                     db_repo: repo.clone(),
@@ -396,6 +396,16 @@ where
             };
 
             // apply nodes
+            let claim_string = self.reg.render(
+                "claim",
+                &ClaimRenderParams {
+                    name: node.name.clone() + "-node-claim",
+                },
+            )?;
+            debug!("rendered clam string {}", claim_string);
+            let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
+            let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
+
             let statefulset_string = self.reg.render("statefulset", &data_unit_render_args)?;
             debug!("rendered unit string {}", statefulset_string);
 
@@ -405,10 +415,12 @@ where
                 .await?;
 
             // compute unit only receive data from channel
-            let channel_stream = format!(
-                "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
-                  node.name, 0, node.name, run_id
-              );
+            let channel_stream = (upstreams.len()>0).then(||{
+                vec![format!(
+                    "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
+                      node.name, 0, node.name, run_id
+                  )]
+            }).unwrap_or_else(||vec![]);
             let outgoing_node_streams = downstreams
                     .iter()
                     .map(|node_name| {
@@ -429,7 +441,7 @@ where
                 node_name: node.name.clone(),
                 state: TrackerState::Init,
                 node_type: NodeType::CoputeUnit,
-                upstreams: vec![channel_stream],
+                upstreams: channel_stream,
                 downstreams: outgoing_node_streams,
                 created_at: cur_tm,
                 updated_at: cur_tm,
@@ -489,7 +501,7 @@ mod tests {
     async fn test_render() {
         env::set_var("RUST_LOG", "DEBUG");
         tracing_subscriber::fmt::init();
-        let json_str = r#" 
+        let json_str = r#"
         {
           "name": "example",
           "version": "v1",

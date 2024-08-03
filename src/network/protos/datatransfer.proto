@@ -6,6 +6,8 @@ import "common.proto";
 
 service DataStream {
   rpc transferMediaData(MediaDataBatchResponse) returns (common.Empty) {}
+  rpc requestMediaData(common.Empty) returns (MediaDataBatchResponse) {}
+  
   rpc transferTabularData(TabularDataBatchResponse) returns (common.Empty) {}
 }
 

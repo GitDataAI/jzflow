@@ -1,6 +1,5 @@
 mod channel_tracker;
 mod stream;
-
 use jz_action::dbrepo::mongo::{MongoConfig, MongoRepo};
 use jz_action::network::datatransfer::data_stream_server::DataStreamServer;
 use jz_action::utils::StdIntoAnyhowResult;
@@ -8,6 +7,8 @@ use jz_action::utils::StdIntoAnyhowResult;
 use anyhow::{anyhow, Result};
 use channel_tracker::ChannelTracker;
 use clap::Parser;
+use compute_unit_runner::fs_cache::*;
+use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -30,8 +31,8 @@ struct Args {
     #[arg(short, long, default_value = "INFO")]
     log_level: String,
 
-    #[arg(short, long, default_value = "/app/tmp")]
-    tmp_path: String,
+    #[arg(short, long)]
+    tmp_path: Option<String>,
 
     #[arg(short, long)]
     node_name: String,
@@ -59,13 +60,13 @@ async fn main() -> Result<()> {
 
     let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
+    let fs_cache: Arc<dyn FileCache> = match args.tmp_path {
+        Some(path) => Arc::new(FSCache::new(path)),
+        None => Arc::new(MemCache::new()),
+    };
+
     let addr = args.host_port.parse()?;
-    let program = ChannelTracker::new(
-        db_repo.clone(),
-        &args.node_name,
-        args.buf_size,
-        PathBuf::from_str(args.tmp_path.as_str())?,
-    );
+    let program = ChannelTracker::new(db_repo.clone(), fs_cache, &args.node_name, args.buf_size);
 
     let program_safe = Arc::new(Mutex::new(program));
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
