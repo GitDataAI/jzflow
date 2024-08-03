@@ -33,8 +33,8 @@
               "--node-name={{{node.name}}}",
               "--log-level={{{log_level}}}",
               "--mongo-url={{{db.mongo_url}}}",
-              "--database={{{run_id}}}",
-              "--tmp-path=/app/tmp"
+              "--database={{{run_id}}}"
+               {{#if (eq node.spec.cache_type "Disk") }},"--tmp-path=/app/tmp"{{/if}}
             ],
             "imagePullPolicy": "IfNotPresent",
             "ports": [
@@ -57,10 +57,10 @@
             "name": "compute-user-unit",
             "image": "{{{node.spec.image}}}",
             "command": [
-              "{{{commnad}}}"
+              "{{{node.spec.command}}}"
             ],
             "imagePullPolicy": "IfNotPresent",
-            "args": [{{{join_array args}}}],
+            "args": [{{{join_array node.spec.args}}}],
             "volumeMounts": [
               {
                 "mountPath": "/unix_socket",

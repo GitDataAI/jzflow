@@ -307,8 +307,6 @@ where
     log_level: &'a str,
     db: DBC,
     run_id: &'a str,
-    commnad: &'a str,
-    args: Vec<&'a str>,
 }
 
 impl<R, DBC> Driver for KubeDriver<'_, R, DBC>
@@ -336,24 +334,15 @@ where
 
         let mut pipeline_ctl = KubePipelineController::new(repo.clone());
         for node in graph.iter() {
-            if node.spec.cmd.len() == 0 {
+            if node.spec.command.is_empty() {
                 return Err(anyhow!("{} dont have command", &node.name));
             }
-            let command = &node.spec.cmd[0];
-            let args: Vec<&str> = node
-                .spec
-                .cmd
-                .iter()
-                .skip(1)
-                .map(|arg| arg.as_str())
-                .collect();
+
             let data_unit_render_args = NodeRenderParams {
                 node,
                 db: self.db_config.clone(),
                 log_level: "debug",
                 run_id,
-                commnad: command,
-                args: args,
             };
             let upstreams = graph.get_incomming_nodes(&node.name);
             let downstreams = graph.get_outgoing_nodes(&node.name);
@@ -557,11 +546,10 @@ mod tests {
           "dag": [
            {
               "name": "computeunit1",
-              "dependency": [],
               "spec": {
                 "image": "jz-action/dummy_in:latest",
-                "cmd": ["/dummy_in", "--log-level=debug"],
-                "replicas":1
+                "command":"/dummy_in",
+                "args": ["--log-level=debug"]
               }
             },
             {
@@ -572,8 +560,11 @@ mod tests {
               ],
               "spec": {
                 "image": "jz-action/dummy_out:latest",
-                "cmd": ["/dummy_out", "--log-level=debug"],
-                "replicas":1
+                "command":"/dummy_out",
+                "args": ["--log-level=debug"]
+              },
+              "channel":{
+                "cache_type":"Memory"
               }
             }
           ]

@@ -231,7 +231,6 @@ where
                                 if count > buf_size {
                                     Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
                                 } else {
-                                    info!("ggggggggggggg current:{count} limit:{buf_size}");
                                     Ok(())
                                 }
                             }){
@@ -241,6 +240,8 @@ where
                             }
                             break;
                         }
+
+
 
                         info!("start to insert data {}", &req.id);
                         // respose with nothing

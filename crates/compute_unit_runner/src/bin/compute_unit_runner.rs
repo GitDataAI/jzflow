@@ -80,10 +80,9 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let fs_cache: Arc<dyn FileCache> = match args.tmp_path {
-        Some(path) => Arc::new(FSCache::new(path)),
-        None => Arc::new(MemCache::new()),
-    };
+    let fs_cache: Arc<dyn FileCache> = Arc::new(FSCache::new(
+        args.tmp_path.expect("compute node only support disk cache"),
+    ));
 
     let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
