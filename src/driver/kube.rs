@@ -561,6 +561,7 @@ mod tests {
               "spec": {
                 "image": "jz-action/dummy_out:latest",
                 "command":"/dummy_out",
+                "replicas": 3,
                 "args": ["--log-level=debug"]
               },
               "channel":{

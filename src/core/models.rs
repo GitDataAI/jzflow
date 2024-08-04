@@ -73,6 +73,8 @@ pub struct DataRecord {
     pub state: DataState,
     pub direction: Direction,
     pub sent: Vec<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 pub trait DBConfig {
@@ -109,6 +111,12 @@ pub trait DataRepo {
         id: &str,
         direction: Direction,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
+
+    fn revert_no_success_sent(
+        &self,
+        node_name: &str,
+        direction: Direction,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
 
     fn list_by_node_name_and_state(
         &self,

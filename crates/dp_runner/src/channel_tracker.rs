@@ -2,6 +2,7 @@ use anyhow::{
     anyhow,
     Result,
 };
+use chrono::Utc;
 use compute_unit_runner::fs_cache::FileCache;
 use jz_action::{
     core::models::{
@@ -99,9 +100,10 @@ where
                 let mut interval = time::interval(Duration::from_secs(30));
                 loop {
                     let now = Instant::now();
-                    info!("gc start");
+                    info!("backend thread start");
                     tokio::select! {
                         _ = interval.tick() => {
+                            // clean data
                             match db_repo.list_by_node_name_and_state(&node_name, DataState::EndRecieved).await {
                                 Ok(datas) => {
                                     for data in datas {
@@ -119,9 +121,16 @@ where
                                 },
                                 Err(err) => error!("list datas fail {err}"),
                             }
+                            //select for sent
+                            match db_repo.revert_no_success_sent(&node_name, Direction::In).await {
+                                Ok(count) => {
+                                    info!("revert {count} SelectForSent data to Received");
+                                },
+                                Err(err) => error!("revert data {err}"),
+                            }
                         }
                     }
-                    info!("gc end {:?}", now.elapsed());
+                    info!("backend thread end {:?}", now.elapsed());
                 }
             });
         }
@@ -135,28 +144,36 @@ where
                 loop {
                     select! {
                      Some((_, resp)) = request_rx.recv() => { //make this params
-                        match db_repo.find_data_and_mark_state(&node_name, Direction::In, DataState::SelectForSend).await {
-                            std::result::Result::Ok(Some(record)) =>{
-                                info!("return downstream's datarequest and start response data {}", &record.id);
-                                match fs_cache.read(&record.id).await {
-                                    Ok(databatch)=>{
-                                        //response this data's position
-                                        resp.send(Ok(Some(databatch))).expect("channel only read once");
-                                    },
-                                    Err(err)=>{
-                                        error!("read files {} {err}", record.id);
-                                        resp.send(Err(err)).expect("channel only read once");
+                        loop {
+                            match db_repo.find_data_and_mark_state(&node_name, Direction::In, DataState::SelectForSend).await {
+                                std::result::Result::Ok(Some(record)) =>{
+                                    info!("return downstream's datarequest and start response data {}", &record.id);
+                                    match fs_cache.read(&record.id).await {
+                                        Ok(databatch)=>{
+                                            //response this data's position
+                                            resp.send(Ok(Some(databatch))).expect("channel only read once");
+                                            break;
+                                        },
+                                        Err(err)=>{
+                                            error!("read files {} {err}, try to find another data", record.id);
+                                            if let Err(err) = db_repo.update_state(&node_name,&record.id, Direction::In, DataState::Error, None).await {
+                                                error!("mark data {} to error {err}", &record.id);
+                                            }
+                                            continue;
+                                        }
                                     }
-                                }
 
-                            },
-                            std::result::Result::Ok(None)=>{
-                                resp.send(Ok(None)).expect("channel only read once");
-                            }
-                            Err(err)=>{
-                                error!("insert  incoming data record to mongo {err}");
-                                //TODO send error message?
-                                resp.send(Err(err)).expect("channel only read once");
+                                },
+                                std::result::Result::Ok(None)=>{
+                                    resp.send(Ok(None)).expect("channel only read once");
+                                    break;
+                                }
+                                Err(err)=>{
+                                    error!("insert  incoming data record to mongo {err}");
+                                    //TODO send error message?
+                                    resp.send(Err(err)).expect("channel only read once");
+                                    break;
+                                }
                             }
                         }
                      },
@@ -217,6 +234,7 @@ where
                         }
 
                         //insert record to database
+                        let tm =Utc::now().timestamp();
                         if let Err(err) = db_repo.insert_new_path(&DataRecord{
                             node_name: node_name.clone(),
                             id:id.clone(),
@@ -224,6 +242,8 @@ where
                             state: DataState::Received,
                             sent: vec![],
                             direction:Direction::In,
+                            created_at:tm,
+                            updated_at:tm,
                         }).await{
                             error!("insert a databatch {err}");
                             resp.send(Err(err)).expect("request alread listen this channel");

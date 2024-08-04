@@ -16,6 +16,10 @@ use anyhow::{
     anyhow,
     Result,
 };
+use chrono::{
+    Duration,
+    Utc,
+};
 use futures::TryStreamExt;
 use mongodb::{
     bson::doc,
@@ -176,7 +180,10 @@ impl DataRepo for MongoRepo {
         state: DataState,
     ) -> Result<Option<DataRecord>> {
         let update = doc! {
-            "$set": { "state": to_variant_name(&state)? },
+            "$set": {
+                "state": to_variant_name(&state)?,
+                "updated_at":Utc::now().timestamp(),
+            },
         };
 
         self
@@ -186,6 +193,32 @@ impl DataRepo for MongoRepo {
                 update
             )
             .await.anyhow()
+    }
+
+    async fn revert_no_success_sent(&self, node_name: &str, direction: Direction) -> Result<u64> {
+        let update = doc! {
+            "$set": {
+                "state": to_variant_name(&DataState::Received)?,
+                "updated_at":Utc::now().timestamp(),
+            }
+        };
+
+        let tm = Utc::now() - Duration::minutes(1);
+
+        let query = doc! {
+            "node_name":node_name,
+            "state":  to_variant_name(&DataState::SelectForSend)?,
+            "direction":to_variant_name(&direction)?,
+            "updated_at": {
+                "$lt": tm.timestamp()
+            },
+        };
+
+        self.data_col
+            .update_many(query, update)
+            .await
+            .map(|r| r.modified_count)
+            .anyhow()
     }
 
     async fn find_by_node_id(
@@ -226,7 +259,11 @@ impl DataRepo for MongoRepo {
         state: DataState,
         sent: Option<Vec<&str>>,
     ) -> Result<()> {
-        let mut update_fields = doc! {"state":  to_variant_name(&state)?};
+        let mut update_fields = doc! {
+            "state":  to_variant_name(&state)?,
+            "updated_at":Utc::now().timestamp()
+        };
+
         if let Some(sent) = sent {
             update_fields.insert("sent", sent);
         }
