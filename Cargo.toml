@@ -33,6 +33,7 @@ mongodb = {version="3.0.1"}
 chrono = "0.4"
 async-trait = "0.1.81"
 futures = "0.3.30"
+clap = {version="4.5.7", features=["derive"]}
 
 [package]
 name = "jz_action"
@@ -52,6 +53,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "fs"] }
 tokio-retry = {workspace = true}
 tokio-stream = {workspace = true}
 
+clap = {workspace = true}
 uuid =  {workspace = true}
 anyhow =  {workspace = true}
 tracing = {workspace = true}

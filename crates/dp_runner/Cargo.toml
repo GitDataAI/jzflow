@@ -18,7 +18,7 @@ tonic = {workspace = true}
 uuid =  {workspace = true}
 async-trait = {workspace = true}
 chrono = {workspace = true}
+clap = {workspace = true}
 
-clap = {version="4.5.7", features=["derive"]}
 rand = "0.8.5"
 walkdir = "2.5.0"
