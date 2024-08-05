@@ -1,5 +1,4 @@
 use anyhow::{
-    anyhow,
     Ok,
     Result,
 };
@@ -20,9 +19,10 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::mpsc,
+    task::JoinSet,
     time::sleep,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
     info,
@@ -56,15 +56,12 @@ async fn main() -> Result<()> {
         .with_max_level(Level::from_str(&args.log_level)?)
         .try_init()
         .anyhow()?;
+    let mut join_set = JoinSet::new();
+    let token = CancellationToken::new();
 
-    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
-        let shutdown_tx = shutdown_tx.clone();
-        let _ = tokio::spawn(async move {
-            if let Err(e) = write_dummy(args).await {
-                let _ = shutdown_tx.send(Err(anyhow!("dummy out {e}"))).await;
-            }
-        });
+        let token = token.clone();
+        join_set.spawn(async move { write_dummy(token, args).await });
     }
 
     {
@@ -76,38 +73,45 @@ async fn main() -> Result<()> {
                 _ = sig_term.recv() => info!("Recieve SIGTERM"),
                 _ = sig_int.recv() => info!("Recieve SIGTINT"),
             };
-            let _ = shutdown_tx.send(Err(anyhow!("cancel by signal"))).await;
+            token.cancel();
         });
     }
 
-    if let Some(Err(err)) = shutdown_rx.recv().await {
-        error!("program exit with error {:?}", err)
+    while let Some(Err(err)) = join_set.join_next().await {
+        error!("exit spawn {err}");
     }
     info!("gracefully shutdown");
     Ok(())
 }
 
-async fn write_dummy(args: Args) -> Result<()> {
+async fn write_dummy(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        let req = client.request_avaiable_data().await?;
-        if req.is_none() {
-            sleep(Duration::from_secs(2)).await;
-            continue;
-        }
-        let id = req.unwrap().id;
-        let path_str = tmp_path.join(&id);
-        let root_input_dir = path_str.as_path();
+        select! {
+            _ = token.cancelled() => {
+                return Ok(());
+             }
+            else => {
+                let req = client.request_avaiable_data().await?;
+                if req.is_none() {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+                let id = req.unwrap().id;
+                let path_str = tmp_path.join(&id);
+                let root_input_dir = path_str.as_path();
 
-        for entry in WalkDir::new(root_input_dir) {
-            let entry = entry?;
-            if entry.file_type().is_file() {
-                let path = entry.path();
-                info!("read path {:?}", path);
+                for entry in WalkDir::new(root_input_dir) {
+                    let entry = entry?;
+                    if entry.file_type().is_file() {
+                        let path = entry.path();
+                        info!("read path {:?}", path);
+                    }
+                }
+
+                client.complete_result(&id).await?;
             }
         }
-
-        client.complete_result(&id).await?;
     }
 }

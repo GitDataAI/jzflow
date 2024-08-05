@@ -9,10 +9,7 @@ use jz_action::{
     utils::StdIntoAnyhowResult,
 };
 
-use anyhow::{
-    anyhow,
-    Result,
-};
+use anyhow::Result;
 use channel_tracker::ChannelTracker;
 use clap::Parser;
 use compute_unit_runner::fs_cache::*;
@@ -27,11 +24,10 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::{
-        mpsc,
-        Mutex,
-    },
+    sync::Mutex,
+    task::JoinSet,
 };
+use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
 use tracing::{
     error,
@@ -77,6 +73,9 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
+    let mut join_set = JoinSet::new();
+    let token = CancellationToken::new();
+
     let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
     let fs_cache: Arc<dyn FileCache> = match args.tmp_path {
@@ -88,36 +87,28 @@ async fn main() -> Result<()> {
     let program = ChannelTracker::new(db_repo.clone(), fs_cache, &args.node_name, args.buf_size);
 
     let program_safe = Arc::new(Mutex::new(program));
-    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
-        let shutdown_tx = shutdown_tx.clone();
         let program_safe = program_safe.clone();
         let node_name = args.node_name.clone();
-        let _ = tokio::spawn(async move {
-            if let Err(err) =
-                ChannelTracker::<MongoRepo>::apply_db_state(db_repo, &node_name, program_safe).await
-            {
-                let _ = shutdown_tx.send(Err(anyhow!("apply db state {err}"))).await;
-            }
+        let token = token.clone();
+        join_set.spawn(async move {
+            ChannelTracker::<MongoRepo>::apply_db_state(token, db_repo, &node_name, program_safe)
+                .await
         });
     }
 
     {
         //listen port
-        let shutdown_tx_arc = shutdown_tx.clone();
-        let _ = tokio::spawn(async move {
+        join_set.spawn(async move {
             let data_stream = ChannelDataStream {
                 program: program_safe,
             };
 
-            if let Err(e) = Server::builder()
+            Server::builder()
                 .add_service(DataStreamServer::new(data_stream))
                 .serve(addr)
                 .await
                 .anyhow()
-            {
-                let _ = shutdown_tx_arc.send(Err(e)).await;
-            }
         });
 
         info!("node listening on {}", addr);
@@ -132,13 +123,14 @@ async fn main() -> Result<()> {
                 _ = sig_term.recv() => info!("Recieve SIGTERM"),
                 _ = sig_int.recv() => info!("Recieve SIGTINT"),
             };
-            let _ = shutdown_tx.send(Err(anyhow!("cancel by signal"))).await;
+            token.cancel();
         });
     }
 
-    if let Some(Err(err)) = shutdown_rx.recv().await {
-        error!("program exit with error {:?}", err)
+    while let Some(Err(err)) = join_set.join_next().await {
+        error!("exit spawn {err}");
     }
+
     info!("gracefully shutdown");
     Ok(())
 }

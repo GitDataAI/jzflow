@@ -21,16 +21,20 @@ use std::{
 use tokio::{
     select,
     sync::{
-        mpsc,
-        mpsc::Sender,
+        mpsc::{
+            self,
+            Sender,
+        },
         oneshot,
         Mutex,
     },
+    task::JoinSet,
     time::{
         self,
         Instant,
     },
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{
     debug,
     error,
@@ -80,7 +84,10 @@ where
         }
     }
 
-    pub(crate) async fn route_data(&mut self) -> Result<()> {
+    pub(crate) async fn route_data(
+        &mut self,
+        token: CancellationToken,
+    ) -> Result<JoinSet<Result<()>>> {
         if self.upstreams.len() == 0 {
             return Err(anyhow!("no upstream"));
         }
@@ -91,17 +98,23 @@ where
         let (request_tx, mut request_rx) = mpsc::channel(1);
         self.request_tx = Some(request_tx);
 
+        let mut join_set: JoinSet<Result<()>> = JoinSet::new();
         {
             //process clean data
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
             let fs_cache = self.fs_cache.clone();
-            tokio::spawn(async move {
+            let token = token.clone();
+
+            join_set.spawn(async move {
                 let mut interval = time::interval(Duration::from_secs(30));
                 loop {
                     let now = Instant::now();
                     info!("backend thread start");
                     tokio::select! {
+                        _ = token.cancelled() => {
+                            return Ok(());
+                         }
                         _ = interval.tick() => {
                             // clean data
                             match db_repo.list_by_node_name_and_state(&node_name, DataState::EndRecieved).await {
@@ -139,10 +152,14 @@ where
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
             let fs_cache = self.fs_cache.clone();
+            let token = token.clone();
 
-            tokio::spawn(async move {
+            join_set.spawn(async move {
                 loop {
                     select! {
+                        _ = token.cancelled() => {
+                            return Ok(());
+                         }
                      Some((_, resp)) = request_rx.recv() => { //make this params
                         loop {
                             match db_repo.find_data_and_mark_state(&node_name, Direction::In, DataState::SelectForSend).await {
@@ -188,9 +205,14 @@ where
             let node_name = self.name.clone();
             let buf_size = self.buf_size;
             let fs_cache = self.fs_cache.clone();
-            tokio::spawn(async move {
+            let token = token.clone();
+
+            join_set.spawn(async move {
                 loop {
-                    select! {
+                    select!{
+                        _ = token.cancelled() => {
+                            return Ok(());
+                         }
                      Some((data_batch, resp)) = incoming_rx.recv() => { //make this params
                         //save to fs
                         //create input directory
@@ -258,39 +280,58 @@ where
             });
         }
 
-        Ok(())
+        Ok(join_set)
     }
 
     pub async fn apply_db_state(
+        token: CancellationToken,
         repo: R,
         name: &str,
         program: Arc<Mutex<ChannelTracker<R>>>,
     ) -> Result<()> {
         let mut interval = time::interval(time::Duration::from_secs(10));
+        let mut join_set: Option<JoinSet<Result<()>>> = None;
         loop {
-            interval.tick().await;
-            let record = repo
-                .get_node_by_name(name)
-                .await
-                .expect("record has inserted in controller or network error");
-            debug!("{} fetch state from db", record.node_name);
-            match record.state {
-                TrackerState::Ready => {
-                    let mut program_guard = program.lock().await;
-
-                    if matches!(program_guard.local_state, TrackerState::Init) {
-                        info!("set to ready state {:?}", record.upstreams);
-                        //start
-                        program_guard.local_state = TrackerState::Ready;
-                        program_guard.upstreams = record.upstreams;
-                        program_guard.downstreams = record.downstreams;
-                        program_guard.route_data().await?;
+            select! {
+                _ = token.cancelled() => {
+                    if let Some(mut join_set) = join_set {
+                        info!("wait for route data exit");
+                        while let Some(Err(err)) = join_set.join_next().await {
+                            error!("exit spawn {err}");
+                        }
+                        info!("route data exit gracefully");
                     }
+                   return Ok(());
                 }
-                TrackerState::Stop => {
-                    todo!()
+                _ = interval.tick() => {
+                    match repo
+                    .get_node_by_name(&name)
+                    .await{
+                        Ok(record)=> {
+                            debug!("{} fetch state from db", record.node_name);
+                            match record.state {
+                                TrackerState::Ready => {
+                                    let mut program_guard = program.lock().await;
+                                    let cloned_token = token.clone();
+                                    if matches!(program_guard.local_state, TrackerState::Init) {
+                                        //start
+                                        info!("set to ready state {:?}", record.upstreams);
+                                        program_guard.local_state = TrackerState::Ready;
+                                        program_guard.upstreams = record.upstreams;
+                                        program_guard.downstreams = record.downstreams;
+                                        join_set = Some(program_guard.route_data(cloned_token).await?);
+                                    }
+                                }
+                                TrackerState::Stop => {
+                                    todo!()
+                                }
+                                _ => {}
+                            }
+                        },
+                        Err(err)=> error!("fetch node state from db {err}")
+                    }
+
                 }
-                _ => {}
             }
         }
     }

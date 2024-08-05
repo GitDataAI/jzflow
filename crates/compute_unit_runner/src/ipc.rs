@@ -264,7 +264,6 @@ where
     })
     .bind_uds(unix_socket_addr)?;
     server.run().await.unwrap();
-
     Ok(())
 }
 

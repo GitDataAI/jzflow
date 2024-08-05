@@ -30,9 +30,10 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::mpsc,
+    task::JoinSet,
     time::sleep,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
     info,
@@ -96,15 +97,12 @@ async fn main() -> Result<()> {
         .with_max_level(Level::from_str(&args.log_level)?)
         .try_init()
         .anyhow()?;
+    let mut join_set = JoinSet::new();
+    let token = CancellationToken::new();
 
-    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
-        let shutdown_tx = shutdown_tx.clone();
-        let _ = tokio::spawn(async move {
-            if let Err(e) = write_jz_fs(args).await {
-                let _ = shutdown_tx.send(Err(anyhow!("write jz fs {e}"))).await;
-            }
-        });
+        let token = token.clone();
+        join_set.spawn(async move { write_jz_fs(token, args).await });
     }
 
     {
@@ -116,18 +114,18 @@ async fn main() -> Result<()> {
                 _ = sig_term.recv() => info!("Recieve SIGTERM"),
                 _ = sig_int.recv() => info!("Recieve SIGTINT"),
             };
-            let _ = shutdown_tx.send(Err(anyhow!("cancel by signal"))).await;
+            token.cancel();
         });
     }
 
-    if let Some(Err(err)) = shutdown_rx.recv().await {
-        error!("program exit with error {:?}", err)
+    while let Some(Err(err)) = join_set.join_next().await {
+        error!("exit spawn {err}");
     }
     info!("gracefully shutdown");
     Ok(())
 }
 
-async fn write_jz_fs(args: Args) -> Result<()> {
+async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
     let mut configuration = apis::configuration::Configuration::default();
     configuration.base_path = args.jiaozifs_url;
     configuration.basic_auth = Some((args.username, Some(args.password)));
@@ -144,7 +142,12 @@ async fn write_jz_fs(args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        let req = client.request_avaiable_data().await?;
+        select! {
+            _ = token.cancelled() => {
+                return Ok(());
+             }
+            else => {
+                let req = client.request_avaiable_data().await?;
         if req.is_none() {
             sleep(Duration::from_secs(2)).await;
             continue;
@@ -172,5 +175,7 @@ async fn write_jz_fs(args: Args) -> Result<()> {
             }
         }
         client.complete_result(&id).await?;
+            }
+        }
     }
 }

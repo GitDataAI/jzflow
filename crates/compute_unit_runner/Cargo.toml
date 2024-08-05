@@ -9,6 +9,7 @@ jz_action = { path = "../../"}
 tokio = { workspace = true }
 tokio-retry = {workspace = true}
 tokio-stream = {workspace = true}
+tokio-util = {workspace = true}
 
 anyhow =  {workspace = true}
 tracing = {workspace = true}

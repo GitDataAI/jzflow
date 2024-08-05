@@ -1,7 +1,4 @@
-use anyhow::{
-    anyhow,
-    Result,
-};
+use anyhow::Result;
 use clap::Parser;
 use compute_unit_runner::ipc::{
     self,
@@ -11,7 +8,8 @@ use compute_unit_runner::ipc::{
 use jz_action::utils::StdIntoAnyhowResult;
 use std::{
     path::Path,
-    str::FromStr, time::Duration,
+    str::FromStr,
+    time::Duration,
 };
 use tokio::{
     fs,
@@ -20,9 +18,13 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::mpsc,
-    time::{sleep, Instant},
+    task::JoinSet,
+    time::{
+        sleep,
+        Instant,
+    },
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
     info,
@@ -55,15 +57,12 @@ async fn main() -> Result<()> {
         .with_max_level(Level::from_str(&args.log_level)?)
         .try_init()
         .anyhow()?;
+    let mut join_set = JoinSet::new();
+    let token = CancellationToken::new();
 
-    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
     {
-        let shutdown_tx = shutdown_tx.clone();
-        let _ = tokio::spawn(async move {
-            if let Err(e) = copy_in_place(args).await {
-                let _ = shutdown_tx.send(Err(anyhow!("dummy read {e}"))).await;
-            }
-        });
+        let token = token.clone();
+        join_set.spawn(async move { copy_in_place(token, args).await });
     }
 
     {
@@ -75,47 +74,54 @@ async fn main() -> Result<()> {
                 _ = sig_term.recv() => info!("Recieve SIGTERM"),
                 _ = sig_int.recv() => info!("Recieve SIGTINT"),
             };
-            let _ = shutdown_tx.send(Err(anyhow!("cancel by signal"))).await;
+            token.cancel();
         });
     }
 
-    if let Some(Err(err)) = shutdown_rx.recv().await {
-        error!("program exit with error {:?}", err)
+    while let Some(Err(err)) = join_set.join_next().await {
+        error!("exit spawn {err}");
     }
     info!("gracefully shutdown");
     Ok(())
 }
 
-async fn copy_in_place(args: Args) -> Result<()> {
+async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        let instant = Instant::now();
+        select! {
+            _ = token.cancelled() => {
+                return Ok(());
+             }
+            else => {
+                let instant = Instant::now();
 
-        let req = client.request_avaiable_data().await?;
-        if req.is_none() {
-            sleep(Duration::from_secs(2)).await;
-            continue;
+                let req = client.request_avaiable_data().await?;
+                if req.is_none() {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+
+                let id = req.unwrap().id;
+                let path_str = tmp_path.join(&id);
+                let root_input_dir = path_str.as_path();
+
+                let new_id = uuid::Uuid::new_v4().to_string();
+                let output_dir = tmp_path.join(&new_id);
+
+                fs::rename(root_input_dir, output_dir).await?;
+
+                info!("move data {:?}", instant.elapsed());
+
+                client.complete_result(&id).await?;
+
+                //submit directory after completed a batch
+                client
+                    .submit_output(SubmitOuputDataReq::new(&new_id, 30))
+                    .await?;
+                info!("submit new data {:?}", instant.elapsed());
+
+            }
         }
-
-        let id = req.unwrap().id;
-        let path_str = tmp_path.join(&id);
-        let root_input_dir = path_str.as_path();
-
-
-        let new_id = uuid::Uuid::new_v4().to_string();
-        let output_dir = tmp_path.join(&new_id);
-
-        fs::rename(root_input_dir, output_dir).await?;
-
-        info!("move data {:?}", instant.elapsed());
-
-        client.complete_result(&id).await?;
-
-        //submit directory after completed a batch
-        client
-            .submit_output(SubmitOuputDataReq::new(&new_id, 30))
-            .await?;
-        info!("submit new data {:?}", instant.elapsed());
     }
 }

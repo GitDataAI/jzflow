@@ -17,5 +17,7 @@ tokio-stream = {workspace = true}
 anyhow =  {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
+tokio-util = {workspace = true}
+
 clap = {version="4.5.7", features=["derive"]}
 random_word = { version = "0.4.3", features = ["en"] }

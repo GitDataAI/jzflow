@@ -62,7 +62,7 @@ where
 
     async fn request_media_data(
         &self,
-        req: Request<Empty>,
+        _: Request<Empty>,
     ) -> Result<Response<MediaDataBatchResponse>, Status> {
         let send_tx = {
             let program = self.program.lock().await;
@@ -87,7 +87,7 @@ where
 
     async fn transfer_tabular_data(
         &self,
-        req: Request<TabularDataBatchResponse>,
+        _req: Request<TabularDataBatchResponse>,
     ) -> Result<Response<Empty>, tonic::Status> {
         todo!()
     }
