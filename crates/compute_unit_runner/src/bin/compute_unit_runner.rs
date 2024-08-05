@@ -5,6 +5,7 @@ use compute_unit_runner::{
     },
     ipc,
     media_data_tracker,
+    state_controller::StateController,
 };
 use jz_action::{
     dbrepo::mongo::{
@@ -88,30 +89,41 @@ async fn main() -> Result<()> {
     let program = MediaDataTracker::new(db_repo.clone(), &args.node_name, fs_cache, args.buf_size);
 
     let program_safe = Arc::new(Mutex::new(program));
+
+    let server = ipc::start_ipc_server(&args.unix_socket_addr, program_safe.clone()).unwrap();
+    let handler = server.handle();
+    {
+        //listen unix socket
+        let token = token.clone();
+        let handler = handler.clone();
+        join_set.spawn(async move {
+            info!("start ipc server {}", &args.unix_socket_addr);
+            tokio::spawn(server);
+            select! {
+                _ = token.cancelled() => {
+                    handler.stop(true).await;
+                   info!("ipc server stopped");
+                   return Ok(());
+                }
+            };
+        });
+    }
     {
         let program_safe = program_safe.clone();
         let node_name = args.node_name.clone();
         let cloned_token = token.clone();
+
+        let state_ctl = StateController {
+            program: program_safe,
+            _handler: handler,
+        };
         join_set.spawn(async move {
-            MediaDataTracker::<MongoRepo>::apply_db_state(
-                cloned_token,
-                db_repo,
-                &node_name,
-                program_safe,
-            )
-            .await
+            state_ctl
+                .apply_db_state(cloned_token, db_repo, &node_name)
+                .await
         });
     }
 
-    {
-        //listen unix socket
-        let unix_socket_addr = args.unix_socket_addr.clone();
-        let program = program_safe.clone();
-        join_set.spawn(async move {
-            info!("start ipc server {}", &unix_socket_addr);
-            ipc::start_ipc_server(unix_socket_addr, program).await
-        });
-    }
     {
         //catch signal
         let _ = tokio::spawn(async move {

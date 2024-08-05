@@ -1,5 +1,7 @@
 mod channel_tracker;
+mod state_controller;
 mod stream;
+
 use jz_action::{
     dbrepo::mongo::{
         MongoConfig,
@@ -13,6 +15,7 @@ use anyhow::Result;
 use channel_tracker::ChannelTracker;
 use clap::Parser;
 use compute_unit_runner::fs_cache::*;
+use state_controller::StateController;
 use std::{
     str::FromStr,
     sync::Arc,
@@ -90,9 +93,14 @@ async fn main() -> Result<()> {
     {
         let program_safe = program_safe.clone();
         let node_name = args.node_name.clone();
-        let token = token.clone();
+        let cloned_token = token.clone();
+
+        let state_ctl = StateController {
+            program: program_safe,
+        };
         join_set.spawn(async move {
-            ChannelTracker::<MongoRepo>::apply_db_state(token, db_repo, &node_name, program_safe)
+            state_ctl
+                .apply_db_state(cloned_token, db_repo, &node_name)
                 .await
         });
     }

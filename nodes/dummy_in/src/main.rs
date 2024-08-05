@@ -87,12 +87,11 @@ async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        select! {
-            _ = token.cancelled() => {
-                return Ok(());
-             }
-            else => {
-                let instant = Instant::now();
+        if token.is_cancelled() {
+            return Ok(());
+        }
+
+        let instant = Instant::now();
         let id = uuid::Uuid::new_v4().to_string();
         let output_dir = tmp_path.join(&id);
         fs::create_dir_all(output_dir.clone()).await?;
@@ -112,8 +111,5 @@ async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
             .submit_output(SubmitOuputDataReq::new(&id, 30))
             .await?;
         info!("submit new data {:?}", instant.elapsed());
-
-            }
-        }
     }
 }

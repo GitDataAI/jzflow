@@ -89,39 +89,34 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        select! {
-            _ = token.cancelled() => {
-                return Ok(());
-             }
-            else => {
-                let instant = Instant::now();
-
-                let req = client.request_avaiable_data().await?;
-                if req.is_none() {
-                    sleep(Duration::from_secs(2)).await;
-                    continue;
-                }
-
-                let id = req.unwrap().id;
-                let path_str = tmp_path.join(&id);
-                let root_input_dir = path_str.as_path();
-
-                let new_id = uuid::Uuid::new_v4().to_string();
-                let output_dir = tmp_path.join(&new_id);
-
-                fs::rename(root_input_dir, output_dir).await?;
-
-                info!("move data {:?}", instant.elapsed());
-
-                client.complete_result(&id).await?;
-
-                //submit directory after completed a batch
-                client
-                    .submit_output(SubmitOuputDataReq::new(&new_id, 30))
-                    .await?;
-                info!("submit new data {:?}", instant.elapsed());
-
-            }
+        if token.is_cancelled() {
+            return Ok(());
         }
+
+        let instant = Instant::now();
+        let req = client.request_avaiable_data().await?;
+        if req.is_none() {
+            sleep(Duration::from_secs(2)).await;
+            continue;
+        }
+
+        let id = req.unwrap().id;
+        let path_str = tmp_path.join(&id);
+        let root_input_dir = path_str.as_path();
+
+        let new_id = uuid::Uuid::new_v4().to_string();
+        let output_dir = tmp_path.join(&new_id);
+
+        fs::rename(root_input_dir, output_dir).await?;
+
+        info!("move data {:?}", instant.elapsed());
+
+        client.complete_result(&id).await?;
+
+        //submit directory after completed a batch
+        client
+            .submit_output(SubmitOuputDataReq::new(&new_id, 30))
+            .await?;
+        info!("submit new data {:?}", instant.elapsed());
     }
 }

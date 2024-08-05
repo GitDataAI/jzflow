@@ -142,12 +142,10 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        select! {
-            _ = token.cancelled() => {
-                return Ok(());
-             }
-            else => {
-                let req = client.request_avaiable_data().await?;
+        if token.is_cancelled() {
+            return Ok(());
+        }
+        let req = client.request_avaiable_data().await?;
         if req.is_none() {
             sleep(Duration::from_secs(2)).await;
             continue;
@@ -175,7 +173,5 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
             }
         }
         client.complete_result(&id).await?;
-            }
-        }
     }
 }

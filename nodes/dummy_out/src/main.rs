@@ -88,30 +88,27 @@ async fn write_dummy(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
-        select! {
-            _ = token.cancelled() => {
-                return Ok(());
-             }
-            else => {
-                let req = client.request_avaiable_data().await?;
-                if req.is_none() {
-                    sleep(Duration::from_secs(2)).await;
-                    continue;
-                }
-                let id = req.unwrap().id;
-                let path_str = tmp_path.join(&id);
-                let root_input_dir = path_str.as_path();
+        if token.is_cancelled() {
+            return Ok(());
+        }
 
-                for entry in WalkDir::new(root_input_dir) {
-                    let entry = entry?;
-                    if entry.file_type().is_file() {
-                        let path = entry.path();
-                        info!("read path {:?}", path);
-                    }
-                }
+        let req = client.request_avaiable_data().await?;
+        if req.is_none() {
+            sleep(Duration::from_secs(2)).await;
+            continue;
+        }
+        let id = req.unwrap().id;
+        let path_str = tmp_path.join(&id);
+        let root_input_dir = path_str.as_path();
 
-                client.complete_result(&id).await?;
+        for entry in WalkDir::new(root_input_dir) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                let path = entry.path();
+                info!("read path {:?}", path);
             }
         }
+
+        client.complete_result(&id).await?;
     }
 }

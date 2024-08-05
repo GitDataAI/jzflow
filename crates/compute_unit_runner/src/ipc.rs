@@ -1,10 +1,16 @@
 use crate::media_data_tracker::MediaDataTracker;
 use actix_web::{
+    dev::{
+        Server,
+        ServerHandle,
+    },
     error,
     http::StatusCode,
     middleware,
-    web,
-    web::Data,
+    web::{
+        self,
+        Data,
+    },
     App,
     HttpRequest,
     HttpResponse,
@@ -28,6 +34,7 @@ use serde::{
     Serialize,
 };
 use std::{
+    os::unix::net::UnixListener,
     sync::Arc,
     time::Duration,
 };
@@ -225,10 +232,10 @@ where
     }
 }
 
-pub async fn start_ipc_server<R>(
-    unix_socket_addr: String,
+pub fn start_ipc_server<R>(
+    unix_socket_addr: &str,
     program: Arc<Mutex<MediaDataTracker<R>>>,
-) -> Result<()>
+) -> Result<Server>
 where
     R: DbRepo + Clone + Send + Sync + 'static,
 {
@@ -262,9 +269,11 @@ where
             )
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
     })
-    .bind_uds(unix_socket_addr)?;
-    server.run().await.unwrap();
-    Ok(())
+    .disable_signals()
+    .bind_uds(unix_socket_addr)?
+    .run();
+
+    Ok(server)
 }
 
 pub trait IPCClient {
@@ -398,6 +407,6 @@ mod tests {
         tracing_subscriber::fmt::init();
 
         let client = IPCClientImpl::new("/home/hunjixin/code/jz-action/test.d".to_string());
-        client.complete_result("aaa").await.unwrap();
+        client.request_avaiable_data().await.unwrap();
     }
 }
