@@ -1,0 +1,7 @@
+FROM jz-action/net-debug
+
+WORKDIR /app
+
+RUN mkdir -p /app
+
+ADD dist/copy_in_place /copy_in_place

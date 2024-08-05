@@ -2,7 +2,6 @@ use compute_unit_runner::{
     fs_cache::{
         FSCache,
         FileCache,
-        MemCache,
     },
     ipc,
     media_data_tracker,

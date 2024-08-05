@@ -35,11 +35,15 @@ build-nodes: $(OUTPUT)
 	cargo build -p dummy_out --release
 	cp target/release/dummy_out $(OUTPUT)/dummy_out
 
+	cargo build -p copy_in_place --release
+	cp target/release/copy_in_place $(OUTPUT)/copy_in_place
+
 docker_nodes: build-nodes
 	docker build -f ./nodes/jz_reader/dockerfile -t jz-action/jz_reader:latest .
 	docker build -f ./nodes/jz_writer/dockerfile -t jz-action/jz_writer:latest .
 	docker build -f ./nodes/dummy_in/dockerfile -t jz-action/dummy_in:latest .
 	docker build -f ./nodes/dummy_out/dockerfile -t jz-action/dummy_out:latest .
+	docker build -f ./nodes/copy_in_place/dockerfile -t jz-action/copy_in_place:latest .
 
 ################## minikube
 docker: docker_cd docker_dp docker_nodes

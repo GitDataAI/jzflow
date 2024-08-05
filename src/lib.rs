@@ -8,6 +8,7 @@ pub mod dbrepo;
 pub mod driver;
 pub mod network;
 pub mod utils;
+pub mod rpc;
 
 /*
 use dag::Dag;

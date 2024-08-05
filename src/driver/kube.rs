@@ -545,18 +545,33 @@ mod tests {
           "version": "v1",
           "dag": [
            {
-              "name": "computeunit1",
+              "name": "dummy-in",
               "spec": {
                 "image": "jz-action/dummy_in:latest",
                 "command":"/dummy_in",
                 "args": ["--log-level=debug"]
               }
-            },
-            {
-              "name": "computeunit2",
+            },   {
+              "name": "copy-in-place",
               "node_type": "ComputeUnit",
               "dependency": [
-                "computeunit1"
+                "dummy-in"
+              ],
+              "spec": {
+                "image": "jz-action/copy_in_place:latest",
+                "command":"/copy_in_place",
+                "replicas": 3,
+                "args": ["--log-level=debug"]
+              },
+              "channel":{
+                "cache_type":"Memory"
+              }
+            },
+            {
+              "name": "dummy-out",
+              "node_type": "ComputeUnit",
+              "dependency": [
+                "copy-in-place"
               ],
               "spec": {
                 "image": "jz-action/dummy_out:latest",

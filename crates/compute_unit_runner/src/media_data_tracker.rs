@@ -30,10 +30,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{
-    broadcast,
-    mpsc::error::TrySendError,
-};
+use tokio::sync::broadcast;
 use tonic::{
     transport::Channel,
     Code,
@@ -194,7 +191,7 @@ where
                                             let new_batch = match fs_cache.read(&req.id).await {
                                                Ok(batch) => batch,
                                                 Err(err) => {
-                                                    warn!("Failed to read batch: {}", err);
+                                                    warn!("failed to read batch: {}", err);
                                                     //todo how to handle missing data
                                                     if let Err(err) = db_repo.update_state(&node_name, &req.id,  Direction::Out, DataState::Error, None).await {
                                                         error!("mark data {} to fail {}", &req.id, err);

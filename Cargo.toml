@@ -3,7 +3,7 @@ members = [
   "crates/dp_runner",
   "crates/compute_unit_runner",
   "crates/jiaozifs_client_rs", "nodes/jz_reader", "nodes/jz_writer", "nodes/dummy_in", "nodes/dummy_out"
-]
+, "nodes/copy_in_place"]
 
 [workspace.package]
 repository = "https://github.com/GitDataAI/jz-action"
