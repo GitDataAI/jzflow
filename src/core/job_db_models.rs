@@ -77,20 +77,16 @@ pub struct DataRecord {
     pub updated_at: i64,
 }
 
-pub trait DBConfig {
-    fn connection_string(&self) -> &str;
-}
-
 pub trait GraphRepo {
     fn insert_global_state(
         &self,
-        state: Graph,
+        graph: &Graph,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
     fn get_global_state(&self) -> impl std::future::Future<Output = Result<Graph>> + Send;
 }
 
 pub trait NodeRepo {
-    fn insert_node(&self, state: Node) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn insert_node(&self, state: &Node) -> impl std::future::Future<Output = Result<()>> + Send;
     fn get_node_by_name(
         &self,
         name: &str,
@@ -101,33 +97,33 @@ pub trait DataRepo {
     fn find_data_and_mark_state(
         &self,
         node_name: &str,
-        direction: Direction,
-        state: DataState,
+        direction: &Direction,
+        state: &DataState,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
 
     fn find_by_node_id(
         &self,
         node_name: &str,
         id: &str,
-        direction: Direction,
+        direction: &Direction,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
 
     fn revert_no_success_sent(
         &self,
         node_name: &str,
-        direction: Direction,
+        direction: &Direction,
     ) -> impl std::future::Future<Output = Result<u64>> + Send;
 
     fn list_by_node_name_and_state(
         &self,
         node_name: &str,
-        state: DataState,
+        state: &DataState,
     ) -> impl std::future::Future<Output = Result<Vec<DataRecord>>> + Send;
 
     fn count_pending(
         &self,
         node_name: &str,
-        direction: Direction,
+        direction: &Direction,
     ) -> impl std::future::Future<Output = Result<usize>> + Send;
 
     fn insert_new_path(
@@ -139,10 +135,10 @@ pub trait DataRepo {
         &self,
         node_name: &str,
         id: &str,
-        direction: Direction,
-        state: DataState,
+        direction: &Direction,
+        state: &DataState,
         sent: Option<Vec<&str>>,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
-pub trait DbRepo = GraphRepo + NodeRepo + DataRepo + Clone + Send + Sync + 'static;
+pub trait JobDbRepo = GraphRepo + NodeRepo + DataRepo + Clone + Send + Sync + 'static;

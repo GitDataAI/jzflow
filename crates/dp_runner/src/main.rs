@@ -3,9 +3,9 @@ mod state_controller;
 mod stream;
 
 use jz_action::{
-    dbrepo::mongo::{
+    dbrepo::{
         MongoConfig,
-        MongoRepo,
+        MongoRunDbRepo,
     },
     network::datatransfer::data_stream_server::DataStreamServer,
     utils::StdIntoAnyhowResult,
@@ -79,7 +79,8 @@ async fn main() -> Result<()> {
     let mut join_set = JoinSet::new();
     let token = CancellationToken::new();
 
-    let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
+    let db_repo =
+        MongoRunDbRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
     let fs_cache: Arc<dyn FileCache> = match args.tmp_path {
         Some(path) => Arc::new(FSCache::new(path)),

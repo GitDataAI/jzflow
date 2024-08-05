@@ -1,5 +1,5 @@
 use crate::{
-    core::models::{
+    core::db::{
         DBConfig,
         DataRecord,
         DataRepo,
@@ -29,39 +29,20 @@ use mongodb::{
     Collection,
     IndexModel,
 };
-use serde::Serialize;
 use serde_variant::to_variant_name;
-use tokio_stream::StreamExt;
 
 const GRAPH_COL_NAME: &'static str = "graph";
 const NODE_COL_NAME: &'static str = "node";
 const DATA_COL_NAME: &'static str = "data";
 
 #[derive(Clone)]
-pub struct MongoRepo {
+pub struct MongoRunDbRepo {
     graph_col: Collection<Graph>,
     node_col: Collection<Node>,
     data_col: Collection<DataRecord>,
 }
 
-#[derive(Clone, Serialize)]
-pub struct MongoConfig {
-    pub mongo_url: String,
-}
-
-impl MongoConfig {
-    pub fn new(mongo_url: String) -> Self {
-        MongoConfig { mongo_url }
-    }
-}
-
-impl DBConfig for MongoConfig {
-    fn connection_string(&self) -> &str {
-        return &self.mongo_url;
-    }
-}
-
-impl MongoRepo {
+impl MongoRunDbRepo {
     pub async fn new<DBC>(config: DBC, db_name: &str) -> Result<Self>
     where
         DBC: DBConfig,
@@ -136,7 +117,7 @@ impl MongoRepo {
             }
         }
 
-        Ok(MongoRepo {
+        Ok(MongoRunDbRepo {
             graph_col,
             node_col,
             data_col,
@@ -144,9 +125,9 @@ impl MongoRepo {
     }
 }
 
-impl GraphRepo for MongoRepo {
-    async fn insert_global_state(&self, state: Graph) -> Result<()> {
-        self.graph_col.insert_one(state).await.map(|_| ()).anyhow()
+impl GraphRepo for MongoRunDbRepo {
+    async fn insert_global_state(&self, graph: &Graph) -> Result<()> {
+        self.graph_col.insert_one(graph).await.map(|_| ()).anyhow()
     }
 
     async fn get_global_state(&self) -> Result<Graph> {
@@ -158,8 +139,8 @@ impl GraphRepo for MongoRepo {
     }
 }
 
-impl NodeRepo for MongoRepo {
-    async fn insert_node(&self, state: Node) -> Result<()> {
+impl NodeRepo for MongoRunDbRepo {
+    async fn insert_node(&self, state: &Node) -> Result<()> {
         self.node_col.insert_one(state).await.map(|_| ()).anyhow()
     }
 
@@ -172,12 +153,12 @@ impl NodeRepo for MongoRepo {
     }
 }
 
-impl DataRepo for MongoRepo {
+impl DataRepo for MongoRunDbRepo {
     async fn find_data_and_mark_state(
         &self,
         node_name: &str,
-        direction: Direction,
-        state: DataState,
+        direction: &Direction,
+        state: &DataState,
     ) -> Result<Option<DataRecord>> {
         let update = doc! {
             "$set": {
@@ -191,11 +172,11 @@ impl DataRepo for MongoRepo {
             .find_one_and_update(
                 doc! {"node_name":node_name, "state": doc! {"$in": ["Received","PartialSent"]}, "direction":to_variant_name(&direction)?},
                 update
-            )
-            .await.anyhow()
+            ).await
+            .anyhow()
     }
 
-    async fn revert_no_success_sent(&self, node_name: &str, direction: Direction) -> Result<u64> {
+    async fn revert_no_success_sent(&self, node_name: &str, direction: &Direction) -> Result<u64> {
         let update = doc! {
             "$set": {
                 "state": to_variant_name(&DataState::Received)?,
@@ -225,7 +206,7 @@ impl DataRepo for MongoRepo {
         &self,
         node_name: &str,
         id: &str,
-        direction: Direction,
+        direction: &Direction,
     ) -> Result<Option<DataRecord>> {
         self.data_col
             .find_one(
@@ -238,25 +219,34 @@ impl DataRepo for MongoRepo {
     async fn list_by_node_name_and_state(
         &self,
         node_name: &str,
-        state: DataState,
+        state: &DataState,
     ) -> Result<Vec<DataRecord>> {
-        let cursor = self
-            .data_col
+        self.data_col
             .find(doc! {"node_name":node_name, "state": to_variant_name(&state)?})
-            .await?;
-        cursor.try_collect().await.anyhow()
+            .await?
+            .try_collect()
+            .await
+            .anyhow()
     }
 
-    async fn count_pending(&self, node_name: &str, direction: Direction) -> Result<usize> {
-        self.data_col.count_documents(doc! {"node_name":node_name,"state": doc! {"$in": ["Received","PartialSent"]}, "direction": to_variant_name(&direction)?}).await.map(|count|count as usize).anyhow()
+    async fn count_pending(&self, node_name: &str, direction: &Direction) -> Result<usize> {
+        self.data_col
+            .count_documents(doc! {
+                "node_name":node_name,
+                "state": doc! {"$in": ["Received","PartialSent"]},
+                "direction": to_variant_name(&direction)?
+            })
+            .await
+            .map(|count| count as usize)
+            .anyhow()
     }
 
     async fn update_state(
         &self,
         node_name: &str,
         id: &str,
-        direction: Direction,
-        state: DataState,
+        direction: &Direction,
+        state: &DataState,
         sent: Option<Vec<&str>>,
     ) -> Result<()> {
         let mut update_fields = doc! {
@@ -294,6 +284,6 @@ mod tests {
     }
     #[tokio::test]
     async fn test_render() {
-        is_send::<MongoRepo>();
+        is_send::<MongoRunDbRepo>();
     }
 }

@@ -6,11 +6,11 @@ use super::{
 };
 use crate::{
     core::{
-        models::{
+        db::{
             DBConfig,
-            DbRepo,
             Graph,
             GraphRepo,
+            JobDbRepo,
             Node,
             NodeRepo,
             NodeType,
@@ -19,7 +19,7 @@ use crate::{
         ComputeUnit,
     },
     dag::Dag,
-    dbrepo::mongo::MongoRepo,
+    dbrepo::MongoRunDbRepo,
     utils::IntoAnyhowResult,
 };
 use anyhow::{
@@ -69,7 +69,7 @@ use tracing::debug;
 
 pub struct KubeChannelHander<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub statefulset: StatefulSet,
     pub claim: PersistentVolumeClaim,
@@ -79,7 +79,7 @@ where
 
 impl<R> KubeChannelHander<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     fn new(db_repo: R) -> Self {
         Self {
@@ -93,7 +93,7 @@ where
 
 impl<R> ChannelHandler for KubeChannelHander<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     async fn pause(&mut self) -> Result<()> {
         todo!()
@@ -110,7 +110,7 @@ where
 
 pub struct KubeHandler<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub statefulset: StatefulSet,
     pub claim: PersistentVolumeClaim,
@@ -121,7 +121,7 @@ where
 
 impl<R> KubeHandler<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     fn new(repo: R) -> Self {
         Self {
@@ -136,7 +136,7 @@ where
 
 impl<R> UnitHandler for KubeHandler<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     async fn pause(&mut self) -> Result<()> {
         todo!()
@@ -158,7 +158,7 @@ where
 
 pub struct KubePipelineController<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub db_repo: R,
     handlers: HashMap<String, KubeHandler<R>>,
@@ -166,7 +166,7 @@ where
 
 impl<R> KubePipelineController<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     fn new(repo: R) -> Self {
         Self {
@@ -178,7 +178,7 @@ where
 
 impl<R> PipelineController for KubePipelineController<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     async fn get_node<'b>(&'b self, id: &'b String) -> Result<&'b impl UnitHandler> {
         self.handlers.get(id).anyhow("id not found")
@@ -216,7 +216,7 @@ fn join_array(
 
 pub struct KubeDriver<'reg, R, DBC>
 where
-    R: DbRepo,
+    R: JobDbRepo,
     DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     reg: Handlebars<'reg>,
@@ -227,7 +227,7 @@ where
 
 impl<'reg, R, DBC> KubeDriver<'reg, R, DBC>
 where
-    R: DbRepo,
+    R: JobDbRepo,
     DBC: Clone + Serialize + Send + Sync + DBConfig,
 {
     pub async fn new(client: Client, db_config: DBC) -> Result<KubeDriver<'reg, R, DBC>> {
@@ -311,14 +311,18 @@ where
 
 impl<R, DBC> Driver for KubeDriver<'_, R, DBC>
 where
-    R: DbRepo,
+    R: JobDbRepo,
     DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     #[allow(refining_impl_trait)]
-    async fn deploy(&self, run_id: &str, graph: &Dag) -> Result<KubePipelineController<MongoRepo>> {
+    async fn deploy(
+        &self,
+        run_id: &str,
+        graph: &Dag,
+    ) -> Result<KubePipelineController<MongoRunDbRepo>> {
         Self::ensure_namespace_exit_and_clean(&self.client, run_id).await?;
 
-        let repo = MongoRepo::new(self.db_config.clone(), run_id).await?;
+        let repo = MongoRunDbRepo::new(self.db_config.clone(), run_id).await?;
         let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), run_id);
         let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
@@ -330,7 +334,7 @@ where
             created_at: cur_tm,
             updated_at: cur_tm,
         };
-        repo.insert_global_state(graph_record).await?;
+        repo.insert_global_state(&graph_record).await?;
 
         let mut pipeline_ctl = KubePipelineController::new(repo.clone());
         for node in graph.iter() {
@@ -386,7 +390,7 @@ where
                     created_at: cur_tm,
                     updated_at: cur_tm,
                 };
-                repo.insert_node(channel_record).await?;
+                repo.insert_node(&channel_record).await?;
 
                 let claim_string = self.reg.render(
                     "claim",
@@ -482,7 +486,7 @@ where
                 updated_at: cur_tm,
             };
 
-            repo.insert_node(node_record).await?;
+            repo.insert_node(&node_record).await?;
 
             let service_string = self.reg.render("service", node)?;
             debug!("rendered unit service config {}", service_string);
@@ -528,11 +532,13 @@ where
 mod tests {
     use std::env;
 
-    use super::*;
-    use crate::dbrepo::mongo::{
+    use crate::dbrepo::{
         MongoConfig,
-        MongoRepo,
+        MongoRunDbRepo,
     };
+
+    use super::*;
+
     use mongodb::Client as MongoClient;
     use tracing_subscriber;
     #[tokio::test]
@@ -598,7 +604,7 @@ mod tests {
         client.database("ntest").drop().await.unwrap();
 
         let client = Client::try_default().await.unwrap();
-        let kube_driver = KubeDriver::<MongoRepo, MongoConfig>::new(client, mongo_cfg)
+        let kube_driver = KubeDriver::<MongoRunDbRepo, MongoConfig>::new(client, mongo_cfg)
             .await
             .unwrap();
 

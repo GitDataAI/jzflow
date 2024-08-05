@@ -8,9 +8,9 @@ use compute_unit_runner::{
     state_controller::StateController,
 };
 use jz_action::{
-    dbrepo::mongo::{
+    dbrepo::{
         MongoConfig,
-        MongoRepo,
+        MongoRunDbRepo,
     },
     utils::StdIntoAnyhowResult,
 };
@@ -84,7 +84,8 @@ async fn main() -> Result<()> {
         args.tmp_path.expect("compute node only support disk cache"),
     ));
 
-    let db_repo = MongoRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
+    let db_repo =
+        MongoRunDbRepo::new(MongoConfig::new(args.mongo_url.clone()), &args.database).await?;
 
     let program = MediaDataTracker::new(db_repo.clone(), &args.node_name, fs_cache, args.buf_size);
 

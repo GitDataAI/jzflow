@@ -5,11 +5,11 @@ use anyhow::{
 use chrono::Utc;
 use compute_unit_runner::fs_cache::FileCache;
 use jz_action::{
-    core::models::{
+    core::db::{
         DataRecord,
         DataState,
-        DbRepo,
         Direction,
+        JobDbRepo,
         TrackerState,
     },
     network::datatransfer::MediaDataBatchResponse,
@@ -44,7 +44,7 @@ use tracing::{
 
 pub struct ChannelTracker<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub(crate) repo: R,
 
@@ -68,7 +68,7 @@ where
 
 impl<R> ChannelTracker<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub(crate) fn new(repo: R, fs_cache: Arc<dyn FileCache>, name: &str, buf_size: usize) -> Self {
         ChannelTracker {
@@ -117,12 +117,12 @@ where
                          }
                         _ = interval.tick() => {
                             // clean data
-                            match db_repo.list_by_node_name_and_state(&node_name, DataState::EndRecieved).await {
+                            match db_repo.list_by_node_name_and_state(&node_name, &DataState::EndRecieved).await {
                                 Ok(datas) => {
                                     for data in datas {
                                         match fs_cache.remove(&data.id).await {
                                             Ok(_)=>{
-                                                if let Err(err) =  db_repo.update_state(&node_name, &data.id, Direction::In, DataState::Clean, None).await{
+                                                if let Err(err) =  db_repo.update_state(&node_name, &data.id, &Direction::In, &DataState::Clean, None).await{
                                                     error!("mark data as client receive {err}");
                                                     continue;
                                                 }
@@ -135,7 +135,7 @@ where
                                 Err(err) => error!("list datas fail {err}"),
                             }
                             //select for sent
-                            match db_repo.revert_no_success_sent(&node_name, Direction::In).await {
+                            match db_repo.revert_no_success_sent(&node_name, &Direction::In).await {
                                 Ok(count) => {
                                     info!("revert {count} SelectForSent data to Received");
                                 },
@@ -162,7 +162,7 @@ where
                          }
                      Some((_, resp)) = request_rx.recv() => { //make this params
                         loop {
-                            match db_repo.find_data_and_mark_state(&node_name, Direction::In, DataState::SelectForSend).await {
+                            match db_repo.find_data_and_mark_state(&node_name, &Direction::In, &DataState::SelectForSend).await {
                                 std::result::Result::Ok(Some(record)) =>{
                                     info!("return downstream's datarequest and start response data {}", &record.id);
                                     match fs_cache.read(&record.id).await {
@@ -173,7 +173,7 @@ where
                                         },
                                         Err(err)=>{
                                             error!("read files {} {err}, try to find another data", record.id);
-                                            if let Err(err) = db_repo.update_state(&node_name,&record.id, Direction::In, DataState::Error, None).await {
+                                            if let Err(err) = db_repo.update_state(&node_name,&record.id, &Direction::In, &DataState::Error, None).await {
                                                 error!("mark data {} to error {err}", &record.id);
                                             }
                                             continue;
@@ -220,7 +220,7 @@ where
                         let id = data_batch.id.clone();
                         let size = data_batch.size;
                         //check limit
-                       if let Err(err) =  db_repo.count_pending(&node_name,Direction::In).await.and_then(|count|{
+                       if let Err(err) =  db_repo.count_pending(&node_name, &Direction::In).await.and_then(|count|{
                             if count > buf_size {
                                 Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
                             } else {
@@ -232,7 +232,7 @@ where
                         }
 
                         // processed before
-                        match db_repo.find_by_node_id(&node_name,&id,Direction::In).await  {
+                        match db_repo.find_by_node_id(&node_name,&id, &Direction::In).await  {
                             Ok(Some(_))=>{
                                 warn!("data {} processed before", &id);
                                 resp.send(Ok(())).expect("request alread listen this channel");

@@ -1,9 +1,6 @@
 use crate::media_data_tracker::MediaDataTracker;
 use actix_web::{
-    dev::{
-        Server,
-        ServerHandle,
-    },
+    dev::Server,
     error,
     http::StatusCode,
     middleware,
@@ -23,8 +20,8 @@ use anyhow::{
 use core::str;
 use http_body_util::Collected;
 use jz_action::{
-    core::models::{
-        DbRepo,
+    core::db::{
+        JobDbRepo,
         TrackerState,
     },
     utils::StdIntoAnyhowResult,
@@ -34,7 +31,6 @@ use serde::{
     Serialize,
 };
 use std::{
-    os::unix::net::UnixListener,
     sync::Arc,
     time::Duration,
 };
@@ -102,7 +98,7 @@ pub struct Status {
 
 async fn status<R>(program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>) -> HttpResponse
 where
-    R: DbRepo + Clone,
+    R: JobDbRepo + Clone,
 {
     info!("receive status request");
     let status = {
@@ -118,7 +114,7 @@ async fn process_data_request<R>(
     program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
 ) -> HttpResponse
 where
-    R: DbRepo + Clone,
+    R: JobDbRepo + Clone,
 {
     info!("receive avaiable data reqeust");
     let (tx, rx) = oneshot::channel::<Result<Option<AvaiableDataResponse>>>();
@@ -158,7 +154,7 @@ async fn process_completed_request<R>(
     data: web::Json<CompleteDataReq>,
 ) -> HttpResponse
 where
-    R: DbRepo + Clone,
+    R: JobDbRepo + Clone,
 {
     info!("receive data completed request");
     let (tx, rx) = oneshot::channel::<Result<()>>();
@@ -197,7 +193,7 @@ async fn process_submit_output_request<R>(
     //body: web::Bytes,
 ) -> HttpResponse
 where
-    R: DbRepo + Clone,
+    R: JobDbRepo + Clone,
 {
     // let data: SubmitOuputDataReq = serde_json::from_slice(&body).unwrap();
 
@@ -237,7 +233,7 @@ pub fn start_ipc_server<R>(
     program: Arc<Mutex<MediaDataTracker<R>>>,
 ) -> Result<Server>
 where
-    R: DbRepo + Clone + Send + Sync + 'static,
+    R: JobDbRepo + Clone + Send + Sync + 'static,
 {
     let server = HttpServer::new(move || {
         fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {

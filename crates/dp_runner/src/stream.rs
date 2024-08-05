@@ -1,6 +1,6 @@
 use anyhow::Result;
 use jz_action::{
-    core::models::DbRepo,
+    core::db::JobDbRepo,
     network::{
         common::Empty,
         datatransfer::{
@@ -25,7 +25,7 @@ use super::channel_tracker::ChannelTracker;
 
 pub struct ChannelDataStream<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub(crate) program: Arc<Mutex<ChannelTracker<R>>>,
 }
@@ -33,7 +33,7 @@ where
 #[tonic::async_trait]
 impl<R> DataStream for ChannelDataStream<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     async fn transfer_media_data(
         &self,

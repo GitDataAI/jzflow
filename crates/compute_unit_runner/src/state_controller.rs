@@ -1,7 +1,7 @@
 use actix_web::dev::ServerHandle;
 use anyhow::Result;
-use jz_action::core::models::{
-    DbRepo,
+use jz_action::core::db::{
+    JobDbRepo,
     TrackerState,
 };
 use std::sync::Arc;
@@ -11,7 +11,6 @@ use tokio::{
     task::JoinSet,
     time::{
         self,
-        error,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -25,7 +24,7 @@ use crate::media_data_tracker::MediaDataTracker;
 
 pub struct StateController<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub program: Arc<Mutex<MediaDataTracker<R>>>,
     pub _handler: ServerHandle,
@@ -33,7 +32,7 @@ where
 
 impl<R> StateController<R>
 where
-    R: DbRepo,
+    R: JobDbRepo,
 {
     pub async fn apply_db_state(
         &self,
