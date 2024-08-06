@@ -77,20 +77,6 @@ where
     pub db_repo: R,
 }
 
-impl<R> KubeChannelHander<R>
-where
-    R: JobDbRepo,
-{
-    fn new(db_repo: R) -> Self {
-        Self {
-            statefulset: Default::default(),
-            claim: PersistentVolumeClaim::default(),
-            service: Default::default(),
-            db_repo: db_repo,
-        }
-    }
-}
-
 impl<R> ChannelHandler for KubeChannelHander<R>
 where
     R: JobDbRepo,
@@ -117,21 +103,6 @@ where
     pub service: Service,
     pub db_repo: R,
     pub channel: Option<KubeChannelHander<R>>,
-}
-
-impl<R> KubeHandler<R>
-where
-    R: JobDbRepo,
-{
-    fn new(repo: R) -> Self {
-        Self {
-            statefulset: Default::default(),
-            claim: PersistentVolumeClaim::default(),
-            service: Default::default(),
-            channel: None,
-            db_repo: repo,
-        }
-    }
 }
 
 impl<R> UnitHandler for KubeHandler<R>
@@ -607,8 +578,9 @@ mod tests {
         let kube_driver = KubeDriver::<MongoRunDbRepo, MongoConfig>::new(client, mongo_cfg)
             .await
             .unwrap();
-
         kube_driver.deploy("ntest", &dag).await.unwrap();
         //    kube_driver.clean("ntest").await.unwrap();
     }
+
+    fn is_send_sync<T: Send + Sync>(v: T) {}
 }

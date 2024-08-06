@@ -2,17 +2,19 @@ use anyhow::Result;
 use clap::Parser;
 
 use jz_action::{
+    api::{
+        self,
+        server::start_rpc_server,
+    },
     dbrepo::{
         MongoConfig,
         MongoMainDbRepo,
         MongoRunDbRepo,
     },
-    rpc::{
-        self,
-        server::start_rpc_server,
-    },
+    driver::kube::KubeDriver,
     utils::StdIntoAnyhowResult,
 };
+use kube::Client;
 use std::{
     path::Path,
     str::FromStr,
@@ -34,6 +36,8 @@ use tracing::{
     info,
     Level,
 };
+
+use jz_action::job::job_mgr::JobManager;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -67,9 +71,12 @@ async fn main() -> Result<()> {
     let mut join_set: JoinSet<Result<()>> = JoinSet::new();
     let token = CancellationToken::new();
 
-    let db_repo = MongoMainDbRepo::new(MongoConfig::new(args.mongo_url.clone()), "const").await?;
-
-    let server = start_rpc_server(&args.listen, db_repo).unwrap();
+    let mongo_cfg = MongoConfig::new(args.mongo_url.clone());
+    let client = Client::try_default().await.unwrap();
+    let job_manager =
+        JobManager::<MongoRunDbRepo, MongoConfig>::new(client, mongo_cfg.clone()).await?;
+    let db_repo = MongoMainDbRepo::new(mongo_cfg, "backend").await?;
+    let server = start_rpc_server(&args.listen, db_repo, job_manager).unwrap();
     let handler = server.handle();
     {
         //listen unix socket
