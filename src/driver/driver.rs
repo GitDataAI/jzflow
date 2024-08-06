@@ -46,7 +46,7 @@ pub trait PipelineController {
     ) -> impl std::future::Future<Output = Result<&'a mut impl UnitHandler>> + Send;
 }
 
-pub trait Driver {
+pub trait Driver: 'static + Clone + Send + Sync {
     //deploy graph to cluster
     fn deploy(
         &self,

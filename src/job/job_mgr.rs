@@ -1,29 +1,76 @@
 use crate::{
     core::db::{
-        DBConfig,
+        Job,
         JobDbRepo,
+        MainDbRepo,
     },
-    driver::kube::KubeDriver,
+    dag::Dag,
+    driver::{
+        kube::KubeDriver,
+        Driver,
+    },
 };
 use anyhow::Result;
+use futures::future::join;
 use kube::Client;
-use serde::Serialize;
-
-pub struct JobManager<'reg, JOBR, DBC>
+use std::marker::PhantomData;
+use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
+use tracing::error;
+pub struct JobManager<D, MAINR, JOBR>
 where
+    D: Driver,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
+    MAINR: MainDbRepo,
 {
-    driver: KubeDriver<'reg, JOBR, DBC>,
+    driver: D,
+    db: MAINR,
+    _phantom_data: PhantomData<JOBR>,
 }
 
-impl<'reg, JOBR, DBC> JobManager<'reg, JOBR, DBC>
+impl<D, MAINR, JOBR> JobManager<D, MAINR, JOBR>
 where
+    D: Driver,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig,
+    MAINR: MainDbRepo,
 {
-    pub async fn new(client: Client, db_config: DBC) -> Result<JobManager<'reg, R, DBC>> {
-        let driver = KubeDriver::new(client, db_config).await?;
-        Ok(JobManager { driver })
+    pub async fn new(client: Client, driver: D, db: MAINR, db_url: &str) -> Result<Self> {
+        Ok(JobManager {
+            db,
+            driver,
+            _phantom_data: PhantomData,
+        })
+    }
+}
+
+impl<D, MAINR, JOBR> JobManager<D, MAINR, JOBR>
+where
+    D: Driver,
+    JOBR: JobDbRepo,
+    MAINR: MainDbRepo,
+{
+    pub async fn run_backend(&self, token: CancellationToken) -> Result<JoinSet<Result<()>>> {
+        let mut join_set = JoinSet::new();
+        {
+            let db = self.db.clone();
+            let driver = self.driver.clone();
+            join_set.spawn(async move {
+                loop {
+                    if token.is_cancelled() {
+                        return Ok(());
+                    }
+
+                    while let Some(job) = db.get_job_for_running().await? {
+                        let dag = Dag::from_json(job.graph_json.as_str())?;
+                        let namespace = format!("{}-{}", job.name, job.retry_number);
+                        if let Err(err) = driver.deploy(namespace.as_str(), &dag).await {
+                            error!("run job {} {err}", job.name);
+                        };
+                    }
+                }
+            });
+        }
+
+        Ok(join_set)
     }
 }

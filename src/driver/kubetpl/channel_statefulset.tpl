@@ -34,8 +34,7 @@
             "args": [
               "--node-name={{{node.name}}}-channel",
               "--log-level={{{log_level}}}",
-              "--mongo-url={{{db.mongo_url}}}",
-              "--database={{{run_id}}}"
+              "--mongo-url={{{db_url}}}",
               {{#if (eq node.channel.cache_type "Disk") }},"--tmp-path=/app/tmp"{{/if}}
             ],
             "ports": [

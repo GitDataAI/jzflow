@@ -33,7 +33,7 @@ where
     fn anyhow(self) -> Result<R> {
         match self {
             Ok(v) => Ok(v),
-            Err(e) => Err(anyhow!("{}", e)),
+            Err(err) => Err(anyhow!("{err}")),
         }
     }
 }
@@ -46,7 +46,7 @@ impl<R> AnyhowToGrpc<R> for Result<R> {
     fn to_rpc(self, code: Code) -> std::result::Result<R, Status> {
         match self {
             Ok(v) => Ok(v),
-            Err(e) => Err(Status::new(code, e.to_string())),
+            Err(err) => Err(Status::new(code, err.to_string())),
         }
     }
 }

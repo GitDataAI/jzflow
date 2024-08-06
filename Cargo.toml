@@ -35,6 +35,7 @@ async-trait = "0.1.81"
 futures = "0.3.30"
 clap = {version="4.5.7", features=["derive"]}
 actix-web = "4.8.0"
+awc="3.5.0"
 
 [package]
 name = "jz_action"
@@ -56,6 +57,7 @@ tokio-stream = {workspace = true}
 tokio-util= {workspace = true}
 
 actix-web =  {workspace = true}
+awc= {workspace = true}
 clap = {workspace = true}
 uuid =  {workspace = true}
 anyhow =  {workspace = true}

@@ -1,11 +1,14 @@
 use crate::{
     core::db::{
-        DBConfig,
         Job,
         JobRepo,
         JobState,
+        JobUpdateInfo,
     },
-    utils::StdIntoAnyhowResult,
+    utils::{
+        IntoAnyhowResult,
+        StdIntoAnyhowResult,
+    },
 };
 
 use anyhow::{
@@ -25,7 +28,10 @@ use mongodb::{
         oid::ObjectId,
     },
     error::ErrorKind,
-    options::IndexOptions,
+    options::{
+        ClientOptions,
+        IndexOptions,
+    },
     Client,
     Collection,
     IndexModel,
@@ -41,13 +47,38 @@ pub struct MongoMainDbRepo {
 }
 
 impl MongoMainDbRepo {
-    pub async fn new<DBC>(config: DBC, db_name: &str) -> Result<Self>
-    where
-        DBC: DBConfig,
-    {
-        let client = Client::with_uri_str(config.connection_string()).await?;
-        let database = client.database(db_name);
+    pub async fn new(connectstring: &str) -> Result<Self> {
+        let options = ClientOptions::parse(connectstring).await?;
+        let database = options
+            .default_database
+            .as_ref()
+            .expect("set db name in url")
+            .clone();
+        let client = Client::with_options(options)?;
+        let database = client.database(database.as_str());
         let job_col: Collection<Job> = database.collection(&JOB_COL_NAME);
+
+        {
+            //create index for jobs
+            let idx_opts: IndexOptions = IndexOptions::builder()
+                .unique(true)
+                .name("idx_name".to_owned())
+                .build();
+
+            let index = IndexModel::builder()
+                .keys(doc! { "name": 1 })
+                .options(idx_opts)
+                .build();
+
+            if let Err(err) = job_col.create_index(index).await {
+                match *err.kind {
+                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
+                    err => {
+                        return Err(anyhow!("create job state index error {err}"));
+                    }
+                }
+            }
+        }
 
         {
             //create index for jobs
@@ -59,11 +90,11 @@ impl MongoMainDbRepo {
                 .options(idx_opts)
                 .build();
 
-            if let Err(e) = job_col.create_index(index).await {
-                match *e.kind {
+            if let Err(err) = job_col.create_index(index).await {
+                match *err.kind {
                     ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    e => {
-                        return Err(anyhow!("create job state index error {}", e));
+                    err => {
+                        return Err(anyhow!("create job state index error {err}"));
                     }
                 }
             }
@@ -73,8 +104,14 @@ impl MongoMainDbRepo {
 }
 
 impl JobRepo for MongoMainDbRepo {
-    async fn insert(&self, job: &Job) -> Result<()> {
-        self.job_col.insert_one(job).await.map(|_| ()).anyhow()
+    async fn insert(&self, job: &Job) -> Result<Job> {
+        let inserted_id = self.job_col.insert_one(job).await?.inserted_id;
+
+        self.job_col
+            .find_one(doc! {"_id": inserted_id})
+            .await
+            .anyhow()
+            .and_then(|r| r.anyhow("insert job not found"))
     }
 
     async fn get_job_for_running(&self) -> Result<Option<Job>> {
@@ -83,6 +120,9 @@ impl JobRepo for MongoMainDbRepo {
                 "state": to_variant_name(&JobState::Running)?,
                 "updated_at":Utc::now().timestamp(),
             },
+            "$inc":{
+                "retry_number":1
+            }
         };
 
         self.job_col
@@ -91,14 +131,15 @@ impl JobRepo for MongoMainDbRepo {
             .anyhow()
     }
 
-    async fn update_job(&self, id: &ObjectId, state: &JobState) -> Result<()> {
-        let update = doc! {
-            "$set": {
-                "state": to_variant_name(state)?,
-                "updated_at":Utc::now().timestamp(),
-            }
+    async fn update(&self, id: &ObjectId, info: &JobUpdateInfo) -> Result<()> {
+        let mut update_fields = doc! {
+            "updated_at":Utc::now().timestamp()
         };
+        if let Some(state) = info.state.as_ref() {
+            update_fields.insert("state", to_variant_name(state)?);
+        }
 
+        let update = doc! {"$set": update_fields};
         let query = doc! {
             "_id":  id,
         };

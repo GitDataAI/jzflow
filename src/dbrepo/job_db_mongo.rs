@@ -1,6 +1,5 @@
 use crate::{
     core::db::{
-        DBConfig,
         DataRecord,
         DataRepo,
         DataState,
@@ -24,7 +23,10 @@ use futures::TryStreamExt;
 use mongodb::{
     bson::doc,
     error::ErrorKind,
-    options::IndexOptions,
+    options::{
+        ClientOptions,
+        IndexOptions,
+    },
     Client,
     Collection,
     IndexModel,
@@ -43,12 +45,15 @@ pub struct MongoRunDbRepo {
 }
 
 impl MongoRunDbRepo {
-    pub async fn new<DBC>(config: DBC, db_name: &str) -> Result<Self>
-    where
-        DBC: DBConfig,
-    {
-        let client = Client::with_uri_str(config.connection_string()).await?;
-        let database = client.database(db_name);
+    pub async fn new(connectstring: &str) -> Result<Self> {
+        let options = ClientOptions::parse(connectstring).await?;
+        let database = options
+            .default_database
+            .as_ref()
+            .expect("set db name in url")
+            .clone();
+        let client = Client::with_options(options)?;
+        let database = client.database(database.as_str());
         let graph_col: Collection<Graph> = database.collection(&GRAPH_COL_NAME);
         let node_col: Collection<Node> = database.collection(&NODE_COL_NAME);
         let data_col: Collection<DataRecord> = database.collection(&DATA_COL_NAME);
@@ -65,11 +70,11 @@ impl MongoRunDbRepo {
                 .options(idx_opts)
                 .build();
 
-            if let Err(e) = node_col.create_index(index).await {
-                match *e.kind {
+            if let Err(err) = node_col.create_index(index).await {
+                match *err.kind {
                     ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    e => {
-                        return Err(anyhow!("create index error {}", e));
+                    err => {
+                        return Err(anyhow!("create index error {err}"));
                     }
                 }
             }
@@ -86,11 +91,11 @@ impl MongoRunDbRepo {
                 .options(idx_opts)
                 .build();
 
-            if let Err(e) = data_col.create_index(index).await {
-                match *e.kind {
+            if let Err(err) = data_col.create_index(index).await {
+                match *err.kind {
                     ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    e => {
-                        return Err(anyhow!("create index error {}", e));
+                    err => {
+                        return Err(anyhow!("create index error {err}"));
                     }
                 }
             }
@@ -107,11 +112,11 @@ impl MongoRunDbRepo {
                 .options(idx_opts)
                 .build();
 
-            if let Err(e) = data_col.create_index(index).await {
-                match *e.kind {
+            if let Err(err) = data_col.create_index(index).await {
+                match *err.kind {
                     ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    e => {
-                        return Err(anyhow!("create index error {}", e));
+                    err => {
+                        return Err(anyhow!("create index error {err}"));
                     }
                 }
             }
@@ -134,7 +139,7 @@ impl GraphRepo for MongoRunDbRepo {
         match self.graph_col.find_one(doc! {}).await {
             Ok(None) => Err(anyhow!("global state not exit")),
             Ok(Some(val)) => Ok(val),
-            Err(e) => Err(e.into()),
+            Err(err) => Err(err.into()),
         }
     }
 }
@@ -148,7 +153,7 @@ impl NodeRepo for MongoRunDbRepo {
         match self.node_col.find_one(doc! {"node_name":name}).await {
             Ok(None) => Err(anyhow!("node not exit")),
             Ok(Some(val)) => Ok(val),
-            Err(e) => Err(e.into()),
+            Err(err) => Err(err.into()),
         }
     }
 }

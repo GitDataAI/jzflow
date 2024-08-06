@@ -7,12 +7,10 @@ use super::{
 use crate::{
     core::{
         db::{
-            DBConfig,
             Graph,
             GraphRepo,
             JobDbRepo,
             Node,
-            NodeRepo,
             NodeType,
             TrackerState,
         },
@@ -48,6 +46,7 @@ use kube::{
         DeleteParams,
         PostParams,
     },
+    runtime::controller::RunnerError,
     Api,
     Client,
 };
@@ -185,23 +184,22 @@ fn join_array(
     }
 }
 
-pub struct KubeDriver<'reg, R, DBC>
+#[derive(Clone)]
+pub struct KubeDriver<R>
 where
     R: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
-    reg: Handlebars<'reg>,
+    reg: Handlebars<'static>,
     client: Client,
-    db_config: DBC,
+    db_url: String,
     _phantom_data: PhantomData<R>,
 }
 
-impl<'reg, R, DBC> KubeDriver<'reg, R, DBC>
+impl<R> KubeDriver<R>
 where
     R: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig,
 {
-    pub async fn new(client: Client, db_config: DBC) -> Result<KubeDriver<'reg, R, DBC>> {
+    pub async fn new(client: Client, db_url: &str) -> Result<KubeDriver<R>> {
         let mut reg = Handlebars::new();
         reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
 
@@ -219,7 +217,7 @@ where
         Ok(KubeDriver {
             reg,
             client,
-            db_config,
+            db_url: db_url.to_string(),
             _phantom_data: PhantomData,
         })
     }
@@ -245,8 +243,8 @@ where
             let _ = Retry::spawn(retry_strategy, || async {
                 match namespaces.get(ns).await {
                     Ok(_) => Err(anyhow!("expect deleted")),
-                    Err(e) => {
-                        if e.to_string().contains("not found") {
+                    Err(err) => {
+                        if err.to_string().contains("not found") {
                             Ok(())
                         } else {
                             Err(anyhow!("retry"))
@@ -270,20 +268,16 @@ struct ClaimRenderParams {
 }
 
 #[derive(Serialize)]
-struct NodeRenderParams<'a, DBC>
-where
-    DBC: Sized + Serialize + Send + Sync + DBConfig + 'static,
-{
+struct NodeRenderParams<'a> {
     node: &'a ComputeUnit,
     log_level: &'a str,
-    db: DBC,
+    db_url: &'a str,
     run_id: &'a str,
 }
 
-impl<R, DBC> Driver for KubeDriver<'_, R, DBC>
+impl<R> Driver for KubeDriver<R>
 where
     R: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     #[allow(refining_impl_trait)]
     async fn deploy(
@@ -293,7 +287,8 @@ where
     ) -> Result<KubePipelineController<MongoRunDbRepo>> {
         Self::ensure_namespace_exit_and_clean(&self.client, run_id).await?;
 
-        let repo = MongoRunDbRepo::new(self.db_config.clone(), run_id).await?;
+        let db_url = self.db_url.to_string() + "/" + run_id;
+        let repo = MongoRunDbRepo::new(db_url.as_str()).await?;
         let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), run_id);
         let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
@@ -315,7 +310,7 @@ where
 
             let data_unit_render_args = NodeRenderParams {
                 node,
-                db: self.db_config.clone(),
+                db_url: db_url.as_str(),
                 log_level: "debug",
                 run_id,
             };
@@ -503,10 +498,7 @@ where
 mod tests {
     use std::env;
 
-    use crate::dbrepo::{
-        MongoConfig,
-        MongoRunDbRepo,
-    };
+    use crate::dbrepo::MongoRunDbRepo;
 
     use super::*;
 
@@ -565,17 +557,12 @@ mod tests {
                         "#;
         let dag = Dag::from_json(json_str).unwrap();
 
-        let mongo_cfg = MongoConfig {
-            mongo_url: "mongodb://192.168.3.163:27017".to_string(),
-        };
-
-        let client = MongoClient::with_uri_str(mongo_cfg.connection_string())
-            .await
-            .unwrap();
+        let db_url = "mongodb://192.168.3.163:27017/ntest";
+        let client = MongoClient::with_uri_str(db_url).await.unwrap();
         client.database("ntest").drop().await.unwrap();
 
         let client = Client::try_default().await.unwrap();
-        let kube_driver = KubeDriver::<MongoRunDbRepo, MongoConfig>::new(client, mongo_cfg)
+        let kube_driver = KubeDriver::<MongoRunDbRepo>::new(client, db_url)
             .await
             .unwrap();
         kube_driver.deploy("ntest", &dag).await.unwrap();

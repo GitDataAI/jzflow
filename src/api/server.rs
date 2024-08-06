@@ -17,40 +17,43 @@ use serde::Serialize;
 
 use crate::{
     core::db::{
-        DBConfig, DataRepo, JobDbRepo, MainDbRepo
+        DataRepo,
+        JobDbRepo,
+        MainDbRepo,
     },
+    driver::Driver,
     job::job_mgr::JobManager,
 };
 
 use super::job_api::job_route_config;
 
-fn v1_route<'reg, MAINR, JOBR, DBC>(cfg: &mut web::ServiceConfig)
+fn v1_route<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
 where
-MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
-{
-    cfg.service(web::scope("/job").configure(job_route_config::<MAINR, JOBR, DBC>));
-}
-
-fn config<'reg, MAINR, JOBR, DBC>(cfg: &mut web::ServiceConfig)
-where
+    D: Driver,
     MAINR: MainDbRepo,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
-    cfg.service(web::scope("/api/v1").configure(v1_route::<MAINR, JOBR, DBC>));
+    cfg.service(web::scope("/job").configure(job_route_config::<D, MAINR, JOBR>));
 }
 
-pub fn start_rpc_server<'reg, MAINR, JOBR, DBC>(
+fn config<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
+where
+    D: Driver,
+    MAINR: MainDbRepo,
+    JOBR: JobDbRepo,
+{
+    cfg.service(web::scope("/api/v1").configure(v1_route::<D, MAINR, JOBR>));
+}
+
+pub fn start_rpc_server<D, MAINR, JOBR>(
     addr: &str,
     db_repo: MAINR,
-    job_manager: JobManager<'reg, JOBR, DBC>,
+    job_manager: JobManager<D, MAINR, JOBR>,
 ) -> Result<Server>
 where
+    D: Driver,
     MAINR: MainDbRepo,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     let db_repo = db_repo;
     let server = HttpServer::new(move || {
@@ -71,7 +74,7 @@ where
         App::new()
             .wrap(middleware::Logger::default())
             .app_data(db_repo.clone())
-            .configure(config::<MAINR, JOBR, DBC>)
+            .configure(config::<D, MAINR, JOBR>)
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
     })
     .disable_signals()

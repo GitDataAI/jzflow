@@ -32,8 +32,7 @@
             "args": [
               "--node-name={{{node.name}}}",
               "--log-level={{{log_level}}}",
-              "--mongo-url={{{db.mongo_url}}}",
-              "--database={{{run_id}}}"
+              "--mongo-url={{{db_url}}}"
                {{#if (eq node.spec.cache_type "Disk") }},"--tmp-path=/app/tmp"{{/if}}
             ],
             "imagePullPolicy": "IfNotPresent",

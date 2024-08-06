@@ -1,43 +1,58 @@
-use crate::core::db::{
-    DBConfig, Job, JobDbRepo, JobRepo, MainDbRepo
+use crate::{
+    core::db::{
+        Job,
+        JobDbRepo,
+        JobRepo,
+        JobState,
+        JobUpdateInfo,
+        MainDbRepo,
+    },
+    driver::Driver,
 };
 use actix_web::{
     web,
     HttpResponse,
 };
 use mongodb::bson::oid::ObjectId;
-use serde::Serialize;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 //TODO change to use route macro after https://github.com/actix/actix-web/issues/2866  resolved
-async fn create<'reg, MAINR, JOBR, DBC>(db_repo: web::Data<MAINR>, data: web::Json<Job>) -> HttpResponse
+async fn create<D, MAINR, JOBR>(db_repo: web::Data<MAINR>, data: web::Json<Job>) -> HttpResponse
 where
+    D: Driver,
     MAINR: MainDbRepo,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     match db_repo.insert(&data.0).await {
-        Ok(_) => HttpResponse::Ok().finish(),
+        Ok(inserted_result) => HttpResponse::Ok().json(&inserted_result),
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
 }
 
-async fn get<'reg, MAINR, JOBR, DBC>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) -> HttpResponse
+async fn get<D, MAINR, JOBR>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) -> HttpResponse
 where
+    D: Driver,
     MAINR: MainDbRepo,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     match db_repo.get(&path.into_inner()).await {
-        Ok(_) => HttpResponse::Ok().finish(),
+        Ok(Some(inserted_result)) => HttpResponse::Ok().json(&inserted_result),
+        Ok(None) => HttpResponse::NotFound().finish(),
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
 }
 
-async fn delete<'reg, MAINR, JOBR, DBC>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) -> HttpResponse
+async fn delete<D, MAINR, JOBR>(
+    db_repo: web::Data<MAINR>,
+    path: web::Path<ObjectId>,
+) -> HttpResponse
 where
+    D: Driver,
     MAINR: MainDbRepo,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
 {
     match db_repo.delete(&path.into_inner()).await {
         Ok(_) => HttpResponse::Ok().finish(),
@@ -45,16 +60,39 @@ where
     }
 }
 
-pub(super) fn job_route_config<'reg, MAINR, JOBR, DBC>(cfg: &mut web::ServiceConfig)
+async fn update<D, MAINR, JOBR>(
+    db_repo: web::Data<MAINR>,
+    path: web::Path<ObjectId>,
+    query: web::Query<JobUpdateInfo>,
+) -> HttpResponse
 where
+    D: Driver,
     MAINR: MainDbRepo,
     JOBR: JobDbRepo,
-    DBC: Clone + Serialize + Send + Sync + DBConfig + 'static,
+{
+    match db_repo
+        .update(&path.into_inner(), &query.into_inner())
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
+    }
+}
+
+pub(super) fn job_route_config<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
+where
+    D: Driver,
+    MAINR: MainDbRepo,
+    JOBR: JobDbRepo,
 {
     cfg.service(
         web::resource("/job")
-            .route(web::post().to(create::<MAINR, JOBR, DBC>))
-            .route(web::delete().to(delete::<MAINR, JOBR, DBC>)),
+            .route(web::post().to(create::<D, MAINR, JOBR>))
+            .route(web::delete().to(delete::<D, MAINR, JOBR>)),
     )
-    .service(web::resource("/job/{id}").route(web::get().to(get::<MAINR, JOBR, DBC>)));
+    .service(
+        web::resource("/job/{id}")
+            .route(web::get().to(get::<D, MAINR, JOBR>))
+            .route(web::post().to(update::<D, MAINR, JOBR>)),
+    );
 }

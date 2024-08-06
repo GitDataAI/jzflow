@@ -91,8 +91,8 @@ async fn main() -> Result<()> {
     {
         let shutdown_tx = shutdown_tx.clone();
         let _ = tokio::spawn(async move {
-            if let Err(e) = read_jz_fs(args).await {
-                let _ = shutdown_tx.send(Err(anyhow!("read jz fs {e}"))).await;
+            if let Err(err) = read_jz_fs(args).await {
+                let _ = shutdown_tx.send(Err(anyhow!("read jz fs {err}"))).await;
             }
         });
     }
