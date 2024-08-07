@@ -4,6 +4,10 @@ $(OUTPUT):
 	mkdir -p $(OUTPUT)
 
 ################### build crates
+build-jz: $(OUTPUT)
+	cargo build --release --bin jz-flow
+	cp target/release/jz-flow $(OUTPUT)/jz-flow
+
 build-cd: $(OUTPUT)
 	cargo build -p compute_unit_runner --release --bin compute_unit_runner
 	cp target/release/compute_unit_runner $(OUTPUT)/compute_unit_runner

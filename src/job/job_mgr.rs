@@ -1,7 +1,6 @@
 use crate::{
     core::db::{
-        JobDbRepo,
-        MainDbRepo,
+        JobDbRepo, JobState, JobUpdateInfo, MainDbRepo
     },
     dag::Dag,
     driver::Driver,
@@ -59,7 +58,13 @@ where
                         let dag = Dag::from_json(job.graph_json.as_str())?;
                         let namespace = format!("{}-{}", job.name, job.retry_number);
                         if let Err(err) = driver.deploy(namespace.as_str(), &dag).await {
-                            error!("run job {} {err}", job.name);
+                            error!("run job {} {err}, start cleaning", job.name);
+                            if let Err(err) = driver.clean(namespace.as_str()).await {
+                                error!("clean job resource {err}");
+                            }
+                            if let Err(err) =  db.update(&job.id, &JobUpdateInfo{state: Some(JobState::Error)}).await{
+                                error!("set job to error state {err}");
+                            }
                         };
                     }
                 }

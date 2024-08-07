@@ -328,6 +328,7 @@ pub trait IPCClient {
 
 pub struct IPCClientImpl {
     unix_socket_addr: String,
+    //TODO change reqwest https://github.com/seanmonstar/reqwest/pull/1623
     client: Client<UnixConnector, Full<Bytes>>,
 }
 

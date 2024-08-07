@@ -1,4 +1,6 @@
 
+use std::fmt::format;
+
 use actix_web::{
     dev::Server,
     error,
@@ -12,6 +14,7 @@ use actix_web::{
     HttpServer,
 };
 use anyhow::Result;
+use awc::http::Uri;
 
 use crate::{
     core::db::{
@@ -19,7 +22,7 @@ use crate::{
         MainDbRepo,
     },
     driver::Driver,
-    job::job_mgr::JobManager,
+    job::job_mgr::JobManager, utils::IntoAnyhowResult,
 };
 
 use super::job_api::job_route_config;
@@ -53,6 +56,8 @@ where
     JOBR: JobDbRepo,
 {
     let db_repo = db_repo;
+    let uri = Uri::try_from(addr)?;
+    let host_port= format!("{}:{}", uri.host().anyhow("host not found")?, uri.port().map(|v|v.as_u16()).unwrap_or_else(||80));
     let server = HttpServer::new(move || {
         fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {
             use actix_web::error::JsonPayloadError;
@@ -75,7 +80,7 @@ where
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
     })
     .disable_signals()
-    .bind(addr)?
+    .bind(host_port)?
     .run();
 
     Ok(server)

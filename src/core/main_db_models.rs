@@ -13,7 +13,12 @@ pub enum JobState {
     Finish,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+impl Default for JobState {
+    fn default() -> Self {
+       JobState::Created
+    }
+}
+#[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Job {
     pub id: ObjectId,
     pub name: String,

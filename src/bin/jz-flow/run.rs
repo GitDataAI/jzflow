@@ -33,7 +33,7 @@ use crate::global::GlobalOptions;
 
 #[derive(Debug, Args)]
 pub(super) struct RunArgs {
-    #[arg(short, long)]
+    #[arg(long, default_value="mongodb://192.168.3.163:27017", help="mongo connection string")]
     mongo_url: String,
 }
 
@@ -41,7 +41,7 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
     let mut join_set: JoinSet<Result<()>> = JoinSet::new();
     let token = CancellationToken::new();
 
-    let db_url = args.mongo_url.to_string() + "jz_action";
+    let db_url = args.mongo_url.to_string() + "/jz_action";
     let db_repo = MongoMainDbRepo::new(db_url.as_str()).await?;
     let client = Client::try_default().await.unwrap();
 
@@ -54,7 +54,7 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
             &args.mongo_url,
         )
         .await?;
-    let server = start_rpc_server(&global_opts.listen, db_repo, job_manager).unwrap();
+    let server = start_rpc_server(&global_opts.listen, db_repo, job_manager)?;
     let handler = server.handle();
     {
         //listen unix socket

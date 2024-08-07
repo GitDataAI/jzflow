@@ -9,6 +9,7 @@ use clap::{
 };
 
 use global::GlobalOptions;
+use job::{run_job_subcommand, JobCommands};
 use jz_action::{
     core::db::MainDbRepo,
     utils::StdIntoAnyhowResult,
@@ -35,6 +36,9 @@ struct Cli {
 enum Commands {
     /// Adds files to myapp
     Run(RunArgs),
+
+    #[command(subcommand)]
+    Job(JobCommands)
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -48,5 +52,6 @@ async fn main() -> Result<()> {
 
     match args.command {
         Commands::Run(run_args) => run_backend(args.global_opts, run_args).await,
+        Commands::Job(job_commands) => run_job_subcommand(args.global_opts, job_commands).await,
     }
 }
