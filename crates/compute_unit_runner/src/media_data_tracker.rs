@@ -28,17 +28,14 @@ use jz_action::{
 use std::{
     sync::Arc,
     time::Duration,
+    vec,
 };
-use tokio::{
-    sync::broadcast,
-    task::JoinSet,
-};
+
 use tonic::{
     transport::Channel,
     Code,
 };
 use tracing::{
-    debug,
     error,
     info,
     warn,
@@ -48,10 +45,11 @@ use crate::multi_sender::MultiSender;
 use tokio::{
     select,
     sync::{
+        broadcast,
         mpsc,
         oneshot,
-        Mutex,
     },
+    task::JoinSet,
     time::{
         self,
         sleep,
@@ -59,6 +57,7 @@ use tokio::{
     },
 };
 
+use futures::future::try_join_all;
 use tokio_util::sync::CancellationToken;
 
 pub struct MediaDataTracker<R>
@@ -75,6 +74,8 @@ where
 
     pub(crate) local_state: TrackerState,
 
+    pub(crate) up_nodes: Vec<String>,
+
     pub(crate) upstreams: Vec<String>,
 
     pub(crate) downstreams: Vec<String>,
@@ -90,23 +91,36 @@ where
     // channel for submit output data
     pub(crate) ipc_process_submit_output_tx:
         Option<mpsc::Sender<(SubmitOuputDataReq, oneshot::Sender<Result<()>>)>>,
+
+    // channel for receive finish state from user container
+    pub(crate) ipc_process_finish_state_tx: Option<mpsc::Sender<((), oneshot::Sender<Result<()>>)>>,
 }
 impl<R> MediaDataTracker<R>
 where
     R: JobDbRepo,
 {
-    pub fn new(repo: R, name: &str, fs_cache: Arc<dyn FileCache>, buf_size: usize) -> Self {
+    pub fn new(
+        repo: R,
+        name: &str,
+        fs_cache: Arc<dyn FileCache>,
+        buf_size: usize,
+        up_nodes: Vec<String>,
+        upstreams: Vec<String>,
+        downstreams: Vec<String>,
+    ) -> Self {
         MediaDataTracker {
             fs_cache,
             buf_size,
             name: name.to_string(),
             repo: repo,
             local_state: TrackerState::Init,
-            upstreams: vec![],
-            downstreams: vec![],
+            up_nodes: up_nodes,
+            upstreams: upstreams,
+            downstreams: downstreams,
             ipc_process_submit_output_tx: None,
             ipc_process_completed_data_tx: None,
             ipc_process_data_req_tx: None,
+            ipc_process_finish_state_tx: None,
         }
     }
 }
@@ -115,6 +129,62 @@ impl<R> MediaDataTracker<R>
 where
     R: JobDbRepo,
 {
+    pub fn run_backend(
+        &mut self,
+        join_set: &mut JoinSet<Result<()>>,
+        token: CancellationToken,
+    ) -> Result<()> {
+        //process backent task to do revert clean data etc
+        let db_repo = self.repo.clone();
+        let up_nodes = self.up_nodes.clone();
+        let node_name = self.name.clone();
+        join_set.spawn(async move {
+                let mut interval = time::interval(Duration::from_secs(30));
+                loop {
+                    select! {
+                        _ = token.cancelled() => {
+                           return Ok(());
+                        }
+                        _ = interval.tick() => {
+                         if let Err(err) = {
+                            let now = Instant::now();
+                            info!("backend thread start");
+                            //select for sent
+                            db_repo.revert_no_success_sent(&node_name, &Direction::Out).await
+                            .map_err(|err|anyhow!("revert data {err}"))
+                            .map(|count| info!("revert {count} SelectForSent data to Received"))?;
+
+                            //check ready if both upnodes is finish and no pending data, we think it finish
+                            let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
+                                .map_err(|err|anyhow!("query node data {err}"))?
+                                .iter()
+                                .any(|node| matches!(node.state, TrackerState::Finish));
+
+                            if is_all_success {
+                                let running_state = &[
+                                        &DataState::Received,
+                                        &DataState::Assigned,
+                                        &DataState::SelectForSend,
+                                        &DataState::PartialSent,
+                                        &DataState::Sent
+                                 ];
+                                if db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await? == 0 {
+                                    db_repo.update_node_by_name(&node_name, TrackerState::Finish).await.map_err(|err|anyhow!("update node data {err}"))?;
+                                    info!("node was finished, not need to run backend");
+                                    return    anyhow::Ok(());
+                                }
+                            }
+                            info!("backend thread end {:?}", now.elapsed());
+                            anyhow::Ok(())
+                         }{
+                            error!("error in run backend {err}");
+                         }
+                        }
+                    }
+                }
+            });
+        Ok(())
+    }
     /// data was transfer from data container -> user container -> data container
     pub(crate) async fn route_data(
         &mut self,
@@ -129,36 +199,10 @@ where
         let (ipc_process_completed_data_tx, mut ipc_process_completed_data_rx) = mpsc::channel(1);
         self.ipc_process_completed_data_tx = Some(ipc_process_completed_data_tx);
 
-        let mut join_set: JoinSet<Result<()>> = JoinSet::new();
-        {
-            //process backent task to do revert clean data etc
-            let db_repo = self.repo.clone();
-            let node_name = self.name.clone();
-            let token = token.clone();
+        let (ipc_process_finish_state_tx, mut ipc_process_finish_state_rx) = mpsc::channel(1);
+        self.ipc_process_finish_state_tx = Some(ipc_process_finish_state_tx);
 
-            join_set.spawn(async move {
-                let mut interval = time::interval(Duration::from_secs(30));
-                loop {
-                    select! {
-                        _ = token.cancelled() => {
-                           return Ok(());
-                        }
-                        _ = interval.tick() => {
-                            let now = Instant::now();
-                            info!("backend thread start");
-                            //select for sent
-                            match db_repo.revert_no_success_sent(&node_name, &Direction::Out).await {
-                                Ok(count) => {
-                                    info!("revert {count} SelectForSent data to Received");
-                                },
-                                Err(err) => error!("revert data {err}"),
-                            }
-                            info!("backend thread end {:?}", now.elapsed());
-                        }
-                    }
-                }
-            });
-        }
+        let mut join_set: JoinSet<Result<()>> = JoinSet::new();
 
         let new_data_tx = broadcast::Sender::new(1);
         if self.downstreams.len() > 0 {
@@ -280,7 +324,7 @@ where
                         }
                      Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
                         loop {
-                            if let Err(err) =  db_repo.count_pending(&node_name, &Direction::Out).await.and_then(|count|{
+                            if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], &Direction::Out).await.and_then(|count|{
                                 if count > buf_size {
                                     Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
                                 } else {
@@ -448,6 +492,37 @@ where
                                         error!("remove tmp fs fail {}", err);
                                         continue;
                                     }
+                            },
+                            Err(err) => {
+                                resp.send(Err(err)).expect("channel only read once");
+                            }
+                        }
+                     }
+                     Some((_, resp))  = ipc_process_finish_state_rx.recv() => {
+                        loop {
+                            //query data need to be done
+                            let running_state = &[
+                                &DataState::Received,
+                                &DataState::Assigned,
+                                &DataState::SelectForSend,
+                                &DataState::PartialSent,
+                                &DataState::Sent
+                                ];
+                                match db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await {
+                                    Ok(count) => {
+                                        if count ==0 {
+                                            break;
+                                        }
+                                    },
+                                    Err(err) => error!("query node state {err}")
+                                }
+                                sleep(Duration::from_secs(5)).await;
+                        }
+
+                        match db_repo.update_node_by_name(&node_name, TrackerState::Finish).await{
+                           Ok(_) =>{
+                                // respose with nothing
+                                resp.send(Ok(())).expect("channel only read once");
                             },
                             Err(err) => {
                                 resp.send(Err(err)).expect("channel only read once");

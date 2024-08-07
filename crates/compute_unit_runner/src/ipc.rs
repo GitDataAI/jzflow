@@ -132,19 +132,19 @@ where
     match sender {
         Some(sender) => {
             if let Err(err) = sender.send(((), tx)).await {
-                return HttpResponse::ServiceUnavailable()
+                return HttpResponse::InternalServerError()
                     .body(format!("send to avaiable data channel {err}"));
             }
         }
         None => {
-            return HttpResponse::ServiceUnavailable().body("channel is not ready");
+            return HttpResponse::InternalServerError().body("channel is not ready");
         }
     }
 
     match rx.await {
         Ok(Ok(Some(resp))) => HttpResponse::Ok().json(resp),
         Ok(Ok(None)) => HttpResponse::NotFound().body("no avaiablle data"),
-        Ok(Err(err)) => HttpResponse::ServiceUnavailable().body(err.to_string()),
+        Ok(Err(err)) => HttpResponse::InternalServerError().body(err.to_string()),
         Err(err) => HttpResponse::ServiceUnavailable().body(err.to_string()),
     }
 }
@@ -171,18 +171,18 @@ where
     match sender {
         Some(sender) => {
             if let Err(err) = sender.send((data.0, tx)).await {
-                return HttpResponse::ServiceUnavailable()
+                return HttpResponse::InternalServerError()
                     .body(format!("send to avaiable data channel {err}"));
             }
         }
         None => {
-            return HttpResponse::ServiceUnavailable().body("channel is not ready");
+            return HttpResponse::InternalServerError().body("channel is not ready");
         }
     }
 
     match rx.await {
         Ok(Ok(resp)) => HttpResponse::Ok().body(resp),
-        Ok(Err(err)) => HttpResponse::ServiceUnavailable().body(err.to_string()),
+        Ok(Err(err)) => HttpResponse::InternalServerError().body(err.to_string()),
         Err(err) => HttpResponse::ServiceUnavailable().body(err.to_string()),
     }
 }
@@ -212,18 +212,55 @@ where
     match sender {
         Some(sender) => {
             if let Err(err) = sender.send((data.0, tx)).await {
-                return HttpResponse::ServiceUnavailable()
+                return HttpResponse::InternalServerError()
                     .body(format!("send to avaiable data channel {err}"));
             }
         }
         None => {
-            return HttpResponse::ServiceUnavailable().body("channel is not ready");
+            return HttpResponse::InternalServerError().body("channel is not ready");
         }
     }
 
     match rx.await {
         Ok(Ok(resp)) => HttpResponse::Ok().body(resp),
-        Ok(Err(err)) => HttpResponse::ServiceUnavailable().body(err.to_string()),
+        Ok(Err(err)) => HttpResponse::InternalServerError().body(err.to_string()),
+        Err(err) => HttpResponse::ServiceUnavailable().body(err.to_string()),
+    }
+}
+
+async fn process_finish_state_request<R>(
+    program_mutex: web::Data<Arc<Mutex<MediaDataTracker<R>>>>,
+) -> HttpResponse
+where
+    R: JobDbRepo + Clone,
+{
+    info!("receive finish state request");
+    let (tx, rx) = oneshot::channel::<Result<()>>();
+    let sender = loop {
+        let program = program_mutex.lock().await;
+        if matches!(program.local_state, TrackerState::Ready) {
+            break program.ipc_process_finish_state_tx.as_ref().cloned();
+        }
+        drop(program);
+        sleep(Duration::from_secs(5)).await;
+    };
+
+    //read request
+    match sender {
+        Some(sender) => {
+            if let Err(err) = sender.send(((), tx)).await {
+                return HttpResponse::InternalServerError()
+                    .body(format!("send to finish state channel {err}"));
+            }
+        }
+        None => {
+            return HttpResponse::InternalServerError().body("channel is not ready");
+        }
+    }
+
+    match rx.await {
+        Ok(Ok(resp)) => HttpResponse::Ok().body(resp),
+        Ok(Err(err)) => HttpResponse::InternalServerError().body(err.to_string()),
         Err(err) => HttpResponse::ServiceUnavailable().body(err.to_string()),
     }
 }
@@ -255,7 +292,11 @@ where
             .app_data(Data::new(program.clone()))
             .service(
                 web::scope("/api/v1")
-                    .service(web::resource("status").get(status::<R>))
+                    .service(
+                        web::resource("status")
+                        .get(status::<R>)
+                        .post(process_finish_state_request::<R>)
+                    )
                     .service(
                         web::resource("data")
                             .route(web::post().to(process_completed_request::<R>))
@@ -273,6 +314,7 @@ where
 }
 
 pub trait IPCClient {
+    fn finish(&self) -> impl std::future::Future<Output = Result<()>> + Send;
     fn status(&self) -> impl std::future::Future<Output = Result<Status>> + Send;
     fn submit_output(
         &self,
@@ -299,6 +341,26 @@ impl IPCClientImpl {
 }
 
 impl IPCClient for IPCClientImpl {
+
+    async fn finish(&self) ->  Result<()> {
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/status").into();
+
+        let req: Request<Full<Bytes>> = Request::builder()
+            .method(Method::POST)
+            .uri(url)
+            .header("Content-Type", "application/json")
+            .body(Full::default())?;
+
+        let resp = self.client.request(req).await.anyhow()?;
+        if resp.status().is_success() {
+            return Ok(());
+        }
+
+        let status_code = resp.status();
+        let contents = String::from_utf8(resp.collect().await.map(Collected::to_bytes)?.to_vec())?;
+        Err(anyhow!("submit data fail {} {}", status_code, contents))
+    }
+
     async fn status(&self) -> Result<Status> {
         let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/status").into();
 
@@ -389,6 +451,8 @@ impl IPCClient for IPCClientImpl {
         let contents = String::from_utf8(resp.collect().await.map(Collected::to_bytes)?.to_vec())?;
         Err(anyhow!("completed data fail {} {}", status_code, contents))
     }
+    
+
 }
 
 #[cfg(test)]

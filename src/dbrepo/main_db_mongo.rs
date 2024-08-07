@@ -16,10 +16,7 @@ use anyhow::{
     Result,
 };
 
-use chrono::{
-    Duration,
-    Utc,
-};
+use chrono::Utc;
 
 use futures::TryStreamExt;
 use mongodb::{

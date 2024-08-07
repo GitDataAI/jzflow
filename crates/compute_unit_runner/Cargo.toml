@@ -22,6 +22,7 @@ mongodb = {workspace = true}
 async-trait = {workspace = true}
 chrono = {workspace = true}
 clap = {workspace = true}
+futures = {workspace = true}
 
 actix-web = "4.8.0"
 hyperlocal = "0.9.1"

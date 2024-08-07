@@ -65,10 +65,10 @@ where
                                     let cloned_token = token.clone();
                                     if matches!(program_guard.local_state, TrackerState::Init) {
                                         //start
-                                        info!("set to ready state {:?}", record.upstreams);
+                                        info!("set to ready state {:?}", record.incoming_streams);
                                         program_guard.local_state = TrackerState::Ready;
-                                        program_guard.upstreams = record.upstreams;
-                                        program_guard.downstreams = record.downstreams;
+                                        program_guard.upstreams = record.incoming_streams;
+                                        program_guard.downstreams = record.outgoing_streams;
                                         join_set = Some(program_guard.route_data(cloned_token).await?);
                                     }
                                 }

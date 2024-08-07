@@ -174,5 +174,7 @@ async fn read_jz_fs(args: Args) -> Result<()> {
             .submit_output(SubmitOuputDataReq::new(&id, batch.len() as u32))
             .await?;
     }
+    // read all files
+    client.finish().await.unwrap();
     Ok(())
 }

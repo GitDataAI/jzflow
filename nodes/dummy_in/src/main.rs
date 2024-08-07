@@ -44,6 +44,9 @@ struct Args {
     #[arg(short, long, default_value = "/unix_socket/compute_unit_runner_d")]
     unix_socket_addr: String,
 
+    #[arg(short, long, default_value = "0")]
+    total_count: u32,
+
     #[arg(short, long, default_value = "/app/tmp")]
     tmp_path: String,
 }
@@ -86,8 +89,22 @@ async fn main() -> Result<()> {
 async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
+    let count_file = tmp_path.join("number.txt");
+    let mut count = if fs::try_exists(&count_file).await? {
+        let count_str =  fs::read_to_string(&count_file).await?;
+        str::parse::<u32>(count_str.as_str())?
+    } else {
+        0
+    };
+
     loop {
+        if  args.total_count > 0 && count > args.total_count {
+            client.finish().await.unwrap();
+            return Ok(());
+        }
+
         if token.is_cancelled() {
+            fs::write(&count_file, count.to_string()).await.unwrap();
             return Ok(());
         }
 
@@ -111,5 +128,6 @@ async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
             .submit_output(SubmitOuputDataReq::new(&id, 30))
             .await?;
         info!("submit new data {:?}", instant.elapsed());
+        count+=1;
     }
 }

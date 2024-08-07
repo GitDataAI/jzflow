@@ -1,13 +1,8 @@
 use anyhow::Result;
-use clap::{
-    Args,
-    Parser,
-    Subcommand,
-};
+use clap::Args;
 
 use jz_action::{
     api::{
-        self,
         server::start_rpc_server,
     },
     core::db::MainDbRepo,
@@ -16,29 +11,20 @@ use jz_action::{
         MongoRunDbRepo,
     },
     driver::kube::KubeDriver,
-    utils::StdIntoAnyhowResult,
 };
 use kube::Client;
-use std::{
-    path::Path,
-    str::FromStr,
-};
 use tokio::{
-    fs,
-    io::AsyncWriteExt,
     select,
     signal::unix::{
         signal,
         SignalKind,
     },
     task::JoinSet,
-    time::Instant,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
     info,
-    Level,
 };
 
 use jz_action::job::job_mgr::JobManager;

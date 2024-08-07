@@ -8,6 +8,7 @@ use compute_unit_runner::{
     state_controller::StateController,
 };
 use jz_action::{
+    core::db::NodeRepo,
     dbrepo::MongoRunDbRepo,
     utils::StdIntoAnyhowResult,
 };
@@ -80,7 +81,18 @@ async fn main() -> Result<()> {
 
     let db_repo = MongoRunDbRepo::new(&args.mongo_url).await?;
 
-    let program = MediaDataTracker::new(db_repo.clone(), &args.node_name, fs_cache, args.buf_size);
+    let node = db_repo.get_node_by_name(&args.node_name).await?;
+
+    let mut program = MediaDataTracker::new(
+        db_repo.clone(),
+        &args.node_name,
+        fs_cache,
+        args.buf_size,
+        node.up_nodes,
+        node.incoming_streams,
+        node.outgoing_streams,
+    );
+    program.run_backend(&mut join_set, token.clone())?;
 
     let program_safe = Arc::new(Mutex::new(program));
 

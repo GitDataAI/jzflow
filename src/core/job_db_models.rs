@@ -31,18 +31,22 @@ pub struct Node {
     pub node_name: String,
     pub state: TrackerState,
     pub node_type: NodeType,
-    pub upstreams: Vec<String>,
-    pub downstreams: Vec<String>,
+    pub up_nodes: Vec<String>,
+    pub incoming_streams: Vec<String>,
+    pub outgoing_streams: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
 /// DataState use to represent databatch state
 /// for incoming data in compute unit:  Received(compute data) -> Assigned(assigned to user
-/// containerd) -> Processed(user containerd has processed) for channel dataflow  :
-/// Received(channel) -> Assigned(channel)->Sent(send to channel) -> EndRecieved(compute unit)->
-/// Clean(channel clean data) for outgoing data flow of compute unit:  Received(compute unit) ->
-/// SelectForSend(compute unit) -> PartialSent(compute unit)->Sent(compute unit)
+/// containerd) -> Processed(user containerd has processed)
+///
+/// for channel dataflow: Received(channel) -> Assigned(channel)->Sent(send to channel) ->
+/// EndRecieved(compute unit)-> Clean(channel clean data)
+///
+/// for outgoing data flow of compute unit:  Received(compute unit) -> SelectForSend(compute unit)
+/// -> PartialSent(compute unit)->Sent(compute unit)
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum DataState {
     Received,
@@ -91,6 +95,12 @@ pub trait NodeRepo {
         &self,
         name: &str,
     ) -> impl std::future::Future<Output = Result<Node>> + Send;
+
+    fn update_node_by_name(
+        &self,
+        name: &str,
+        state: TrackerState,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 pub trait DataRepo {
@@ -120,9 +130,10 @@ pub trait DataRepo {
         state: &DataState,
     ) -> impl std::future::Future<Output = Result<Vec<DataRecord>>> + Send;
 
-    fn count_pending(
+    fn count(
         &self,
         node_name: &str,
+        states: &[&DataState],
         direction: &Direction,
     ) -> impl std::future::Future<Output = Result<usize>> + Send;
 

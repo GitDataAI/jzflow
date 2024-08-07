@@ -12,6 +12,7 @@ use anyhow::Result;
 use channel_tracker::ChannelTracker;
 use clap::Parser;
 use compute_unit_runner::fs_cache::*;
+use jz_action::core::db::NodeRepo;
 use state_controller::StateController;
 use std::{
     str::FromStr,
@@ -74,6 +75,7 @@ async fn main() -> Result<()> {
     let token = CancellationToken::new();
 
     let db_repo = MongoRunDbRepo::new(&args.mongo_url).await?;
+    let node = db_repo.get_node_by_name(&args.node_name).await?;
 
     let fs_cache: Arc<dyn FileCache> = match args.tmp_path {
         Some(path) => Arc::new(FSCache::new(path)),
@@ -81,7 +83,16 @@ async fn main() -> Result<()> {
     };
 
     let addr = args.host_port.parse()?;
-    let program = ChannelTracker::new(db_repo.clone(), fs_cache, &args.node_name, args.buf_size);
+    let mut program = ChannelTracker::new(
+        db_repo.clone(),
+        fs_cache,
+        &args.node_name,
+        args.buf_size,
+        node.up_nodes,
+        node.incoming_streams,
+        node.outgoing_streams,
+    );
+    program.run_backend(&mut join_set, token.clone())?;
 
     let program_safe = Arc::new(Mutex::new(program));
     {

@@ -1,5 +1,8 @@
 use crate::{
-    core::db::{Job, JobUpdateInfo},
+    core::db::{
+        Job,
+        JobUpdateInfo,
+    },
     utils::StdIntoAnyhowResult,
 };
 use anyhow::{

@@ -1,6 +1,7 @@
 #![feature(trait_alias)]
 #![feature(async_closure)]
 #![feature(future_join)]
+#![feature(iterator_try_collect)]
 
 pub mod api;
 pub mod core;

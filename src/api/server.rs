@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use actix_web::{
     dev::Server,
@@ -13,11 +12,9 @@ use actix_web::{
     HttpServer,
 };
 use anyhow::Result;
-use serde::Serialize;
 
 use crate::{
     core::db::{
-        DataRepo,
         JobDbRepo,
         MainDbRepo,
     },

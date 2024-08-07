@@ -4,53 +4,22 @@ mod run;
 
 use anyhow::Result;
 use clap::{
-    Args,
     Parser,
     Subcommand,
 };
 
 use global::GlobalOptions;
 use jz_action::{
-    api::{
-        self,
-        server::start_rpc_server,
-    },
     core::db::MainDbRepo,
-    dbrepo::{
-        MongoMainDbRepo,
-        MongoRunDbRepo,
-    },
-    driver::kube::KubeDriver,
     utils::StdIntoAnyhowResult,
 };
-use kube::Client;
 use run::{
     run_backend,
     RunArgs,
 };
-use std::{
-    path::Path,
-    str::FromStr,
-};
-use tokio::{
-    fs,
-    io::AsyncWriteExt,
-    select,
-    signal::unix::{
-        signal,
-        SignalKind,
-    },
-    task::JoinSet,
-    time::Instant,
-};
-use tokio_util::sync::CancellationToken;
-use tracing::{
-    error,
-    info,
-    Level,
-};
+use std::str::FromStr;
+use tracing::Level;
 
-use jz_action::job::job_mgr::JobManager;
 
 #[derive(Debug, Parser)]
 #[command(name = "jz-action-backend", author = "Author Name <github.com/GitDataAI/jz-action>", version, about= "jz-action backend", long_about = None, disable_version_flag = true)]

@@ -3,7 +3,6 @@ use crate::{
         Job,
         JobDbRepo,
         JobRepo,
-        JobState,
         JobUpdateInfo,
         MainDbRepo,
     },
@@ -14,10 +13,6 @@ use actix_web::{
     HttpResponse,
 };
 use mongodb::bson::oid::ObjectId;
-use serde::{
-    Deserialize,
-    Serialize,
-};
 
 //TODO change to use route macro after https://github.com/actix/actix-web/issues/2866  resolved
 async fn create<D, MAINR, JOBR>(db_repo: web::Data<MAINR>, data: web::Json<Job>) -> HttpResponse

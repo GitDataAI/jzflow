@@ -1,17 +1,12 @@
 use crate::{
     core::db::{
-        Job,
         JobDbRepo,
         MainDbRepo,
     },
     dag::Dag,
-    driver::{
-        kube::KubeDriver,
-        Driver,
-    },
+    driver::Driver,
 };
 use anyhow::Result;
-use futures::future::join;
 use kube::Client;
 use std::marker::PhantomData;
 use tokio::task::JoinSet;

@@ -19,6 +19,7 @@ uuid =  {workspace = true}
 async-trait = {workspace = true}
 chrono = {workspace = true}
 clap = {workspace = true}
+futures = {workspace = true}
 
 rand = "0.8.5"
 walkdir = "2.5.0"

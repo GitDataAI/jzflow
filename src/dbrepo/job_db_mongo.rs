@@ -8,6 +8,7 @@ use crate::{
         GraphRepo,
         Node,
         NodeRepo,
+        TrackerState,
     },
     utils::StdIntoAnyhowResult,
 };
@@ -156,6 +157,21 @@ impl NodeRepo for MongoRunDbRepo {
             Err(err) => Err(err.into()),
         }
     }
+
+    async fn update_node_by_name(&self, name: &str, state: TrackerState) -> Result<()> {
+        let update = doc! {
+            "$set": {
+                "state": to_variant_name(&state)?,
+                "updated_at":Utc::now().timestamp(),
+            },
+        };
+
+        self.node_col
+            .update_one(doc! {"node_name":name}, update)
+            .await
+            .map(|_| ())
+            .anyhow()
+    }
 }
 
 impl DataRepo for MongoRunDbRepo {
@@ -234,11 +250,17 @@ impl DataRepo for MongoRunDbRepo {
             .anyhow()
     }
 
-    async fn count_pending(&self, node_name: &str, direction: &Direction) -> Result<usize> {
+    async fn count(
+        &self,
+        node_name: &str,
+        states: &[&DataState],
+        direction: &Direction,
+    ) -> Result<usize> {
+        let states: Vec<&str> = states.iter().map(|v| to_variant_name(v)).try_collect()?;
         self.data_col
             .count_documents(doc! {
                 "node_name":node_name,
-                "state": doc! {"$in": ["Received","PartialSent"]},
+                "state": doc! {"$in": states},
                 "direction": to_variant_name(&direction)?
             })
             .await

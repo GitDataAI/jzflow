@@ -4,6 +4,7 @@ use anyhow::{
 };
 use chrono::Utc;
 use compute_unit_runner::fs_cache::FileCache;
+use futures::future::try_join_all;
 use jz_action::{
     core::db::{
         DataRecord,
@@ -26,7 +27,6 @@ use tokio::{
             Sender,
         },
         oneshot,
-        Mutex,
     },
     task::JoinSet,
     time::{
@@ -56,6 +56,8 @@ where
 
     pub(crate) local_state: TrackerState,
 
+    pub(crate) up_nodes: Vec<String>,
+
     pub(crate) upstreams: Vec<String>,
 
     pub(crate) downstreams: Vec<String>,
@@ -70,52 +72,52 @@ impl<R> ChannelTracker<R>
 where
     R: JobDbRepo,
 {
-    pub(crate) fn new(repo: R, fs_cache: Arc<dyn FileCache>, name: &str, buf_size: usize) -> Self {
+    pub(crate) fn new(
+        repo: R,
+        fs_cache: Arc<dyn FileCache>,
+        name: &str,
+        buf_size: usize,
+        up_nodes: Vec<String>,
+        upstreams: Vec<String>,
+        downstreams: Vec<String>,
+    ) -> Self {
         ChannelTracker {
             name: name.to_string(),
             repo: repo,
             fs_cache,
             buf_size,
             local_state: TrackerState::Init,
-            upstreams: vec![],
-            downstreams: vec![],
+            up_nodes: up_nodes,
+            upstreams: upstreams,
+            downstreams: downstreams,
             request_tx: None,
             incoming_tx: None,
         }
     }
 
-    pub(crate) async fn route_data(
+    pub fn run_backend(
         &mut self,
+        join_set: &mut JoinSet<Result<()>>,
         token: CancellationToken,
-    ) -> Result<JoinSet<Result<()>>> {
-        if self.upstreams.len() == 0 {
-            return Err(anyhow!("no upstream"));
-        }
+    ) -> Result<()> {
+        //process backent task to do revert clean data etc
+        let db_repo = self.repo.clone();
+        let node_name = self.name.clone();
+        let fs_cache = self.fs_cache.clone();
+        let token = token.clone();
+        let up_nodes = self.up_nodes.clone();
 
-        let (incoming_tx, mut incoming_rx) = mpsc::channel(1);
-        self.incoming_tx = Some(incoming_tx);
-
-        let (request_tx, mut request_rx) = mpsc::channel(1);
-        self.request_tx = Some(request_tx);
-
-        let mut join_set: JoinSet<Result<()>> = JoinSet::new();
-        {
-            //process clean data
-            let db_repo = self.repo.clone();
-            let node_name = self.name.clone();
-            let fs_cache = self.fs_cache.clone();
-            let token = token.clone();
-
-            join_set.spawn(async move {
-                let mut interval = time::interval(Duration::from_secs(30));
-                loop {
-                    let now = Instant::now();
-                    info!("backend thread start");
-                    tokio::select! {
-                        _ = token.cancelled() => {
-                            return Ok(());
-                         }
-                        _ = interval.tick() => {
+        join_set.spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(30));
+            loop {
+                let now = Instant::now();
+                info!("backend thread start");
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        return Ok(());
+                     }
+                    _ = interval.tick() => {
+                        if let Err(err) = {
                             // clean data
                             match db_repo.list_by_node_name_and_state(&node_name, &DataState::EndRecieved).await {
                                 Ok(datas) => {
@@ -135,18 +137,57 @@ where
                                 Err(err) => error!("list datas fail {err}"),
                             }
                             //select for sent
-                            match db_repo.revert_no_success_sent(&node_name, &Direction::In).await {
-                                Ok(count) => {
-                                    info!("revert {count} SelectForSent data to Received");
-                                },
-                                Err(err) => error!("revert data {err}"),
+                            db_repo.revert_no_success_sent(&node_name, &Direction::Out).await
+                            .map_err(|err|anyhow!("revert data {err}"))
+                            .map(|count| info!("revert {count} SelectForSent data to Received"))?;
+
+                            //check ready if both upnodes is finish and no pending data, we think it finish
+                            let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
+                            .map_err(|err|anyhow!("query node data {err}"))?
+                            .iter()
+                            .any(|node| matches!(node.state, TrackerState::Finish));
+
+                            if is_all_success {
+                                let running_state = &[
+                                    &DataState::Received,
+                                    &DataState::Assigned,
+                                    &DataState::SelectForSend,
+                                    &DataState::EndRecieved
+                                ];
+                                if db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await? == 0 {
+                                    db_repo.update_node_by_name(&node_name, TrackerState::Finish).await.map_err(|err|anyhow!("update node data {err}"))?;
+                                    info!("node was finished, not need to run backend");
+                                    return    anyhow::Ok(());
+                                }
                             }
+                            info!("backend thread end {:?}", now.elapsed());
+                            anyhow::Ok(())
+                        }{
+                            error!("error in run backend {err}");
                         }
                     }
-                    info!("backend thread end {:?}", now.elapsed());
                 }
-            });
+                info!("backend thread end {:?}", now.elapsed());
+            }
+        });
+        Ok(())
+    }
+
+    pub(crate) async fn route_data(
+        &mut self,
+        token: CancellationToken,
+    ) -> Result<JoinSet<Result<()>>> {
+        if self.upstreams.len() == 0 {
+            return Err(anyhow!("no upstream"));
         }
+
+        let (incoming_tx, mut incoming_rx) = mpsc::channel(1);
+        self.incoming_tx = Some(incoming_tx);
+
+        let (request_tx, mut request_rx) = mpsc::channel(1);
+        self.request_tx = Some(request_tx);
+
+        let mut join_set: JoinSet<Result<()>> = JoinSet::new();
         {
             //process request data
             let db_repo = self.repo.clone();
@@ -220,7 +261,7 @@ where
                         let id = data_batch.id.clone();
                         let size = data_batch.size;
                         //check limit
-                       if let Err(err) =  db_repo.count_pending(&node_name, &Direction::In).await.and_then(|count|{
+                       if let Err(err) =  db_repo.count(&node_name,&[&DataState::Received], &Direction::In).await.and_then(|count|{
                             if count > buf_size {
                                 Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
                             } else {

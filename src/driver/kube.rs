@@ -46,7 +46,6 @@ use kube::{
         DeleteParams,
         PostParams,
     },
-    runtime::controller::RunnerError,
     Api,
     Client,
 };
@@ -314,13 +313,13 @@ where
                 log_level: "debug",
                 run_id,
             };
-            let upstreams = graph.get_incomming_nodes(&node.name);
-            let downstreams = graph.get_outgoing_nodes(&node.name);
+            let up_nodes = graph.get_incomming_nodes(&node.name);
+            let down_nodes = graph.get_outgoing_nodes(&node.name);
             // apply channel
-            let channel_handler = if upstreams.len() > 0 {
+            let (channel_handler, channel_nodes) = if up_nodes.len() > 0 {
                 //if node have no upstream node, no need to create channel points
                 //channel node receive upstreams from upstream nodes
-                let upstreams = upstreams
+                let upstreams = up_nodes
                     .iter()
                     .map(|node_name| {
                         graph
@@ -347,12 +346,14 @@ where
                         )
                     })
                     .collect::<Vec<_>>();
+                let channel_node_name = node.name.clone() + "-channel";
                 let channel_record = Node {
-                    node_name: node.name.clone() + "-channel",
+                    node_name: channel_node_name.clone(),
                     state: TrackerState::Init,
                     node_type: NodeType::Channel,
-                    upstreams: upstreams,
-                    downstreams: node_stream, //only node read this channel
+                    up_nodes: up_nodes.iter().map(|node| node.to_string()).collect(),
+                    incoming_streams: upstreams,
+                    outgoing_streams: node_stream, //only node read this channel
                     created_at: cur_tm,
                     updated_at: cur_tm,
                 };
@@ -390,14 +391,17 @@ where
                 let channel_service = service_api
                     .create(&PostParams::default(), &channel_service)
                     .await?;
-                Some(KubeChannelHander {
-                    claim: claim_deployment,
-                    statefulset: channel_statefulset,
-                    service: channel_service,
-                    db_repo: repo.clone(),
-                })
+                (
+                    Some(KubeChannelHander {
+                        claim: claim_deployment,
+                        statefulset: channel_statefulset,
+                        service: channel_service,
+                        db_repo: repo.clone(),
+                    }),
+                    vec![channel_node_name],
+                )
             } else {
-                None
+                (None, vec![])
             };
 
             // apply nodes
@@ -420,13 +424,13 @@ where
                 .await?;
 
             // compute unit only receive data from channel
-            let channel_stream = (upstreams.len()>0).then(||{
+            let channel_stream = (up_nodes.len()>0).then(||{
                 vec![format!(
                     "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
                       node.name, 0, node.name, run_id
                   )]
             }).unwrap_or_else(||vec![]);
-            let outgoing_node_streams = downstreams
+            let outgoing_node_streams = down_nodes
                     .iter()
                     .map(|node_name| {
                         graph
@@ -441,13 +445,14 @@ where
                         )
                     })
                     .collect::<Vec<_>>();
-            debug!("{}'s upstreams {:?}", node.name, upstreams);
+
             let node_record = Node {
                 node_name: node.name.clone(),
                 state: TrackerState::Init,
                 node_type: NodeType::CoputeUnit,
-                upstreams: channel_stream,
-                downstreams: outgoing_node_streams,
+                up_nodes: channel_nodes,
+                incoming_streams: channel_stream,
+                outgoing_streams: outgoing_node_streams,
                 created_at: cur_tm,
                 updated_at: cur_tm,
             };
