@@ -9,7 +9,10 @@ use clap::{
 };
 
 use global::GlobalOptions;
-use job::{run_job_subcommand, JobCommands};
+use job::{
+    run_job_subcommand,
+    JobCommands,
+};
 use jz_action::{
     core::db::MainDbRepo,
     utils::StdIntoAnyhowResult,
@@ -20,7 +23,6 @@ use run::{
 };
 use std::str::FromStr;
 use tracing::Level;
-
 
 #[derive(Debug, Parser)]
 #[command(name = "jz-action-backend", author = "Author Name <github.com/GitDataAI/jz-action>", version, about= "jz-action backend", long_about = None, disable_version_flag = true)]
@@ -38,7 +40,7 @@ enum Commands {
     Run(RunArgs),
 
     #[command(subcommand)]
-    Job(JobCommands)
+    Job(JobCommands),
 }
 
 #[tokio::main(flavor = "multi_thread")]

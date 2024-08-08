@@ -1,8 +1,4 @@
 use compute_unit_runner::{
-    fs_cache::{
-        FSCache,
-        FileCache,
-    },
     ipc,
     media_data_tracker,
     state_controller::StateController,
@@ -11,6 +7,10 @@ use jz_action::{
     core::db::NodeRepo,
     dbrepo::MongoRunDbRepo,
     utils::StdIntoAnyhowResult,
+};
+use nodes_sdk::fs_cache::{
+    FSCache,
+    FileCache,
 };
 
 use anyhow::Result;
@@ -26,13 +26,16 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::Mutex,
+    sync::{
+        Mutex,
+        RwLock,
+    },
     task::JoinSet,
 };
 
+use nodes_sdk::monitor_tasks;
 use tokio_util::sync::CancellationToken;
 use tracing::{
-    error,
     info,
     Level,
 };
@@ -94,7 +97,7 @@ async fn main() -> Result<()> {
     );
     program.run_backend(&mut join_set, token.clone())?;
 
-    let program_safe = Arc::new(Mutex::new(program));
+    let program_safe = Arc::new(RwLock::new(program));
 
     let server = ipc::start_ipc_server(&args.unix_socket_addr, program_safe.clone()).unwrap();
     let handler = server.handle();
@@ -142,11 +145,5 @@ async fn main() -> Result<()> {
             token.cancel();
         });
     }
-
-    while let Some(Err(err)) = join_set.join_next().await {
-        error!("exit spawn {err}");
-    }
-
-    info!("gracefully shutdown");
-    Ok(())
+    monitor_tasks(&mut join_set).await
 }

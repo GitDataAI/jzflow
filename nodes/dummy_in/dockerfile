@@ -1,4 +1,4 @@
-FROM jz-action/net-debug
+FROM ubuntu:22.04
 
 WORKDIR /app
 

@@ -15,11 +15,12 @@ pub enum JobState {
 
 impl Default for JobState {
     fn default() -> Self {
-       JobState::Created
+        JobState::Created
     }
 }
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Job {
+    #[serde(rename = "_id")]
     pub id: ObjectId,
     pub name: String,
     pub graph_json: String,

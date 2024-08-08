@@ -3,10 +3,13 @@ use jz_action::core::db::{
     JobDbRepo,
     TrackerState,
 };
-use std::sync::Arc;
+use std::{
+    io::Write,
+    sync::Arc,
+};
 use tokio::{
     select,
-    sync::Mutex,
+    sync::RwLock,
     task::JoinSet,
     time::{
         self,
@@ -25,7 +28,7 @@ pub struct StateController<R>
 where
     R: JobDbRepo,
 {
-    pub program: Arc<Mutex<ChannelTracker<R>>>,
+    pub program: Arc<RwLock<ChannelTracker<R>>>,
 }
 
 impl<R> StateController<R>
@@ -59,21 +62,20 @@ where
                     .await{
                         Ok(record)=> {
                             debug!("{} fetch state from db", record.node_name);
+                            let mut program_guard = program.write().await;
+                            if program_guard.local_state == record.state {
+                                continue
+                            }
+                            let old_local_state = program_guard.local_state.clone();
+                            program_guard.local_state = record.state.clone();
+                            info!("update state {:?} -> {:?}", &old_local_state, &record.state);
                             match record.state {
                                 TrackerState::Ready => {
-                                    let mut program_guard = program.lock().await;
-                                    let cloned_token = token.clone();
-                                    if matches!(program_guard.local_state, TrackerState::Init) {
+                                    if old_local_state == TrackerState::Init {
                                         //start
-                                        info!("set to ready state {:?}", record.incoming_streams);
-                                        program_guard.local_state = TrackerState::Ready;
-                                        program_guard.upstreams = record.incoming_streams;
-                                        program_guard.downstreams = record.outgoing_streams;
-                                        join_set = Some(program_guard.route_data(cloned_token).await?);
+                                        info!("start data processing {:?}", record.incoming_streams);
+                                        join_set = Some(program_guard.route_data(token.clone()).await?);
                                     }
-                                }
-                                TrackerState::Stop => {
-                                    todo!()
                                 }
                                 _ => {}
                             }

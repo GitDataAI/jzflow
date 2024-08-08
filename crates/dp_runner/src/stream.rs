@@ -13,7 +13,7 @@ use jz_action::{
 use std::sync::Arc;
 use tokio::sync::{
     oneshot,
-    Mutex,
+    RwLock,
 };
 use tonic::{
     Request,
@@ -27,7 +27,7 @@ pub struct ChannelDataStream<R>
 where
     R: JobDbRepo,
 {
-    pub(crate) program: Arc<Mutex<ChannelTracker<R>>>,
+    pub(crate) program: Arc<RwLock<ChannelTracker<R>>>,
 }
 
 #[tonic::async_trait]
@@ -40,7 +40,7 @@ where
         req: Request<MediaDataBatchResponse>,
     ) -> Result<Response<Empty>, Status> {
         let send_tx = {
-            let program = self.program.lock().await;
+            let program = self.program.read().await;
             if program.incoming_tx.is_none() {
                 return Err(Status::internal("not ready"));
             }
@@ -65,7 +65,7 @@ where
         _: Request<Empty>,
     ) -> Result<Response<MediaDataBatchResponse>, Status> {
         let send_tx = {
-            let program = self.program.lock().await;
+            let program = self.program.read().await;
             if program.request_tx.is_none() {
                 return Err(Status::internal("not ready"));
             }

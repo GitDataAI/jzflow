@@ -5,7 +5,10 @@ use compute_unit_runner::ipc::{
     IPCClient,
     SubmitOuputDataReq,
 };
-use jz_action::utils::StdIntoAnyhowResult;
+use jz_action::{
+    core::db::TrackerState,
+    utils::StdIntoAnyhowResult,
+};
 use random_word::Lang;
 use std::{
     path::Path,
@@ -24,7 +27,6 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
-    error,
     info,
     Level,
 };
@@ -79,11 +81,7 @@ async fn main() -> Result<()> {
         });
     }
 
-    while let Some(Err(err)) = join_set.join_next().await {
-        error!("exit spawn {err}");
-    }
-    info!("gracefully shutdown");
-    Ok(())
+    nodes_sdk::monitor_tasks(&mut join_set).await
 }
 
 async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
@@ -91,20 +89,24 @@ async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
     let tmp_path = Path::new(&args.tmp_path);
     let count_file = tmp_path.join("number.txt");
     let mut count = if fs::try_exists(&count_file).await? {
-        let count_str =  fs::read_to_string(&count_file).await?;
+        let count_str = fs::read_to_string(&count_file).await?;
         str::parse::<u32>(count_str.as_str())?
     } else {
         0
     };
 
     loop {
-        if  args.total_count > 0 && count > args.total_count {
+        if args.total_count > 0 && count > args.total_count {
+            info!("exit pod because work has done");
+            if client.status().await.unwrap().state == TrackerState::Finish {
+                return Ok(());
+            }
+
             client.finish().await.unwrap();
             return Ok(());
         }
 
         if token.is_cancelled() {
-            fs::write(&count_file, count.to_string()).await.unwrap();
             return Ok(());
         }
 
@@ -126,8 +128,10 @@ async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
         //submit directory after completed a batch
         client
             .submit_output(SubmitOuputDataReq::new(&id, 30))
-            .await?;
-        info!("submit new data {:?}", instant.elapsed());
-        count+=1;
+            .await
+            .anyhow()?;
+        info!("submit new data({count}) {:?}", instant.elapsed());
+        count += 1;
+        fs::write(&count_file, count.to_string()).await.unwrap();
     }
 }

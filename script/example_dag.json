@@ -5,7 +5,7 @@
         {
             "name": "dummy-in",
             "spec": {
-                "image": "jz-action/dummy_in:latest",
+                "image": "gitdatateam/dummy_in:latest",
                 "command": "/dummy_in",
                 "args": [
                     "--log-level=debug"
@@ -19,7 +19,7 @@
                 "dummy-in"
             ],
             "spec": {
-                "image": "jz-action/copy_in_place:latest",
+                "image": "gitdatateam/copy_in_place:latest",
                 "command": "/copy_in_place",
                 "replicas": 3,
                 "args": [
@@ -37,7 +37,7 @@
                 "copy-in-place"
             ],
             "spec": {
-                "image": "jz-action/dummy_out:latest",
+                "image": "gitdatateam/dummy_out:latest",
                 "command": "/dummy_out",
                 "replicas": 3,
                 "args": [

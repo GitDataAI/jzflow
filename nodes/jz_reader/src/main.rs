@@ -25,8 +25,10 @@ use tokio::{
         SignalKind,
     },
     sync::mpsc,
+    task::JoinSet,
 };
 use tokio_stream::StreamExt;
+use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
     info,
@@ -87,14 +89,10 @@ async fn main() -> Result<()> {
         .try_init()
         .anyhow()?;
 
-    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<Result<()>>(1);
+    let mut join_set = JoinSet::new();
+    let token = CancellationToken::new();
     {
-        let shutdown_tx = shutdown_tx.clone();
-        let _ = tokio::spawn(async move {
-            if let Err(err) = read_jz_fs(args).await {
-                let _ = shutdown_tx.send(Err(anyhow!("read jz fs {err}"))).await;
-            }
-        });
+        join_set.spawn(async move { read_jz_fs(args).await });
     }
 
     {
@@ -106,15 +104,11 @@ async fn main() -> Result<()> {
                 _ = sig_term.recv() => info!("Recieve SIGTERM"),
                 _ = sig_int.recv() => info!("Recieve SIGTINT"),
             };
-            let _ = shutdown_tx.send(Err(anyhow!("cancel by signal"))).await;
+            token.cancel();
         });
     }
 
-    if let Some(Err(err)) = shutdown_rx.recv().await {
-        error!("program exit with error {:?}", err)
-    }
-    info!("gracefully shutdown");
-    Ok(())
+    nodes_sdk::monitor_tasks(&mut join_set).await
 }
 
 async fn read_jz_fs(args: Args) -> Result<()> {
@@ -172,7 +166,8 @@ async fn read_jz_fs(args: Args) -> Result<()> {
         //submit directory after completed a batch
         client
             .submit_output(SubmitOuputDataReq::new(&id, batch.len() as u32))
-            .await?;
+            .await
+            .anyhow()?;
     }
     // read all files
     client.finish().await.unwrap();

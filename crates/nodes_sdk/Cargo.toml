@@ -1,25 +1,36 @@
 [package]
-name = "dp_runner"
+name = "nodes_sdk"
 version = "0.1.0"
-edition = "2021"
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+include.workspace = true
 
 [dependencies]
 jz_action = { path = "../../"}
-nodes_sdk = {path = "../nodes_sdk"}
 
 tokio = { workspace = true }
 tokio-retry = {workspace = true}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
+
 anyhow =  {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 tonic = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
 uuid =  {workspace = true}
+mongodb = {workspace = true}
 async-trait = {workspace = true}
 chrono = {workspace = true}
 clap = {workspace = true}
 futures = {workspace = true}
 
-rand = "0.8.5"
+actix-web = "4.8.0"
+hyperlocal = "0.9.1"
+hyper = "1.4.1"
+hyper-util = "0.1.6"
+http-body-util = "0.1.2"
 walkdir = "2.5.0"
+rand = "0.8.5"

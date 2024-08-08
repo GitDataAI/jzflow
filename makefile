@@ -20,10 +20,10 @@ build: build-cd build-dp
 	cargo build --release
 
 docker_cd: build-cd
-	docker build -f ./crates/compute_unit_runner/dockerfile -t jz-action/compute_unit_runner:latest .
+	docker build -f ./crates/compute_unit_runner/dockerfile -t gitdatateam/compute_unit_runner:latest .
 
 docker_dp: build-dp
-	docker build -f ./crates/dp_runner/dockerfile -t jz-action/dp_runner:latest .
+	docker build -f ./crates/dp_runner/dockerfile -t gitdatateam/dp_runner:latest .
 
 ################## build nodes
 build-nodes: $(OUTPUT)
@@ -43,11 +43,11 @@ build-nodes: $(OUTPUT)
 	cp target/release/copy_in_place $(OUTPUT)/copy_in_place
 
 docker_nodes: build-nodes
-	docker build -f ./nodes/jz_reader/dockerfile -t jz-action/jz_reader:latest .
-	docker build -f ./nodes/jz_writer/dockerfile -t jz-action/jz_writer:latest .
-	docker build -f ./nodes/dummy_in/dockerfile -t jz-action/dummy_in:latest .
-	docker build -f ./nodes/dummy_out/dockerfile -t jz-action/dummy_out:latest .
-	docker build -f ./nodes/copy_in_place/dockerfile -t jz-action/copy_in_place:latest .
+	docker build -f ./nodes/jz_reader/dockerfile -t gitdatateam/jz_reader:latest .
+	docker build -f ./nodes/jz_writer/dockerfile -t gitdatateam/jz_writer:latest .
+	docker build -f ./nodes/dummy_in/dockerfile -t gitdatateam/dummy_in:latest .
+	docker build -f ./nodes/dummy_out/dockerfile -t gitdatateam/dummy_out:latest .
+	docker build -f ./nodes/copy_in_place/dockerfile -t gitdatateam/copy_in_place:latest .
 
 ################## minikube
 docker: docker_cd docker_dp docker_nodes

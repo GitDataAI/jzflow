@@ -5,7 +5,7 @@ use std::{
     vec,
 };
 
-pub(crate) struct Mprs<K, T>
+pub struct Mprs<K, T>
 where
     T: Clone,
 {
@@ -16,11 +16,11 @@ impl<K, T> Mprs<K, T>
 where
     T: Clone,
 {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Mprs { entries: vec![] }
     }
 
-    pub(crate) fn remove<Q: ?Sized>(&mut self, k: &Q) -> Option<T>
+    pub fn remove<Q: ?Sized>(&mut self, k: &Q) -> Option<T>
     where
         K: Borrow<Q>,
         Q: Hash + Eq,
@@ -34,15 +34,15 @@ where
         None
     }
 
-    pub(crate) fn count(&self) -> usize {
+    pub fn count(&self) -> usize {
         self.entries.len()
     }
 
-    pub(crate) fn iter(&mut self) -> impl Iterator<Item = &(K, T)> {
+    pub fn iter(&mut self) -> impl Iterator<Item = &(K, T)> {
         self.entries.iter()
     }
 
-    pub(crate) fn insert(&mut self, k: K, sender: T) -> Option<T>
+    pub fn insert(&mut self, k: K, sender: T) -> Option<T>
     where
         K: Hash + Eq,
     {
@@ -52,7 +52,7 @@ where
         ret
     }
 
-    pub(crate) fn get_random(&mut self) -> Option<&(K, T)>
+    pub fn get_random(&mut self) -> Option<&(K, T)>
     where
         K: Hash + Eq,
     {

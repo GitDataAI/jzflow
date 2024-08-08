@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 jz_action = { path = "../../"}
+nodes_sdk = {path = "../nodes_sdk"}
 
 tokio = { workspace = true }
 tokio-retry = {workspace = true}
@@ -23,6 +24,7 @@ async-trait = {workspace = true}
 chrono = {workspace = true}
 clap = {workspace = true}
 futures = {workspace = true}
+serde_repr = "0.1"
 
 actix-web = "4.8.0"
 hyperlocal = "0.9.1"

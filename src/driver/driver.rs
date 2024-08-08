@@ -7,7 +7,7 @@ use std::{
         Mutex,
     },
 };
-pub trait UnitHandler:Send {
+pub trait UnitHandler: Send {
     //pause graph running for now
     fn pause(&mut self) -> impl Future<Output = Result<()>> + Send;
 
@@ -23,7 +23,7 @@ pub trait UnitHandler:Send {
     ) -> impl Future<Output = Result<Option<Arc<Mutex<impl ChannelHandler>>>>> + Send;
 }
 
-pub trait ChannelHandler:Send {
+pub trait ChannelHandler: Send {
     //pause graph running for now
     fn pause(&mut self) -> impl Future<Output = Result<()>> + Send;
 
@@ -34,7 +34,7 @@ pub trait ChannelHandler:Send {
     fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
 }
 
-pub trait PipelineController:Send {
+pub trait PipelineController: Send {
     fn get_node<'a>(
         &'a self,
         id: &'a String,

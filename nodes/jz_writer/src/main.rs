@@ -1,12 +1,13 @@
 use anyhow::{
     anyhow,
-    Ok,
     Result,
 };
 use clap::Parser;
 use compute_unit_runner::ipc::{
     self,
+    ErrorNumber,
     IPCClient,
+    IPCError,
 };
 use jiaozifs_client_rs::{
     apis::{
@@ -31,10 +32,14 @@ use tokio::{
         SignalKind,
     },
     task::JoinSet,
-    time::sleep,
+    time::{
+        sleep,
+        Instant,
+    },
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
+    debug,
     error,
     info,
     Level,
@@ -118,11 +123,7 @@ async fn main() -> Result<()> {
         });
     }
 
-    while let Some(Err(err)) = join_set.join_next().await {
-        error!("exit spawn {err}");
-    }
-    info!("gracefully shutdown");
-    Ok(())
+    nodes_sdk::monitor_tasks(&mut join_set).await
 }
 
 async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
@@ -134,7 +135,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
         "wip" => {
             //ensure wip exit
             apis::wip_api::get_wip(&configuration, &args.owner, &args.repo, &args.ref_name).await?;
-            Ok(RefType::Wip)
+            anyhow::Ok(RefType::Wip)
         }
         val => Err(anyhow!("ref type not support {}", val)),
     }?;
@@ -143,35 +144,56 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
     let tmp_path = Path::new(&args.tmp_path);
     loop {
         if token.is_cancelled() {
-            return Ok(());
+            return anyhow::Ok(());
         }
-        let req = client.request_avaiable_data().await?;
-        if req.is_none() {
-            sleep(Duration::from_secs(2)).await;
-            continue;
-        }
-        let id = req.unwrap().id;
 
-        let path_str = tmp_path.join(&id);
-        let root_input_dir = path_str.as_path();
-        for entry in WalkDir::new(root_input_dir) {
-            let entry = entry?;
-            if entry.file_type().is_file() {
-                let path = entry.path();
-                let content = fs::read(path).await?;
-                let rel_path = path.strip_prefix(root_input_dir)?;
-                apis::objects_api::upload_object(
-                    &configuration,
-                    &args.owner,
-                    &args.repo,
-                    &args.ref_name,
-                    rel_path.to_str().anyhow("path must be validate")?,
-                    Some(true),
-                    Some(content),
-                )
-                .await?;
+        let instant = Instant::now();
+        match client.request_avaiable_data().await {
+            Ok(Some(req)) => {
+                let id = req.id;
+                let path_str = tmp_path.join(&id);
+                let root_input_dir = path_str.as_path();
+                for entry in WalkDir::new(root_input_dir) {
+                    let entry = entry?;
+                    if entry.file_type().is_file() {
+                        let path = entry.path();
+                        let content = fs::read(path).await?;
+                        let rel_path = path.strip_prefix(root_input_dir)?;
+                        apis::objects_api::upload_object(
+                            &configuration,
+                            &args.owner,
+                            &args.repo,
+                            &args.ref_name,
+                            rel_path.to_str().anyhow("path must be validate")?,
+                            Some(true),
+                            Some(content),
+                        )
+                        .await?;
+                    }
+                }
+                client.complete_result(&id).await.anyhow()?;
+                info!("submit new data {:?}", instant.elapsed());
+            }
+            Ok(None) => {
+                sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+            Err(IPCError::NodeError { code, msg }) => match code {
+                ErrorNumber::AlreadyFinish => {
+                    return Ok(());
+                }
+                ErrorNumber::NotReady => {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+                ErrorNumber::DataNotFound => {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            },
+            Err(IPCError::UnKnown(msg)) => {
+                error!("got unknow error {msg}");
             }
         }
-        client.complete_result(&id).await?;
     }
 }

@@ -1,8 +1,13 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{
+    error,
+    Parser,
+};
 use compute_unit_runner::ipc::{
     self,
+    ErrorNumber,
     IPCClient,
+    IPCError,
     SubmitOuputDataReq,
 };
 use jz_action::utils::StdIntoAnyhowResult;
@@ -26,6 +31,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
+    debug,
     error,
     info,
     Level,
@@ -78,11 +84,7 @@ async fn main() -> Result<()> {
         });
     }
 
-    while let Some(Err(err)) = join_set.join_next().await {
-        error!("exit spawn {err}");
-    }
-    info!("gracefully shutdown");
-    Ok(())
+    nodes_sdk::monitor_tasks(&mut join_set).await
 }
 
 async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
@@ -94,29 +96,48 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
         }
 
         let instant = Instant::now();
-        let req = client.request_avaiable_data().await?;
-        if req.is_none() {
-            sleep(Duration::from_secs(2)).await;
-            continue;
+        match client.request_avaiable_data().await {
+            Ok(Some(req)) => {
+                let id = req.id;
+                let path_str = tmp_path.join(&id);
+                let root_input_dir = path_str.as_path();
+
+                let new_id = uuid::Uuid::new_v4().to_string();
+                let output_dir = tmp_path.join(&new_id);
+
+                fs::rename(root_input_dir, output_dir).await?;
+
+                info!("move data {:?}", instant.elapsed());
+
+                client.complete_result(&id).await.anyhow()?;
+
+                //submit directory after completed a batch
+                client
+                    .submit_output(SubmitOuputDataReq::new(&new_id, 30))
+                    .await
+                    .anyhow()?;
+                info!("submit new data {:?}", instant.elapsed());
+            }
+            Ok(None) => {
+                sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+            Err(IPCError::NodeError { code, msg }) => match code {
+                ErrorNumber::AlreadyFinish => {
+                    return Ok(());
+                }
+                ErrorNumber::NotReady => {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+                ErrorNumber::DataNotFound => {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            },
+            Err(IPCError::UnKnown(msg)) => {
+                error!("got unknow error {msg}");
+            }
         }
-
-        let id = req.unwrap().id;
-        let path_str = tmp_path.join(&id);
-        let root_input_dir = path_str.as_path();
-
-        let new_id = uuid::Uuid::new_v4().to_string();
-        let output_dir = tmp_path.join(&new_id);
-
-        fs::rename(root_input_dir, output_dir).await?;
-
-        info!("move data {:?}", instant.elapsed());
-
-        client.complete_result(&id).await?;
-
-        //submit directory after completed a batch
-        client
-            .submit_output(SubmitOuputDataReq::new(&new_id, 30))
-            .await?;
-        info!("submit new data {:?}", instant.elapsed());
     }
 }

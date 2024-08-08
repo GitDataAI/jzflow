@@ -1,11 +1,10 @@
-use anyhow::{
-    Ok,
-    Result,
-};
+use anyhow::Result;
 use clap::Parser;
 use compute_unit_runner::ipc::{
     self,
+    ErrorNumber,
     IPCClient,
+    IPCError,
 };
 use jz_action::utils::StdIntoAnyhowResult;
 use std::{
@@ -24,6 +23,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
+    debug,
     error,
     info,
     Level,
@@ -77,11 +77,7 @@ async fn main() -> Result<()> {
         });
     }
 
-    while let Some(Err(err)) = join_set.join_next().await {
-        error!("exit spawn {err}");
-    }
-    info!("gracefully shutdown");
-    Ok(())
+    nodes_sdk::monitor_tasks(&mut join_set).await
 }
 
 async fn write_dummy(token: CancellationToken, args: Args) -> Result<()> {
@@ -89,26 +85,46 @@ async fn write_dummy(token: CancellationToken, args: Args) -> Result<()> {
     let tmp_path = Path::new(&args.tmp_path);
     loop {
         if token.is_cancelled() {
-            return Ok(());
+            return anyhow::Ok(());
         }
 
-        let req = client.request_avaiable_data().await?;
-        if req.is_none() {
-            sleep(Duration::from_secs(2)).await;
-            continue;
-        }
-        let id = req.unwrap().id;
-        let path_str = tmp_path.join(&id);
-        let root_input_dir = path_str.as_path();
+        info!("request data");
+        match client.request_avaiable_data().await {
+            Ok(Some(req)) => {
+                let id = req.id;
+                let path_str = tmp_path.join(&id);
+                let root_input_dir = path_str.as_path();
 
-        for entry in WalkDir::new(root_input_dir) {
-            let entry = entry?;
-            if entry.file_type().is_file() {
-                let path = entry.path();
-                info!("read path {:?}", path);
+                for entry in WalkDir::new(root_input_dir) {
+                    let entry = entry?;
+                    if entry.file_type().is_file() {
+                        let path = entry.path();
+                        info!("read path {:?}", path);
+                    }
+                }
+
+                client.complete_result(&id).await.anyhow()?;
+            }
+            Ok(None) => {
+                sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+            Err(IPCError::NodeError { code, msg }) => match code {
+                ErrorNumber::AlreadyFinish => {
+                    return Ok(());
+                }
+                ErrorNumber::NotReady => {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+                ErrorNumber::DataNotFound => {
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            },
+            Err(IPCError::UnKnown(msg)) => {
+                error!("got unknow error {msg}");
             }
         }
-
-        client.complete_result(&id).await?;
     }
 }

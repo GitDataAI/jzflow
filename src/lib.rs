@@ -2,6 +2,7 @@
 #![feature(async_closure)]
 #![feature(future_join)]
 #![feature(iterator_try_collect)]
+#![feature(duration_constructors)]
 
 pub mod api;
 pub mod core;

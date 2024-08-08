@@ -9,6 +9,7 @@ include.workspace = true
 [dependencies]
 jz_action = { path = "../../"}
 compute_unit_runner = {path  = "../../crates/compute_unit_runner"}
+nodes_sdk  = {path  = "../../crates/nodes_sdk"}
 
 uuid =  {workspace = true}
 tokio = { workspace = true}

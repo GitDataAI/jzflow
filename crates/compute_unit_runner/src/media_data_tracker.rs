@@ -1,10 +1,7 @@
-use crate::{
-    fs_cache::FileCache,
-    ipc::{
-        AvaiableDataResponse,
-        CompleteDataReq,
-        SubmitOuputDataReq,
-    },
+use crate::ipc::{
+    AvaiableDataResponse,
+    CompleteDataReq,
+    SubmitOuputDataReq,
 };
 use anyhow::{
     anyhow,
@@ -36,18 +33,23 @@ use tonic::{
     Code,
 };
 use tracing::{
+    debug,
     error,
     info,
     warn,
 };
 
-use crate::multi_sender::MultiSender;
+use nodes_sdk::{
+    fs_cache::FileCache,
+    multi_sender::MultiSender,
+};
 use tokio::{
     select,
     sync::{
         broadcast,
         mpsc,
         oneshot,
+        RwLock,
     },
     task::JoinSet,
     time::{
@@ -72,7 +74,7 @@ where
 
     pub(crate) repo: R,
 
-    pub(crate) local_state: TrackerState,
+    pub(crate) local_state: Arc<RwLock<TrackerState>>,
 
     pub(crate) up_nodes: Vec<String>,
 
@@ -113,7 +115,7 @@ where
             buf_size,
             name: name.to_string(),
             repo: repo,
-            local_state: TrackerState::Init,
+            local_state: Arc::new(RwLock::new(TrackerState::Init)),
             up_nodes: up_nodes,
             upstreams: upstreams,
             downstreams: downstreams,
@@ -155,23 +157,26 @@ where
                             .map(|count| info!("revert {count} SelectForSent data to Received"))?;
 
                             //check ready if both upnodes is finish and no pending data, we think it finish
-                            let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
+                            if up_nodes.len() > 0 {
+                                let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
                                 .map_err(|err|anyhow!("query node data {err}"))?
                                 .iter()
                                 .any(|node| matches!(node.state, TrackerState::Finish));
 
-                            if is_all_success {
-                                let running_state = &[
-                                        &DataState::Received,
-                                        &DataState::Assigned,
-                                        &DataState::SelectForSend,
-                                        &DataState::PartialSent,
-                                        &DataState::Sent
-                                 ];
-                                if db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await? == 0 {
-                                    db_repo.update_node_by_name(&node_name, TrackerState::Finish).await.map_err(|err|anyhow!("update node data {err}"))?;
-                                    info!("node was finished, not need to run backend");
-                                    return    anyhow::Ok(());
+                                if is_all_success {
+                                    let running_state = &[
+                                            &DataState::Received,
+                                            &DataState::Assigned,
+                                            &DataState::SelectForSend,
+                                            &DataState::PartialSent
+                                    ];
+
+                                    if db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await? == 0 &&
+                                    db_repo.count(&node_name,  &[&DataState::Received,&DataState::Assigned], &Direction::In).await? == 0 {
+                                        db_repo.update_node_by_name(&node_name, TrackerState::Finish).await.map_err(|err|anyhow!("update node data {err}"))?;
+                                        info!("node was finished, not need to run backend");
+                                        return anyhow::Ok(());
+                                    }
                                 }
                             }
                             info!("backend thread end {:?}", now.elapsed());
@@ -315,6 +320,7 @@ where
             let node_name = self.name.clone();
             let buf_size = self.buf_size;
             let token = token.clone();
+            let local_state = self.local_state.clone();
 
             join_set.spawn(async move {
                 loop {
@@ -323,6 +329,12 @@ where
                         return anyhow::Ok(());
                         }
                      Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
+                        //check finish state
+                        if matches!(*local_state.read().await, TrackerState::Finish) {
+                            resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
+                            continue;
+                        }
+
                         loop {
                             if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], &Direction::Out).await.and_then(|count|{
                                 if count > buf_size {
@@ -378,10 +390,10 @@ where
             let url = self.upstreams[0].clone();
             let fs_cache = self.fs_cache.clone();
             let token = token.clone();
+            let local_state = self.local_state.clone();
 
             join_set.spawn(async move {
                 //    let mut client = DataStreamClient::connect(url.clone()).await;
-
                 let mut client: Option<DataStreamClient<Channel>> = None;
                 loop {
                     select! {
@@ -389,6 +401,11 @@ where
                             return anyhow::Ok(());
                       }
                      Some((_, resp)) = ipc_process_data_req_rx.recv() => {
+                            //check finish state
+                            if matches!(*local_state.read().await, TrackerState::Finish) {
+                                resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
+                                continue;
+                            }
                             //select a unassgined data
                             info!("try to find avaiable data");
                             if client.is_none() {
@@ -421,10 +438,9 @@ where
                                        _=>{}
                                     }
 
-
                                     let res_data = AvaiableDataResponse{
                                         id:   data.id.clone(),
-                                        size: data.size,
+                                        size: data.size
                                     };
 
                                     if let Err(err) = fs_cache.write(data).await {
@@ -484,6 +500,11 @@ where
                             }
                      },
                      Some((req, resp))  = ipc_process_completed_data_rx.recv() => {
+                        //check finish state
+                        if matches!(*local_state.read().await, TrackerState::Finish) {
+                            resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
+                            continue;
+                        }
                         match db_repo.update_state(&node_name, &req.id, &Direction::In, &DataState::Processed, None).await{
                            Ok(_) =>{
                                     // respose with nothing
@@ -498,7 +519,24 @@ where
                             }
                         }
                      }
-                     Some((_, resp))  = ipc_process_finish_state_rx.recv() => {
+                    }
+                }
+            });
+        }
+
+        if self.upstreams.len() == 0 {
+            //receive event from pod
+            //inputs nodes need to tell its finish
+            let db_repo = self.repo.clone();
+            let node_name = self.name.clone();
+            let token = token.clone();
+            join_set.spawn(async move {
+                loop {
+                    select! {
+                      _ = token.cancelled() => {
+                            return anyhow::Ok(());
+                      }
+                      Some((_, resp))  = ipc_process_finish_state_rx.recv() => {
                         loop {
                             //query data need to be done
                             let running_state = &[
@@ -506,13 +544,13 @@ where
                                 &DataState::Assigned,
                                 &DataState::SelectForSend,
                                 &DataState::PartialSent,
-                                &DataState::Sent
                                 ];
                                 match db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await {
                                     Ok(count) => {
                                         if count ==0 {
                                             break;
                                         }
+                                        debug!("there are {count} data need to be sent");
                                     },
                                     Err(err) => error!("query node state {err}")
                                 }
@@ -522,6 +560,7 @@ where
                         match db_repo.update_node_by_name(&node_name, TrackerState::Finish).await{
                            Ok(_) =>{
                                 // respose with nothing
+
                                 resp.send(Ok(())).expect("channel only read once");
                             },
                             Err(err) => {
@@ -531,9 +570,8 @@ where
                      }
                     }
                 }
-            });
+        });
         }
-
         Ok(join_set)
     }
 }

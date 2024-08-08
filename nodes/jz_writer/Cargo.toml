@@ -10,6 +10,7 @@ include.workspace = true
 jz_action = { path = "../../"}
 compute_unit_runner = {path  = "../../crates/compute_unit_runner"}
 jiaozifs_client_rs = {path  = "../../crates/jiaozifs_client_rs"}
+nodes_sdk  = {path  = "../../crates/nodes_sdk"}
 
 uuid =  {workspace = true}
 tokio = { workspace = true }

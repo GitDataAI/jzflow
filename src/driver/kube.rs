@@ -129,7 +129,7 @@ pub struct KubePipelineController<R>
 where
     R: JobDbRepo,
 {
-    pub db_repo: R,
+    db_repo: R,
     handlers: HashMap<String, KubeHandler<R>>,
 }
 
@@ -287,7 +287,9 @@ where
         Self::ensure_namespace_exit_and_clean(&self.client, run_id).await?;
 
         let db_url = self.db_url.to_string() + "/" + run_id;
-        let repo = MongoRunDbRepo::new(db_url.as_str()).await?;
+        let repo = MongoRunDbRepo::new(db_url.as_str())
+            .await
+            .map_err(|err| anyhow!("create database fail {err}"))?;
         let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), run_id);
         let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
@@ -481,8 +483,67 @@ where
     }
 
     #[allow(refining_impl_trait)]
-    async fn attach(&self, _namespace: &str, _graph: &Dag) -> Result<KubePipelineController<R>> {
-        todo!()
+    async fn attach(
+        &self,
+        run_id: &str,
+        graph: &Dag,
+    ) -> Result<KubePipelineController<MongoRunDbRepo>> {
+        let db_url = self.db_url.to_string() + "/" + run_id;
+        let repo = MongoRunDbRepo::new(db_url.as_str())
+            .await
+            .map_err(|err| anyhow!("create database fail {err}"))?;
+        let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), run_id);
+        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
+        let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
+
+        let mut pipeline_ctl = KubePipelineController::new(repo.clone());
+        for node in graph.iter() {
+            let up_nodes = graph.get_incomming_nodes(&node.name);
+            // query channel
+            let channel_handler = if up_nodes.len() > 0 {
+                let claim_deployment = claim_api
+                    .get((node.name.clone() + "-channel-claim").as_str())
+                    .await?;
+                let channel_statefulset = statefulset_api
+                    .get((node.name.clone() + "-channel-statefulset").as_str())
+                    .await?;
+                let channel_service = service_api
+                    .get((node.name.clone() + "-channel-headless-service").as_str())
+                    .await?;
+
+                Some(KubeChannelHander {
+                    claim: claim_deployment,
+                    statefulset: channel_statefulset,
+                    service: channel_service,
+                    db_repo: repo.clone(),
+                })
+            } else {
+                None
+            };
+
+            // apply nodes
+            let claim_deployment = claim_api
+                .get((node.name.clone() + "-node-claim").as_str())
+                .await?;
+            let unit_statefulset = statefulset_api
+                .get((node.name.clone() + "-statefulset").as_str())
+                .await?;
+
+            let unit_service = service_api
+                .get((node.name.clone() + "-headless-service").as_str())
+                .await?;
+
+            let handler = KubeHandler {
+                claim: claim_deployment,
+                statefulset: unit_statefulset,
+                service: unit_service,
+                channel: channel_handler,
+                db_repo: repo.clone(),
+            };
+
+            pipeline_ctl.handlers.insert(node.name.clone(), handler);
+        }
+        Ok(pipeline_ctl)
     }
 
     async fn clean(&self, ns: &str) -> Result<()> {
@@ -521,9 +582,9 @@ mod tests {
            {
               "name": "dummy-in",
               "spec": {
-                "image": "jz-action/dummy_in:latest",
+                "image": "gitdatateam/dummy_in:latest",
                 "command":"/dummy_in",
-                "args": ["--log-level=debug"]
+                "args": ["--log-level=debug", "--total-count=100"]
               }
             },   {
               "name": "copy-in-place",
@@ -532,7 +593,7 @@ mod tests {
                 "dummy-in"
               ],
               "spec": {
-                "image": "jz-action/copy_in_place:latest",
+                "image": "gitdatateam/copy_in_place:latest",
                 "command":"/copy_in_place",
                 "replicas": 3,
                 "args": ["--log-level=debug"]
@@ -548,7 +609,7 @@ mod tests {
                 "copy-in-place"
               ],
               "spec": {
-                "image": "jz-action/dummy_out:latest",
+                "image": "gitdatateam/dummy_out:latest",
                 "command":"/dummy_out",
                 "replicas": 3,
                 "args": ["--log-level=debug"]
@@ -562,8 +623,10 @@ mod tests {
                         "#;
         let dag = Dag::from_json(json_str).unwrap();
 
-        let db_url = "mongodb://192.168.3.163:27017/ntest";
-        let client = MongoClient::with_uri_str(db_url).await.unwrap();
+        let db_url = "mongodb://192.168.3.163:27017";
+        let client = MongoClient::with_uri_str(db_url.to_string() + "/ntest")
+            .await
+            .unwrap();
         client.database("ntest").drop().await.unwrap();
 
         let client = Client::try_default().await.unwrap();

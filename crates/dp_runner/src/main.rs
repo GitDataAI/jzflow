@@ -11,8 +11,8 @@ use jz_action::{
 use anyhow::Result;
 use channel_tracker::ChannelTracker;
 use clap::Parser;
-use compute_unit_runner::fs_cache::*;
 use jz_action::core::db::NodeRepo;
+use nodes_sdk::fs_cache::*;
 use state_controller::StateController;
 use std::{
     str::FromStr,
@@ -25,7 +25,7 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::Mutex,
+    sync::RwLock,
     task::JoinSet,
 };
 use tokio_util::sync::CancellationToken;
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
     );
     program.run_backend(&mut join_set, token.clone())?;
 
-    let program_safe = Arc::new(Mutex::new(program));
+    let program_safe = Arc::new(RwLock::new(program));
     {
         let program_safe = program_safe.clone();
         let node_name = args.node_name.clone();
@@ -140,10 +140,5 @@ async fn main() -> Result<()> {
         });
     }
 
-    while let Some(Err(err)) = join_set.join_next().await {
-        error!("exit spawn {err}");
-    }
-
-    info!("gracefully shutdown");
-    Ok(())
+    nodes_sdk::monitor_tasks(&mut join_set).await
 }

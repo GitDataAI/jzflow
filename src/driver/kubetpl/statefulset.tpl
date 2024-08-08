@@ -25,7 +25,7 @@
         "containers": [
           {
             "name": "compute-data-unit",
-            "image": "jz-action/compute_unit_runner:latest",
+            "image": "gitdatateam/compute_unit_runner:latest",
             "command": [
               "/compute_unit_runner"
             ],

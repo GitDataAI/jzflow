@@ -2,9 +2,7 @@ use anyhow::Result;
 use clap::Args;
 
 use jz_action::{
-    api::{
-        server::start_rpc_server,
-    },
+    api::server::start_rpc_server,
     core::db::MainDbRepo,
     dbrepo::{
         MongoMainDbRepo,
@@ -33,7 +31,11 @@ use crate::global::GlobalOptions;
 
 #[derive(Debug, Args)]
 pub(super) struct RunArgs {
-    #[arg(long, default_value="mongodb://192.168.3.163:27017", help="mongo connection string")]
+    #[arg(
+        long,
+        default_value = "mongodb://192.168.3.163:27017",
+        help = "mongo connection string"
+    )]
     mongo_url: String,
 }
 
@@ -45,7 +47,7 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
     let db_repo = MongoMainDbRepo::new(db_url.as_str()).await?;
     let client = Client::try_default().await.unwrap();
 
-    let driver = KubeDriver::new(client.clone(), db_url.as_str()).await?;
+    let driver = KubeDriver::new(client.clone(), args.mongo_url.as_str()).await?;
     let job_manager =
         JobManager::<KubeDriver<MongoRunDbRepo>, MongoMainDbRepo, MongoRunDbRepo>::new(
             client,
@@ -54,10 +56,11 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
             &args.mongo_url,
         )
         .await?;
+
+    job_manager.run_backend(&mut join_set, token.clone())?;
     let server = start_rpc_server(&global_opts.listen, db_repo, job_manager)?;
     let handler = server.handle();
     {
-        //listen unix socket
         let token = token.clone();
         let handler = handler.clone();
         join_set.spawn(async move {

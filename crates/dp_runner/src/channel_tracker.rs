@@ -3,7 +3,6 @@ use anyhow::{
     Result,
 };
 use chrono::Utc;
-use compute_unit_runner::fs_cache::FileCache;
 use futures::future::try_join_all;
 use jz_action::{
     core::db::{
@@ -15,6 +14,7 @@ use jz_action::{
     },
     network::datatransfer::MediaDataBatchResponse,
 };
+use nodes_sdk::fs_cache::FileCache;
 use std::{
     sync::Arc,
     time::Duration,

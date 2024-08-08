@@ -26,7 +26,7 @@
         "containers": [
           {
             "name": "channel",
-            "image": {{#if node.channel.image}} "{{{node.channel.image}}}"{{else}}"jz-action/dp_runner:latest"{{/if}},
+            "image": {{#if node.channel.image}} "{{{node.channel.image}}}"{{else}}"gitdatateam/dp_runner:latest"{{/if}},
             "imagePullPolicy": "IfNotPresent",
             "command": [
               "/dp_runner"
@@ -34,7 +34,7 @@
             "args": [
               "--node-name={{{node.name}}}-channel",
               "--log-level={{{log_level}}}",
-              "--mongo-url={{{db_url}}}",
+              "--mongo-url={{{db_url}}}"
               {{#if (eq node.channel.cache_type "Disk") }},"--tmp-path=/app/tmp"{{/if}}
             ],
             "ports": [

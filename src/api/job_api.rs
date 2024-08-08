@@ -74,6 +74,25 @@ where
     }
 }
 
+async fn job_details<D, MAINR, JOBR>(
+    db_repo: web::Data<MAINR>,
+    path: web::Path<ObjectId>,
+    query: web::Query<JobUpdateInfo>,
+) -> HttpResponse
+where
+    D: Driver,
+    MAINR: MainDbRepo,
+    JOBR: JobDbRepo,
+{
+    match db_repo
+        .update(&path.into_inner(), &query.into_inner())
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
+    }
+}
+
 pub(super) fn job_route_config<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
 where
     D: Driver,

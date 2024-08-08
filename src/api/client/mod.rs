@@ -1,21 +1,28 @@
 mod job;
 
-use awc::Client;
 use anyhow::Result;
 use job::JobClient;
-
+use reqwest::{
+    header,
+    Client,
+    Url,
+};
 #[derive(Clone)]
 pub struct JzFlowClient {
     client: Client,
-    base_uri: String,
+    base_uri: Url,
 }
 
 impl JzFlowClient {
     pub fn new(base_uri: &str) -> Result<Self> {
-        let client = Client::builder()
-            .add_default_header(("Content-Type", "application/json"))
-            .finish();
-        let base_uri = base_uri.to_string() + "/api/v1";
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            "Content-Type",
+            header::HeaderValue::from_static("application/json"),
+        );
+
+        let client = Client::builder().default_headers(headers).build()?;
+        let base_uri = Url::parse(base_uri)?.join("/api/v1/")?;
         Ok(JzFlowClient { client, base_uri })
     }
 
