@@ -128,7 +128,7 @@ impl Graph {
         let mut queue = self
             .in_degree
             .iter()
-            .filter_map(|(cur, ins)| if ins.len() == 0 { Some(cur) } else { None })
+            .filter_map(|(cur, ins)| if ins.is_empty() { Some(cur) } else { None })
             .collect::<VecDeque<_>>();
 
         let mut in_degree = self.in_degree.clone();

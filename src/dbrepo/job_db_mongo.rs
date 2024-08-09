@@ -34,9 +34,9 @@ use mongodb::{
 };
 use serde_variant::to_variant_name;
 
-const GRAPH_COL_NAME: &'static str = "graph";
-const NODE_COL_NAME: &'static str = "node";
-const DATA_COL_NAME: &'static str = "data";
+const GRAPH_COL_NAME: &str = "graph";
+const NODE_COL_NAME: &str = "node";
+const DATA_COL_NAME: &str = "data";
 
 #[derive(Clone)]
 pub struct MongoRunDbRepo {
@@ -55,9 +55,9 @@ impl MongoRunDbRepo {
             .clone();
         let client = Client::with_options(options)?;
         let database = client.database(database.as_str());
-        let graph_col: Collection<Graph> = database.collection(&GRAPH_COL_NAME);
-        let node_col: Collection<Node> = database.collection(&NODE_COL_NAME);
-        let data_col: Collection<DataRecord> = database.collection(&DATA_COL_NAME);
+        let graph_col: Collection<Graph> = database.collection(GRAPH_COL_NAME);
+        let node_col: Collection<Node> = database.collection(NODE_COL_NAME);
+        let data_col: Collection<DataRecord> = database.collection(DATA_COL_NAME);
 
         {
             //create index for nodes
@@ -256,7 +256,7 @@ impl DataRepo for MongoRunDbRepo {
         states: &[&DataState],
         direction: &Direction,
     ) -> Result<usize> {
-        let states: Vec<&str> = states.iter().map(|v| to_variant_name(v)).try_collect()?;
+        let states: Vec<&str> = states.iter().map(to_variant_name).try_collect()?;
         self.data_col
             .count_documents(doc! {
                 "node_name":node_name,

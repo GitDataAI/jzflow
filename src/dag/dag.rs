@@ -18,6 +18,12 @@ pub struct Dag {
     rely_graph: Graph,
 }
 
+impl Default for Dag {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Dag {
     pub fn new() -> Self {
         Dag {
@@ -64,7 +70,7 @@ impl Dag {
     }
 
     // from_json build graph from json string
-    pub fn from_json<'a>(json: &'a str) -> Result<Self> {
+    pub fn from_json(json: &str) -> Result<Self> {
         let value: serde_json::Value = serde_json::from_str(json)?;
 
         let dag_name: &str = value
@@ -95,7 +101,7 @@ impl Dag {
             name: dag_name.to_string(),
             raw: json.to_string(),
             nodes: nodes_map,
-            rely_graph: rely_graph,
+            rely_graph,
         })
     }
 

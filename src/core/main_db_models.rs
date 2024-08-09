@@ -6,18 +6,15 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, Debug)]
+#[derive(Default)]
 pub enum JobState {
+    #[default]
     Created,
     Running,
     Error,
     Finish,
 }
 
-impl Default for JobState {
-    fn default() -> Self {
-        JobState::Created
-    }
-}
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Job {
     #[serde(rename = "_id")]

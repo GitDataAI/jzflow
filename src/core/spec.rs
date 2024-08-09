@@ -4,16 +4,13 @@ use serde::{
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Default)]
 pub enum CacheType {
+    #[default]
     Disk,
     Memory,
 }
 
-impl Default for CacheType {
-    fn default() -> Self {
-        CacheType::Disk
-    }
-}
 
 // MachineSpec container information for deploy and running in cloud
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]

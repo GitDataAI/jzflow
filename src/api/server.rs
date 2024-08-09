@@ -59,7 +59,7 @@ where
     let host_port = format!(
         "{}:{}",
         uri.host().anyhow("host not found")?,
-        uri.port().unwrap_or_else(|| 80)
+        uri.port().unwrap_or(80)
     );
     let server = HttpServer::new(move || {
         fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {

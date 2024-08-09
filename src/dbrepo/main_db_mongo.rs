@@ -36,7 +36,7 @@ use mongodb::{
 
 use serde_variant::to_variant_name;
 
-const JOB_COL_NAME: &'static str = "job";
+const JOB_COL_NAME: &str = "job";
 
 #[derive(Clone)]
 pub struct MongoMainDbRepo {
@@ -53,7 +53,7 @@ impl MongoMainDbRepo {
             .clone();
         let client = Client::with_options(options)?;
         let database = client.database(database.as_str());
-        let job_col: Collection<Job> = database.collection(&JOB_COL_NAME);
+        let job_col: Collection<Job> = database.collection(JOB_COL_NAME);
 
         {
             //create index for jobs

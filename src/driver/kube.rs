@@ -280,7 +280,7 @@ fn join_array(
                 .iter()
                 .map(|v| "\"".to_owned() + v.as_str().unwrap() + "\"")
                 .collect();
-            let rendered = format!("{}", args_str.join(","));
+            let rendered = args_str.join(",").to_string();
             out.write(rendered.as_ref())?;
             Ok(())
         }
@@ -343,7 +343,7 @@ where
                 .map(|_| ())
                 .map_err(|e| anyhow!("{}", e.to_string()));
             let retry_strategy = ExponentialBackoff::from_millis(1000).take(20);
-            let _ = Retry::spawn(retry_strategy, || async {
+            Retry::spawn(retry_strategy, || async {
                 match namespaces.get(ns).await {
                     Ok(_) => Err(anyhow!("expect deleted")),
                     Err(err) => {
@@ -422,7 +422,7 @@ where
             let up_nodes = graph.get_incomming_nodes(&node.name);
             let down_nodes = graph.get_outgoing_nodes(&node.name);
             // apply channel
-            let (channel_handler, channel_nodes) = if up_nodes.len() > 0 {
+            let (channel_handler, channel_nodes) = if !up_nodes.is_empty() {
                 //if node have no upstream node, no need to create channel points
                 //channel node receive upstreams from upstream nodes
                 let upstreams = up_nodes
@@ -432,7 +432,7 @@ where
                             .get_node(node_name)
                             .expect("node added already before")
                     })
-                    .map(|node| {
+                    .flat_map(|node| {
                         //<pod-name>.<service-name>.<namespace>.svc.cluster.local
                         (0..node.spec.replicas).map(|seq| {
                             format!(
@@ -441,7 +441,6 @@ where
                             )
                         })
                     })
-                    .flatten()
                     .collect::<Vec<_>>();
 
                 let node_stream = (0..node.spec.replicas)
@@ -542,12 +541,12 @@ where
                 .await?;
 
             // compute unit only receive data from channel
-            let channel_stream = (up_nodes.len()>0).then(||{
+            let channel_stream = (!up_nodes.is_empty()).then(||{
                 vec![format!(
                     "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
                       node.name, 0, node.name, run_id
                   )]
-            }).unwrap_or_else(||vec![]);
+            }).unwrap_or_else(std::vec::Vec::new);
             let outgoing_node_streams = down_nodes
                     .iter()
                     .map(|node_name| {
@@ -628,7 +627,7 @@ where
         for node in graph.iter() {
             let up_nodes = graph.get_incomming_nodes(&node.name);
             // query channel
-            let channel_handler = if up_nodes.len() > 0 {
+            let channel_handler = if !up_nodes.is_empty() {
                 let claim_deployment = claim_api
                     .get((node.name.clone() + "-channel-claim").as_str())
                     .await?;
@@ -702,7 +701,7 @@ where
         let client: Client = Client::try_default().await?;
         let namespaces: Api<Namespace> = Api::all(client.clone());
         if namespaces.get(ns).await.is_ok() {
-            let _ = namespaces
+            namespaces
                 .delete(ns, &DeleteParams::default())
                 .await
                 .map(|_| ())

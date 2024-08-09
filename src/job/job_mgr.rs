@@ -111,7 +111,7 @@ where
         let controller = self.driver.attach(&namespace, &dag).await?;
         let nodes = controller.nodes().anyhow()?;
         let nodes_controller = try_join_all(nodes.iter().map(|node_name|{
-            controller.get_node(&node_name)
+            controller.get_node(node_name)
         })).await?;
         
         let mut node_status = HashMap::new();
@@ -120,7 +120,7 @@ where
             node_status.insert(node_ctl.name().to_string(), status);
         }
         Ok(JobDetails { 
-            job: job,
+            job,
             node_status,
         })
     }
