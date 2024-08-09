@@ -134,7 +134,7 @@ pub trait DataRepo {
         &self,
         node_name: &str,
         states: &[&DataState],
-        direction: &Direction,
+        direction: Option<&Direction>,
     ) -> impl std::future::Future<Output = Result<usize>> + Send;
 
     fn insert_new_path(

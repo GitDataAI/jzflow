@@ -168,8 +168,8 @@ where
                                             &DataState::PartialSent
                                     ];
 
-                                    if db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await? == 0 &&
-                                    db_repo.count(&node_name,  &[&DataState::Received,&DataState::Assigned], &Direction::In).await? == 0 {
+                                    if db_repo.count(&node_name, running_state.as_slice(), Some(&Direction::Out)).await? == 0 &&
+                                    db_repo.count(&node_name,  &[&DataState::Received,&DataState::Assigned], Some(&Direction::In)).await? == 0 {
                                         db_repo.update_node_by_name(&node_name, TrackerState::Finish).await.map_err(|err|anyhow!("update node data {err}"))?;
                                         info!("node was finished, not need to run backend");
                                         return anyhow::Ok(());
@@ -333,7 +333,7 @@ where
                         }
 
                         loop {
-                            if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], &Direction::Out).await.and_then(|count|{
+                            if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], Some(&Direction::Out)).await.and_then(|count|{
                                 if count > buf_size {
                                     Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
                                 } else {
@@ -542,7 +542,7 @@ where
                                 &DataState::SelectForSend,
                                 &DataState::PartialSent,
                                 ];
-                                match db_repo.count(&node_name, running_state.as_slice(), &Direction::Out).await {
+                                match db_repo.count(&node_name, running_state.as_slice(), Some(&Direction::Out)).await {
                                     Ok(count) => {
                                         if count ==0 {
                                             break;

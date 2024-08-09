@@ -1,4 +1,12 @@
-use std::str::FromStr;
+use std::{
+    io::{
+        self,
+        stdout,
+    },
+    iter,
+    os::linux::raw::stat,
+    str::FromStr,
+};
 
 use crate::global::GlobalOptions;
 use anyhow::Result;
@@ -10,13 +18,17 @@ use clap::{
     Args,
     Parser,
 };
-use comfy_table::Table;
 use jz_action::{
     api::client::JzFlowClient,
     core::db::Job,
     dag::Dag,
+    utils::sizefmt::SmartSize,
 };
 use mongodb::bson::oid::ObjectId;
+use prettytable::{
+    Row,
+    Table,
+};
 use serde_variant::to_variant_name;
 use tokio::fs;
 
@@ -24,8 +36,10 @@ use tokio::fs;
 pub(super) enum JobCommands {
     /// Adds files to myapp
     Create(JobCreateArgs),
-    List,
+    Run(RunJobArgs),
+    List(ListJobArgs),
     Detail(JobDetailArgs),
+    Clean(CleanJobArgs),
 }
 
 pub(super) async fn run_job_subcommand(
@@ -34,8 +48,10 @@ pub(super) async fn run_job_subcommand(
 ) -> Result<()> {
     match command {
         JobCommands::Create(args) => create_job(global_opts, args).await,
-        JobCommands::List => list_job(global_opts).await,
+        JobCommands::Run(args) => run_job(global_opts, args).await,
+        JobCommands::List(args) => list_job(global_opts, args).await,
         JobCommands::Detail(args) => get_job_details(global_opts, args).await,
+        JobCommands::Clean(args) => clean_job(global_opts, args).await,
     }
 }
 
@@ -67,42 +83,55 @@ pub(super) async fn create_job(global_opts: GlobalOptions, args: JobCreateArgs) 
     Ok(())
 }
 
-pub(super) async fn list_job(global_opts: GlobalOptions) -> Result<()> {
+#[derive(Debug, Args)]
+pub(super) struct ListJobArgs {
+    #[arg(long, default_value = "table", help = "format json/table")]
+    pub(super) format: String,
+}
+
+pub(super) async fn list_job(global_opts: GlobalOptions, args: ListJobArgs) -> Result<()> {
     let client = JzFlowClient::new(&global_opts.listen)?.job();
     let jobs = client.list().await?;
 
+    if args.format == "json" {
+        println!("{}", serde_json::to_string_pretty(&jobs)?);
+        return Ok(());
+    }
+
     let mut table = Table::new();
-    table.set_header(vec![
+
+    // Add a row per time
+    table.add_row(Row::from(vec![
         "ID",
         "Name",
         "State",
         "TryNumber",
         "CreatedAt",
         "UpdatedAt",
-    ]);
+    ]));
 
     jobs.iter().for_each(|job| {
-        table.add_row(vec![
-            job.id.to_string(),
-            job.name.to_string(),
-            to_variant_name(&job.state).unwrap().to_string(),
-            job.retry_number.to_string(),
-            DateTime::from_timestamp(job.created_at, 0)
-                .unwrap()
-                .to_string(),
-            DateTime::from_timestamp(job.updated_at, 0)
-                .unwrap()
-                .to_string(),
-        ]);
+        table.add_row(Row::from(vec![
+            cell!(job.id),
+            cell!(job.name),
+            cell!(to_variant_name(&job.state).unwrap()),
+            cell!(job.retry_number),
+            cell!(DateTime::from_timestamp(job.created_at, 0).unwrap()),
+            cell!(DateTime::from_timestamp(job.updated_at, 0).unwrap()),
+        ]));
     });
-    println!("{table}");
+
+    table.printstd();
     Ok(())
 }
 
 #[derive(Debug, Args)]
 pub(super) struct JobDetailArgs {
-    #[arg(long, help = "job name, must be unique")]
+    #[arg(index = 1, help = "job name, must be unique")]
     pub(super) id: String,
+
+    #[arg(long, default_value = "table", help = "format json/table")]
+    pub(super) format: String,
 }
 
 pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailArgs) -> Result<()> {
@@ -110,6 +139,97 @@ pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailA
     let id: ObjectId = ObjectId::from_str(&args.id)?;
     let job_detail = client.get_job_detail(&id).await?;
 
-    println!("{}", serde_json::to_string_pretty(&job_detail)?);
+    if args.format == "json" {
+        println!("{}", serde_json::to_string_pretty(&job_detail)?);
+        return Ok(());
+    }
+
+    let mut table = Table::new();
+    table.add_row(Row::from(vec![
+        "ID",
+        "Name",
+        "State",
+        "TryNumber",
+        "CreatedAt",
+        "UpdatedAt",
+    ]));
+
+    table.add_row(Row::from(vec![
+        cell!(job_detail.job.id),
+        cell!(job_detail.job.name),
+        cell!(to_variant_name(&job_detail.job.state).unwrap()),
+        cell!(job_detail.job.retry_number),
+        cell!(DateTime::from_timestamp(job_detail.job.created_at, 0).unwrap()),
+        cell!(DateTime::from_timestamp(job_detail.job.updated_at, 0).unwrap()),
+    ]));
+    table.printstd();
+
+    if job_detail.node_status.is_none() {
+        return Ok(());
+    }
+
+    println!("Nodes:");
+
+    let mut table = Table::new();
+    table.add_row(Row::from(vec![
+        "NodeName",
+        "State",
+        "DataCount",
+        "Replicas",
+        "TmpStorage",
+        "Pods",
+    ]));
+    for status in job_detail.node_status.unwrap() {
+        let mut pod_table = Table::new();
+        pod_table.add_row(Row::from(vec!["Name", "State", "CPU", "Memory"]));
+        for pod in status.pods {
+            pod_table.add_row(Row::from(vec![
+                cell!(pod.0),
+                cell!(pod.1.state),
+                cell!(pod.1.cpu_usage),
+                cell!(pod.1.memory_usage.to_smart_string()),
+            ]));
+        }
+
+        table.add_row(Row::from(vec![
+            cell!(status.name),
+            cell!(to_variant_name(&status.state)?),
+            cell!(status.data_count),
+            cell!(status.replicas),
+            cell!(status.storage),
+            cell!(pod_table),
+        ]));
+    }
+    table.printstd();
+    Ok(())
+}
+
+#[derive(Debug, Args)]
+pub(super) struct RunJobArgs {
+    #[arg(index = 1, help = "job name, must be unique")]
+    pub(super) id: String,
+}
+
+pub(super) async fn run_job(global_opts: GlobalOptions, args: RunJobArgs) -> Result<()> {
+    let client = JzFlowClient::new(&global_opts.listen)?.job();
+    let id: ObjectId = ObjectId::from_str(&args.id)?;
+    client.run_job(&id).await?;
+
+    println!("Run job successfully, job ID: {}", args.id);
+    Ok(())
+}
+
+#[derive(Debug, Args)]
+pub(super) struct CleanJobArgs {
+    #[arg(index = 1, help = "job name, must be unique")]
+    pub(super) id: String,
+}
+
+pub(super) async fn clean_job(global_opts: GlobalOptions, args: CleanJobArgs) -> Result<()> {
+    let client = JzFlowClient::new(&global_opts.listen)?.job();
+    let id: ObjectId = ObjectId::from_str(&args.id)?;
+    client.clean_job(&id).await?;
+
+    println!("Clean job successfully, job ID: {}", args.id);
     Ok(())
 }

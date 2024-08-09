@@ -8,7 +8,8 @@
                 "image": "gitdatateam/dummy_in:latest",
                 "command": "/dummy_in",
                 "args": [
-                    "--log-level=debug"
+                    "--log-level=debug",
+                    "--total-count=100"
                 ]
             }
         },

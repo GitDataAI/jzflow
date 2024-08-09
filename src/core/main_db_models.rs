@@ -5,13 +5,14 @@ use serde::{
     Serialize,
 };
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, PartialEq)]
 pub enum JobState {
     #[default]
     Created,
     Running,
     Error,
     Finish,
+    Clean,
 }
 
 #[derive(Default, Serialize, Deserialize, Debug)]
@@ -31,6 +32,10 @@ pub struct JobUpdateInfo {
     pub state: Option<JobState>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ListJobParams {
+    pub state: Option<JobState>,
+}
 pub trait JobRepo {
     fn insert(&self, job: &Job) -> impl std::future::Future<Output = Result<Job>> + Send;
 
@@ -46,7 +51,10 @@ pub trait JobRepo {
         info: &JobUpdateInfo,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
-    fn list_jobs(&self) -> impl std::future::Future<Output = Result<Vec<Job>>> + Send;
+    fn list_jobs(
+        &self,
+        list_job_params: &ListJobParams,
+    ) -> impl std::future::Future<Output = Result<Vec<Job>>> + Send;
 }
 
 pub trait MainDbRepo = JobRepo + Clone + Send + Sync + 'static;

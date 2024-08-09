@@ -30,6 +30,7 @@ use anyhow::{
     Result,
 };
 use chrono::prelude::*;
+use futures::future::try_join_all;
 use handlebars::{
     Context,
     Handlebars,
@@ -38,14 +39,21 @@ use handlebars::{
     RenderContext,
     RenderError,
 };
-use k8s_openapi::api::{
-    apps::v1::StatefulSet,
-    core::v1::{
-        Namespace,
-        PersistentVolumeClaim,
-        Pod,
-        Service,
+use k8s_metrics::{
+    v1beta1 as metricsv1,
+    QuantityExt,
+};
+use k8s_openapi::{
+    api::{
+        apps::v1::StatefulSet,
+        core::v1::{
+            Namespace,
+            PersistentVolumeClaim,
+            Pod,
+            Service,
+        },
     },
+    apimachinery::pkg::api::resource::Quantity,
 };
 use kube::{
     api::{
@@ -67,7 +75,10 @@ use tokio_retry::{
     strategy::ExponentialBackoff,
     Retry,
 };
-use tracing::debug;
+use tracing::{
+    debug,
+    error,
+};
 
 pub struct KubeChannelHander<R>
 where
@@ -79,7 +90,7 @@ where
     pub(crate) stateset_name: String,
     pub(crate) claim_name: String,
     pub(crate) _service_name: String,
-    pub(crate) _db_repo: R,
+    pub(crate) db_repo: R,
 }
 
 impl<R> ChannelHandler for KubeChannelHander<R>
@@ -96,6 +107,8 @@ where
         let claim_api: Api<PersistentVolumeClaim> =
             Api::namespaced(self.client.clone(), &self.namespace);
         let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+        let metrics_api: Api<metricsv1::PodMetrics> =
+            Api::<metricsv1::PodMetrics>::namespaced(self.client.clone(), &self.namespace);
 
         let statefulset = statefulset_api.get(&self.stateset_name).await.anyhow()?;
         let selector = statefulset
@@ -124,8 +137,15 @@ where
             .map(|cap| cap.0.clone())
             .unwrap_or_default();
 
+        let db_node = self.db_repo.get_node_by_name(&self.node_name).await?;
+        let data_count = self
+            .db_repo
+            .count(&self.node_name, &Vec::new(), None)
+            .await?;
         let mut node_status = NodeStatus {
             name: self.node_name.clone(),
+            state: db_node.state,
+            data_count: data_count,
             replicas: statefulset
                 .spec
                 .as_ref()
@@ -142,16 +162,43 @@ where
                 .and_then(|status| status.phase)
                 .unwrap_or_default();
 
+            let metrics = metrics_api.get(&pod_name).await.anyhow()?;
+            let mut cpu_sum = 0.0;
+            let mut memory_sum = 0;
+            for container in metrics.containers.iter() {
+                cpu_sum += container
+                    .usage
+                    .cpu()
+                    .map_err(|err| {
+                        error!("cpu not exit {err}");
+                        err
+                    })
+                    .unwrap_or(0.0);
+                memory_sum += container
+                    .usage
+                    .memory()
+                    .map_err(|err| {
+                        error!("cpu not exit {err}");
+                        err
+                    })
+                    .unwrap_or(0);
+            }
             let pod_status = PodStauts {
                 state: phase,
-                disk_usage: 0,
-                cpu_usage: 0,
-                memory_usage: 0,
+                cpu_usage: cpu_sum,
+                memory_usage: memory_sum,
             };
             node_status.pods.insert(pod_name, pod_status);
         }
         Ok(node_status)
     }
+
+    async fn start(&self) -> Result<()> {
+        self.db_repo
+            .update_node_by_name(&self.node_name, TrackerState::Ready)
+            .await
+    }
+
     async fn pause(&mut self) -> Result<()> {
         todo!()
     }
@@ -175,7 +222,7 @@ where
     pub(crate) stateset_name: String,
     pub(crate) claim_name: String,
     pub(crate) _service_name: String,
-    pub(crate) _db_repo: R,
+    pub(crate) db_repo: R,
     pub(crate) channel: Option<KubeChannelHander<R>>,
 }
 
@@ -195,6 +242,8 @@ where
         let claim_api: Api<PersistentVolumeClaim> =
             Api::namespaced(self.client.clone(), &self.namespace);
         let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+        let metrics_api: Api<metricsv1::PodMetrics> =
+            Api::<metricsv1::PodMetrics>::namespaced(self.client.clone(), &self.namespace);
 
         let statefulset = statefulset_api.get(&self.stateset_name).await.anyhow()?;
         let selector = statefulset
@@ -223,8 +272,15 @@ where
             .map(|cap| cap.0.clone())
             .unwrap_or_default();
 
+        let db_node = self.db_repo.get_node_by_name(&self.node_name).await?;
+        let data_count = self
+            .db_repo
+            .count(&self.node_name, &Vec::new(), None)
+            .await?;
         let mut node_status = NodeStatus {
             name: self.node_name.clone(),
+            state: db_node.state,
+            data_count: data_count,
             replicas: statefulset
                 .spec
                 .as_ref()
@@ -241,15 +297,45 @@ where
                 .and_then(|status| status.phase)
                 .unwrap_or_default();
 
+            let metrics = metrics_api.get(&pod_name).await.anyhow()?;
+            let mut cpu_sum = 0.0;
+            let mut memory_sum = 0;
+            for container in metrics.containers.iter() {
+                cpu_sum += container
+                    .usage
+                    .cpu()
+                    .map_err(|err| {
+                        error!("cpu not exit {err}");
+                        err
+                    })
+                    .unwrap_or(0.0);
+                memory_sum += container
+                    .usage
+                    .memory()
+                    .map_err(|err| {
+                        error!("cpu not exit {err}");
+                        err
+                    })
+                    .unwrap_or(0);
+            }
             let pod_status = PodStauts {
                 state: phase,
-                disk_usage: 0,
-                cpu_usage: 0,
-                memory_usage: 0,
+                cpu_usage: cpu_sum,
+                memory_usage: memory_sum,
             };
             node_status.pods.insert(pod_name, pod_status);
         }
         Ok(node_status)
+    }
+
+    async fn start(&self) -> Result<()> {
+        self.db_repo
+            .update_node_by_name(&self.node_name, TrackerState::Ready)
+            .await?;
+        if let Some(channel) = self.channel.as_ref() {
+            channel.start().await?;
+        }
+        Ok(())
     }
 
     async fn pause(&mut self) -> Result<()> {
@@ -276,6 +362,7 @@ where
 {
     _client: Client,
     _db_repo: R,
+    topo_sort_nodes: Vec<String>,
     handlers: HashMap<String, KubeHandler<R>>,
 }
 
@@ -283,9 +370,10 @@ impl<R> KubePipelineController<R>
 where
     R: JobDbRepo,
 {
-    fn new(repo: R, client: Client) -> Self {
+    fn new(repo: R, client: Client,topo_sort_nodes: Vec<String>) -> Self {
         Self {
             _db_repo: repo,
+            topo_sort_nodes:topo_sort_nodes,
             _client: client,
             handlers: Default::default(),
         }
@@ -298,9 +386,14 @@ where
 {
     type Output = KubeHandler<R>;
 
+    async fn start(&self) -> Result<()> {
+        try_join_all(self.handlers.iter().map(|handler| handler.1.start()))
+            .await
+            .map(|_| ())
+    }
     //todo use iter
-    fn nodes(&self) -> Result<Vec<String>> {
-        anyhow::Ok(self.handlers.keys().map(|a| a.to_string()).collect())
+    fn nodes_in_order(&self) -> Result<Vec<String>> {
+        Ok(self.topo_sort_nodes.clone())
     }
 
     async fn get_node(&self, id: &str) -> Result<&KubeHandler<R>> {
@@ -456,8 +549,8 @@ where
             updated_at: cur_tm,
         };
         repo.insert_global_state(&graph_record).await?;
-
-        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone());
+        let topo_sort_nodes = graph.topo_sort_nodes();
+        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone(),topo_sort_nodes);
         for node in graph.iter() {
             if node.spec.command.is_empty() {
                 return Err(anyhow!("{} dont have command", &node.name));
@@ -563,7 +656,7 @@ where
                             .name()
                             .expect("set name in template")
                             .to_string(),
-                        _db_repo: repo.clone(),
+                        db_repo: repo.clone(),
                     }),
                     vec![channel_node_name],
                 )
@@ -651,7 +744,7 @@ where
                     .expect("set name in template")
                     .to_string(),
                 channel: channel_handler,
-                _db_repo: repo.clone(),
+                db_repo: repo.clone(),
             };
 
             pipeline_ctl.handlers.insert(node.name.clone(), handler);
@@ -673,7 +766,8 @@ where
         let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
 
-        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone());
+        let topo_sort_nodes = graph.topo_sort_nodes();
+        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone(),topo_sort_nodes);
         for node in graph.iter() {
             let up_nodes = graph.get_incomming_nodes(&node.name);
             // query channel
@@ -704,7 +798,7 @@ where
                         .name()
                         .expect("set name in template")
                         .to_string(),
-                    _db_repo: repo.clone(),
+                    db_repo: repo.clone(),
                 })
             } else {
                 None
@@ -739,7 +833,7 @@ where
                     .expect("set name in template")
                     .to_string(),
                 channel: channel_handler,
-                _db_repo: repo.clone(),
+                db_repo: repo.clone(),
             };
 
             pipeline_ctl.handlers.insert(node.name.clone(), handler);

@@ -1,6 +1,5 @@
 mod graph;
 
-use graph::Graph;
 use crate::{
     core::ComputeUnit,
     utils::IntoAnyhowResult,
@@ -10,6 +9,7 @@ use anyhow::{
     Ok,
     Result,
 };
+use graph::Graph;
 use std::collections::HashMap;
 
 pub struct Dag {
@@ -69,6 +69,9 @@ impl Dag {
 
     pub fn get_outgoing_nodes(&self, node_id: &str) -> Vec<&str> {
         self.rely_graph.get_outgoing_nodes(node_id)
+    }
+    pub fn topo_sort_nodes(&self) -> Vec<String> {
+        self.rely_graph.topo_sort()
     }
 
     // from_json build graph from json string

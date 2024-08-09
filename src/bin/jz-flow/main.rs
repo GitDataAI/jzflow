@@ -1,3 +1,7 @@
+#![feature(iter_repeat_n)]
+#[macro_use]
+extern crate prettytable;
+
 mod global;
 mod job;
 mod run;

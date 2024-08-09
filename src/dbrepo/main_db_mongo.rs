@@ -4,6 +4,7 @@ use crate::{
         JobRepo,
         JobState,
         JobUpdateInfo,
+        ListJobParams,
     },
     utils::{
         IntoAnyhowResult,
@@ -148,13 +149,13 @@ impl JobRepo for MongoMainDbRepo {
             .anyhow()
     }
 
-    async fn list_jobs(&self) -> Result<Vec<Job>> {
-        self.job_col
-            .find(doc! {})
-            .await?
-            .try_collect()
-            .await
-            .anyhow()
+    async fn list_jobs(&self, list_job_params: &ListJobParams) -> Result<Vec<Job>> {
+        let mut query = doc! {};
+        if let Some(state) = list_job_params.state.as_ref() {
+            query.insert("state", to_variant_name(state)?);
+        }
+
+        self.job_col.find(query).await?.try_collect().await.anyhow()
     }
 
     async fn get(&self, id: &ObjectId) -> Result<Option<Job>> {

@@ -1,3 +1,5 @@
+pub mod sizefmt;
+
 use core::fmt;
 
 use anyhow::{

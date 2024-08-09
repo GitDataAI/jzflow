@@ -96,7 +96,7 @@ async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
     };
 
     loop {
-        if args.total_count > 0 && count > args.total_count {
+        if args.total_count > 0 && count >= args.total_count {
             info!("exit pod because work has done");
             if client.status().await.unwrap().state == TrackerState::Finish {
                 return Ok(());

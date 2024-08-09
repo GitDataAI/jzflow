@@ -99,7 +99,7 @@ impl JobClient {
                 .await
                 .anyhow()
                 .and_then(|body| String::from_utf8(body.into()).anyhow())?;
-            return Err(anyhow!("get job {code} reason {err_msg}"));
+            return Err(anyhow!("list job {code} reason {err_msg}"));
         }
 
         resp.bytes()
@@ -156,7 +156,7 @@ impl JobClient {
                 .await
                 .anyhow()
                 .and_then(|body| String::from_utf8(body.into()).anyhow())?;
-            return Err(anyhow!("request job {code} reason {err_msg}"));
+            return Err(anyhow!("request update job {code} reason {err_msg}"));
         }
 
         Ok(())
@@ -183,7 +183,7 @@ impl JobClient {
                 .await
                 .anyhow()
                 .and_then(|body| String::from_utf8(body.into()).anyhow())?;
-            return Err(anyhow!("request job {code} reason {err_msg}"));
+            return Err(anyhow!("request job detail {code} reason {err_msg}"));
         }
 
         resp.bytes()
@@ -191,5 +191,58 @@ impl JobClient {
             .anyhow()
             .and_then(|body| serde_json::from_slice(&body).anyhow())
             .anyhow()
+    }
+
+    pub async fn run_job(&self, job_id: &ObjectId) -> Result<()> {
+        let resp = self
+            .client
+            .post(
+                self.base_uri
+                    .clone()
+                    .join("job/")?
+                    .join("run/")?
+                    .join(job_id.to_hex().as_str())?,
+            )
+            .send()
+            .await
+            .anyhow()?;
+
+        if !resp.status().is_success() {
+            let code = resp.status();
+            let err_msg = resp
+                .bytes()
+                .await
+                .anyhow()
+                .and_then(|body| String::from_utf8(body.into()).anyhow())?;
+            return Err(anyhow!("request start job {code} reason {err_msg}"));
+        }
+
+        Ok(())
+    }
+
+    pub async fn clean_job(&self, job_id: &ObjectId) -> Result<()> {
+        let resp = self
+            .client
+            .delete(
+                self.base_uri
+                    .clone()
+                    .join("job/")?
+                    .join(job_id.to_hex().as_str())?,
+            )
+            .send()
+            .await
+            .anyhow()?;
+
+        if !resp.status().is_success() {
+            let code = resp.status();
+            let err_msg = resp
+                .bytes()
+                .await
+                .anyhow()
+                .and_then(|body| String::from_utf8(body.into()).anyhow())?;
+            return Err(anyhow!("request start job {code} reason {err_msg}"));
+        }
+
+        Ok(())
     }
 }

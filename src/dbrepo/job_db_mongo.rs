@@ -1,3 +1,5 @@
+use std::os::linux::raw::stat;
+
 use crate::{
     core::db::{
         DataRecord,
@@ -254,15 +256,19 @@ impl DataRepo for MongoRunDbRepo {
         &self,
         node_name: &str,
         states: &[&DataState],
-        direction: &Direction,
+        direction: Option<&Direction>,
     ) -> Result<usize> {
-        let states: Vec<&str> = states.iter().map(to_variant_name).try_collect()?;
+        let mut query = doc! {"node_name":node_name};
+        if states.len() > 0 {
+            let states: Vec<&str> = states.iter().map(to_variant_name).try_collect()?;
+            query.insert("state", doc! {"$in": states});
+        }
+        if let Some(direction) = direction {
+            query.insert("direction", to_variant_name(&direction)?);
+        }
+
         self.data_col
-            .count_documents(doc! {
-                "node_name":node_name,
-                "state": doc! {"$in": states},
-                "direction": to_variant_name(&direction)?
-            })
+            .count_documents(query)
             .await
             .map(|count| count as usize)
             .anyhow()

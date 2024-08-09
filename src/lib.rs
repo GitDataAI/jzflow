@@ -3,6 +3,7 @@
 #![feature(future_join)]
 #![feature(iterator_try_collect)]
 #![feature(duration_constructors)]
+#![feature(iter_repeat_n)]
 
 pub mod api;
 pub mod core;

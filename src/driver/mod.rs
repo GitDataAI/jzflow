@@ -1,6 +1,9 @@
 pub mod kube;
 
-use crate::dag::Dag;
+use crate::{
+    core::db::TrackerState,
+    dag::Dag,
+};
 use anyhow::Result;
 use serde::{
     Deserialize,
@@ -14,14 +17,15 @@ use std::{
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PodStauts {
     pub state: String,
-    pub disk_usage: u32,
-    pub cpu_usage: u32,
-    pub memory_usage: u32,
+    pub cpu_usage: f64,
+    pub memory_usage: i64,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NodeStatus {
     pub name: String,
+    pub state: TrackerState,
+    pub data_count: usize,
     pub replicas: u32,
     pub storage: String,
     pub pods: HashMap<String, PodStauts>,
@@ -31,6 +35,8 @@ pub trait UnitHandler: Send {
     type Output: ChannelHandler;
 
     fn name(&self) -> &str;
+
+    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
     //pause graph running for now
     fn status(&self) -> impl Future<Output = Result<NodeStatus>> + Send;
 
@@ -44,13 +50,13 @@ pub trait UnitHandler: Send {
     fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
 
     //return a channel handler
-    fn channel_handler(
-        &self,
-    ) -> impl Future<Output = Result<Option<&Self::Output>>> + Send;
+    fn channel_handler(&self) -> impl Future<Output = Result<Option<&Self::Output>>> + Send;
 }
 
 pub trait ChannelHandler: Send {
     fn name(&self) -> &str;
+
+    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
     //pause graph running for now
     fn status(&self) -> impl Future<Output = Result<NodeStatus>> + Send;
 
@@ -67,7 +73,9 @@ pub trait ChannelHandler: Send {
 pub trait PipelineController: Send {
     type Output: UnitHandler;
 
-    fn nodes(&self) -> Result<Vec<String>>;
+    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn nodes_in_order(&self) -> Result<Vec<String>>;
 
     fn get_node(&self, id: &str)
         -> impl std::future::Future<Output = Result<&Self::Output>> + Send;

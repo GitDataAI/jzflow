@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
                    info!("ipc server stopped");
                 }
             };
-            Ok::<(), anyhow::Error>(()) 
+            Ok::<(), anyhow::Error>(())
         });
     }
     {
