@@ -5,7 +5,6 @@ use crate::{
         JobState,
         JobUpdateInfo,
         MainDbRepo,
-        Node,
     },
     dag::Dag,
     driver::{NodeStatus, Driver, PipelineController, UnitHandler},
@@ -22,7 +21,6 @@ use tracing::{
     error,
     info,
 };
-use futures::TryStreamExt;
 use futures::future::try_join_all;
 
 #[derive(Serialize,Deserialize)]

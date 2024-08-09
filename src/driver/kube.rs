@@ -22,7 +22,6 @@ use crate::{
     dbrepo::MongoRunDbRepo,
     utils::{IntoAnyhowResult, StdIntoAnyhowResult},
 };
-use actix_web::http::header::Quality;
 use anyhow::{
     anyhow,
     Result,
@@ -36,11 +35,11 @@ use handlebars::{
     RenderContext,
     RenderError,
 };
-use k8s_openapi::{api::{
-    apps::v1::StatefulSet, autoscaling::v2::PodsMetricStatus, core::v1::{
+use k8s_openapi::api::{
+    apps::v1::StatefulSet, core::v1::{
         Namespace, PersistentVolumeClaim, Pod, Service
     }
-}, apimachinery::pkg::apis::meta::v1::Status, List};
+};
 use kube::{
     api::{
         DeleteParams, ListParams, PostParams
