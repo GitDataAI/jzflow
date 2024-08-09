@@ -21,17 +21,13 @@ use crate::{
 };
 use anyhow::Result;
 use futures::future::try_join_all;
-use k8s_openapi::api::node;
 use kube::Client;
 use mongodb::bson::oid::ObjectId;
 use serde::{
     Deserialize,
     Serialize,
 };
-use std::{
-    collections::HashMap,
-    marker::PhantomData,
-};
+use std::marker::PhantomData;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{
@@ -177,7 +173,7 @@ where
         let namespace = format!("{}-{}", job.name, job.retry_number - 1);
         self.db
             .update(
-                &id,
+                id,
                 &JobUpdateInfo {
                     state: Some(JobState::Finish),
                 },
@@ -186,7 +182,7 @@ where
         self.driver.clean(&namespace).await?;
         self.db
             .update(
-                &id,
+                id,
                 &JobUpdateInfo {
                     state: Some(JobState::Clean),
                 },

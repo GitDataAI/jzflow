@@ -33,7 +33,7 @@ use crate::global::GlobalOptions;
 pub(super) struct RunArgs {
     #[arg(
         long,
-        default_value = "mongodb://192.168.3.163:27017",
+        default_value = "mongodb://127.0.0.1:27017",
         help = "mongo connection string"
     )]
     mongo_url: String,

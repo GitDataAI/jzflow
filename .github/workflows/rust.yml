@@ -17,21 +17,69 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Run Clippy
-      run: cargo +nightly  clippy --fix --workspace --exclude jiaozifs_client_rs --allow-dirty
+    - name: Install git
+      run: |
+        sudo apt update
+        sudo apt install git
+
+    - name: Create mongo Docker container
+      uses: DigiPie/mongo-action@v2.0.1
+      with:
+        image_version: latest
+        port: 27017
 
     - name: Install Protoc
       uses: arduino/setup-protoc@v3
 
-    - name: Run tests
-      run: cargo test --verbose --workspace
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy rustfmt
+
+    - name: Set up cargo cache
+      uses: actions/cache@v3
+      continue-on-error: false
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/            
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-
 
     - name: Start minikube
       uses: medyagh/setup-minikube@latest
 
-    - name: Build image
+    - name: Enabel plugin  
       run: |
         eval $(minikube -p minikube docker-env)
+        alias kubectl="minikube kubectl --"
+        minikube addons enable metrics-server
+
+    - name: Install Helm
+      uses: azure/setup-helm@v4.2.0
+      id: install
+
+    - name: Install StorageClass
+      run: |
+        kubectl apply -f ./script/local-storageclass.yaml
+        kubectl -n local-path-storage get storageclass
+
+    - name: Run Clippy
+      run: |
+        rustup show
+        cargo  clippy --workspace --exclude jiaozifs_client_rs -- -D warnings  
+
+    - name: Build image
+      run: |
         make minikube-docker
+
+
+    - name: Run tests
+      run: cargo test --verbose --workspace
+
+
       
 

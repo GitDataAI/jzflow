@@ -1,4 +1,3 @@
-use std::os::linux::raw::stat;
 
 use crate::{
     core::db::{
@@ -259,7 +258,7 @@ impl DataRepo for MongoRunDbRepo {
         direction: Option<&Direction>,
     ) -> Result<usize> {
         let mut query = doc! {"node_name":node_name};
-        if states.len() > 0 {
+        if !states.is_empty() {
             let states: Vec<&str> = states.iter().map(to_variant_name).try_collect()?;
             query.insert("state", doc! {"$in": states});
         }

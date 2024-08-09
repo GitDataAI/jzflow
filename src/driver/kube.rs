@@ -39,12 +39,8 @@ use handlebars::{
     RenderContext,
     RenderError,
 };
-use k8s_metrics::{
-    v1beta1 as metricsv1,
-    QuantityExt,
-};
-use k8s_openapi::{
-    api::{
+use k8s_metrics::v1beta1 as metricsv1;
+use k8s_openapi::api::{
         apps::v1::StatefulSet,
         core::v1::{
             Namespace,
@@ -52,9 +48,7 @@ use k8s_openapi::{
             Pod,
             Service,
         },
-    },
-    apimachinery::pkg::api::resource::Quantity,
-};
+    };
 use kube::{
     api::{
         DeleteParams,
@@ -145,7 +139,7 @@ where
         let mut node_status = NodeStatus {
             name: self.node_name.clone(),
             state: db_node.state,
-            data_count: data_count,
+            data_count,
             replicas: statefulset
                 .spec
                 .as_ref()
@@ -280,7 +274,7 @@ where
         let mut node_status = NodeStatus {
             name: self.node_name.clone(),
             state: db_node.state,
-            data_count: data_count,
+            data_count,
             replicas: statefulset
                 .spec
                 .as_ref()
@@ -373,7 +367,7 @@ where
     fn new(repo: R, client: Client,topo_sort_nodes: Vec<String>) -> Self {
         Self {
             _db_repo: repo,
-            topo_sort_nodes:topo_sort_nodes,
+            topo_sort_nodes,
             _client: client,
             handlers: Default::default(),
         }
@@ -918,7 +912,7 @@ mod tests {
                         "#;
         let dag = Dag::from_json(json_str).unwrap();
 
-        let db_url = "mongodb://192.168.3.163:27017";
+        let db_url = "mongodb://127.0.0.1:27017";
         let client = MongoClient::with_uri_str(db_url.to_string() + "/ntest")
             .await
             .unwrap();

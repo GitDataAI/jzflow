@@ -1,12 +1,4 @@
-use std::{
-    io::{
-        self,
-        stdout,
-    },
-    iter,
-    os::linux::raw::stat,
-    str::FromStr,
-};
+use std::str::FromStr;
 
 use crate::global::GlobalOptions;
 use anyhow::Result;
