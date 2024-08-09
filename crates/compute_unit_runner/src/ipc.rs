@@ -667,15 +667,6 @@ mod tests {
     use tracing_subscriber;
 
     #[tokio::test]
-    async fn test_render() {
-        env::set_var("RUST_LOG", "DEBUG");
-        tracing_subscriber::fmt::init();
-
-        let client = IPCClientImpl::new("/home/hunjixin/code/jz-action/test.d".to_string());
-        client.request_avaiable_data().await.unwrap();
-    }
-
-    #[tokio::test]
     async fn test_my_error() {
         {
             let my_err = IPCError::NodeError {

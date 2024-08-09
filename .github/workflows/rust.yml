@@ -20,8 +20,10 @@ jobs:
     - name: Start minikube
       uses: medyagh/setup-minikube@latest
 
-    - name: Build
-      run: cargo build --verbose
+    - name: Build image
+      run: |
+        eval $(minikube -p minikube docker-env)
+        make minikube-docker
       
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose --workspace

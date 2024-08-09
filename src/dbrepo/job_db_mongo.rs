@@ -299,18 +299,3 @@ impl DataRepo for MongoRunDbRepo {
         self.data_col.insert_one(record).await.map(|_| ()).anyhow()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn is_send<T>()
-    where
-        T: Send + Sync,
-    {
-    }
-    #[tokio::test]
-    async fn test_render() {
-        is_send::<MongoRunDbRepo>();
-    }
-}
