@@ -1,13 +1,34 @@
 use crate::dag::Dag;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::{
-    future::Future,
-    sync::{
+    collections::HashMap, future::Future, sync::{
         Arc,
         Mutex,
-    },
+    }
 };
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct PodStauts {
+    pub state: String,
+    pub disk_usage: u32,
+    pub  cpu_usage: u32,
+    pub  memory_usage: u32,
+}
+
+#[derive(Debug, Default, Serialize,Deserialize)]
+pub struct NodeStatus {
+    pub name: String,
+    pub replicas: u32,
+    pub storage: String,
+    pub pods: HashMap<String, PodStauts>,
+}
+
 pub trait UnitHandler: Send {
+    fn name(&self) -> &str;
+    //pause graph running for now
+    fn status(&self) -> impl Future<Output = Result<NodeStatus>> + Send;
+
     //pause graph running for now
     fn pause(&mut self) -> impl Future<Output = Result<()>> + Send;
 
@@ -24,6 +45,10 @@ pub trait UnitHandler: Send {
 }
 
 pub trait ChannelHandler: Send {
+    fn name(&self) -> &str;
+    //pause graph running for now
+    fn status(&self) -> impl Future<Output = Result<NodeStatus>> + Send;
+    
     //pause graph running for now
     fn pause(&mut self) -> impl Future<Output = Result<()>> + Send;
 
@@ -35,15 +60,17 @@ pub trait ChannelHandler: Send {
 }
 
 pub trait PipelineController: Send {
-    fn get_node<'a>(
-        &'a self,
-        id: &'a String,
-    ) -> impl std::future::Future<Output = Result<&'a impl UnitHandler>> + Send;
+    type Output: UnitHandler;
 
-    fn get_node_mut<'a>(
-        &'a mut self,
-        id: &'a String,
-    ) -> impl std::future::Future<Output = Result<&'a mut impl UnitHandler>> + Send;
+    fn nodes(&self) -> Result<Vec<String>>;
+
+    fn get_node(&self, id: &str)
+        -> impl std::future::Future<Output = Result<&Self::Output>> + Send;
+
+    fn get_node_mut(
+        &mut self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<&mut Self::Output>> + Send;
 }
 
 pub trait Driver: 'static + Clone + Send + Sync {

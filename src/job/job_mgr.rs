@@ -8,23 +8,31 @@ use crate::{
         Node,
     },
     dag::Dag,
-    driver::Driver,
-    utils::IntoAnyhowResult,
+    driver::{NodeStatus, Driver, PipelineController, UnitHandler},
+    utils::{IntoAnyhowResult, StdIntoAnyhowResult},
 };
 use anyhow::Result;
 use kube::Client;
 use mongodb::bson::oid::ObjectId;
-use std::marker::PhantomData;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, marker::PhantomData};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
     info,
 };
+use futures::TryStreamExt;
+use futures::future::try_join_all;
+
+#[derive(Serialize,Deserialize)]
 pub struct JobDetails {
-    job: Job,
+    pub job: Job,
+    pub node_status: HashMap<String, NodeStatus>
 }
 
+
+#[derive(Clone)]
 pub struct JobManager<D, MAINR, JOBR>
 where
     D: Driver,
@@ -103,6 +111,19 @@ where
         let dag = Dag::from_json(job.graph_json.as_str())?;
         let namespace = format!("{}-{}", job.name, job.retry_number - 1);
         let controller = self.driver.attach(&namespace, &dag).await?;
-        Ok(JobDetails { job: job })
+        let nodes = controller.nodes().anyhow()?;
+        let nodes_controller = try_join_all(nodes.iter().map(|node_name|{
+            controller.get_node(&node_name)
+        })).await?;
+        
+        let mut node_status = HashMap::new();
+        for node_ctl in nodes_controller {
+            let status = node_ctl.status().await?;
+            node_status.insert(node_ctl.name().to_string(), status);
+        }
+        Ok(JobDetails { 
+            job: job,
+            node_status,
+        })
     }
 }

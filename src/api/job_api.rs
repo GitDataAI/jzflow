@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{
     core::db::{
         Job,
@@ -6,7 +8,7 @@ use crate::{
         JobUpdateInfo,
         MainDbRepo,
     },
-    driver::Driver,
+    driver::Driver, job::job_mgr::JobManager,
 };
 use actix_web::{
     web,
@@ -36,6 +38,18 @@ where
     match db_repo.get(&path.into_inner()).await {
         Ok(Some(inserted_result)) => HttpResponse::Ok().json(&inserted_result),
         Ok(None) => HttpResponse::NotFound().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
+    }
+}
+
+async fn list<D, MAINR, JOBR>(db_repo: web::Data<MAINR>) -> HttpResponse
+where
+    D: Driver,
+    MAINR: MainDbRepo,
+    JOBR: JobDbRepo,
+{
+    match db_repo.list_jobs().await {
+        Ok(jobs) => HttpResponse::Ok().json(&jobs),
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
 }
@@ -75,20 +89,19 @@ where
 }
 
 async fn job_details<D, MAINR, JOBR>(
-    db_repo: web::Data<MAINR>,
-    path: web::Path<ObjectId>,
-    query: web::Query<JobUpdateInfo>,
+    job_manager: web::Data<JobManager<D, MAINR, JOBR>>,
+    path: web::Path<String>,
 ) -> HttpResponse
 where
     D: Driver,
     MAINR: MainDbRepo,
     JOBR: JobDbRepo,
 {
-    match db_repo
-        .update(&path.into_inner(), &query.into_inner())
+    let id = ObjectId::from_str(&path.into_inner()).unwrap();
+    match job_manager.get_job_details(&id)
         .await
     {
-        Ok(_) => HttpResponse::Ok().finish(),
+        Ok(detail) => HttpResponse::Ok().json(detail),
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
 }
@@ -107,6 +120,12 @@ where
     .service(
         web::resource("/job/{id}")
             .route(web::get().to(get::<D, MAINR, JOBR>))
-            .route(web::post().to(update::<D, MAINR, JOBR>)),
+            .route(web::post().to(update::<D, MAINR, JOBR>))
+    ).service(
+                web::resource("/jobs")
+                    .route(web::get().to(list::<D, MAINR, JOBR>))
+    ).service(
+        web::resource("/job/detail/{id}")
+            .route(web::get().to(job_details::<D, MAINR, JOBR>))
     );
 }

@@ -3,6 +3,8 @@ use super::{
     Driver,
     PipelineController,
     UnitHandler,
+    NodeStatus,
+    PodStauts,
 };
 use crate::{
     core::{
@@ -18,8 +20,9 @@ use crate::{
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
-    utils::IntoAnyhowResult,
+    utils::{IntoAnyhowResult, StdIntoAnyhowResult},
 };
+use actix_web::http::header::Quality;
 use anyhow::{
     anyhow,
     Result,
@@ -33,19 +36,16 @@ use handlebars::{
     RenderContext,
     RenderError,
 };
-use k8s_openapi::api::{
-    apps::v1::StatefulSet,
-    core::v1::{
-        Namespace,
-        PersistentVolumeClaim,
-        Service,
-    },
-};
+use k8s_openapi::{api::{
+    apps::v1::StatefulSet, autoscaling::v2::PodsMetricStatus, core::v1::{
+        Namespace, PersistentVolumeClaim, Pod, Service
+    }
+}, apimachinery::pkg::apis::meta::v1::Status, List};
 use kube::{
     api::{
-        DeleteParams,
-        PostParams,
+        DeleteParams, ListParams, PostParams
     },
+    runtime::reflector::Lookup,
     Api,
     Client,
 };
@@ -69,16 +69,64 @@ pub struct KubeChannelHander<R>
 where
     R: JobDbRepo,
 {
-    pub statefulset: StatefulSet,
-    pub claim: PersistentVolumeClaim,
-    pub service: Service,
-    pub db_repo: R,
+    pub(crate) client: Client,
+    pub(crate) node_name:String,
+    pub(crate) namespace: String,
+    pub(crate) stateset_name: String,
+    pub(crate) claim_name: String,
+    pub(crate) service_name: String,
+    pub(crate) db_repo: R,
 }
 
 impl<R> ChannelHandler for KubeChannelHander<R>
 where
     R: JobDbRepo,
 {
+    fn name(&self) -> &str {
+        &self.node_name
+    }
+    
+    async fn status(&self) -> Result<NodeStatus> {
+        let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.namespace);
+        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), &self.namespace);
+        let service_api: Api<Service> = Api::namespaced(self.client.clone(), &self.namespace);
+        let pods_api:Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+
+        let statefulset = statefulset_api.get(&self.stateset_name).await.anyhow()?;
+        let selector = statefulset.spec.as_ref().unwrap().selector.match_labels.as_ref().expect("set in template")
+        .iter()
+        .map(|(key, value)| format!("{}={}", key, value))
+        .collect::<Vec<_>>()
+        .join(",");
+
+        let list_params = ListParams::default().labels(&selector);
+        let pods = pods_api.list(&list_params).await.anyhow()?;
+
+        let pvc = claim_api.get(&self.claim_name).await.anyhow()?;
+        let cap = pvc.status.unwrap().capacity.unwrap().get("storage").map(|cap|cap.0.clone()).unwrap_or_default();
+
+        let mut node_status = NodeStatus {
+            name: self.node_name.clone(),
+            replicas: statefulset.spec.as_ref().and_then(|spec|spec.replicas).unwrap_or_default() as u32,
+            storage: cap,
+            pods: HashMap::new(),
+        };
+
+
+        for pod in pods {
+            let pod_name = pod.metadata.name.expect("set in template");
+            let phase = pod.status.and_then(|status|status.phase).unwrap_or_default();
+
+            let pod_status = PodStauts{
+                state: phase,
+                disk_usage:0,
+                cpu_usage:0,
+                memory_usage:0
+            };
+            node_status.pods.insert(pod_name, pod_status);
+        }
+        Ok(node_status)
+    }
     async fn pause(&mut self) -> Result<()> {
         todo!()
     }
@@ -96,17 +144,65 @@ pub struct KubeHandler<R>
 where
     R: JobDbRepo,
 {
-    pub statefulset: StatefulSet,
-    pub claim: PersistentVolumeClaim,
-    pub service: Service,
-    pub db_repo: R,
-    pub channel: Option<KubeChannelHander<R>>,
+    pub(crate) client: Client,
+    pub(crate) node_name:String,
+    pub(crate) namespace: String,
+    pub(crate) stateset_name: String,
+    pub(crate) claim_name: String,
+    pub(crate) service_name: String,
+    pub(crate) db_repo: R,
+    pub(crate) channel: Option<KubeChannelHander<R>>,
 }
 
 impl<R> UnitHandler for KubeHandler<R>
 where
     R: JobDbRepo,
 {
+    fn name(&self) -> &str {
+        &self.node_name
+    }
+
+    async fn status(&self) -> Result<NodeStatus> {
+        let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.namespace);
+        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), &self.namespace);
+        let service_api: Api<Service> = Api::namespaced(self.client.clone(), &self.namespace);
+        let pods_api:Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+
+        let statefulset = statefulset_api.get(&self.stateset_name).await.anyhow()?;
+        let selector = statefulset.spec.as_ref().unwrap().selector.match_labels.as_ref().expect("set in template")
+        .iter()
+        .map(|(key, value)| format!("{}={}", key, value))
+        .collect::<Vec<_>>()
+        .join(",");
+
+        let list_params = ListParams::default().labels(&selector);
+        let pods = pods_api.list(&list_params).await.anyhow()?;
+
+        let pvc = claim_api.get(&self.claim_name).await.anyhow()?;
+        let cap = pvc.status.unwrap().capacity.unwrap().get("storage").map(|cap|cap.0.clone()).unwrap_or_default();
+
+        let mut node_status = NodeStatus {
+            name: self.node_name.clone(),
+            replicas: statefulset.spec.as_ref().and_then(|spec|spec.replicas).unwrap_or_default() as u32,
+            storage: cap,
+            pods: HashMap::new(),
+        };
+
+        for pod in pods {
+            let pod_name = pod.metadata.name.expect("set in template");
+            let phase = pod.status.and_then(|status|status.phase).unwrap_or_default();
+
+            let pod_status = PodStauts{
+                state: phase,
+                disk_usage:0,
+                cpu_usage:0,
+                memory_usage:0
+            };
+            node_status.pods.insert(pod_name, pod_status);
+        }
+        Ok(node_status)
+    }
+
     async fn pause(&mut self) -> Result<()> {
         todo!()
     }
@@ -129,6 +225,7 @@ pub struct KubePipelineController<R>
 where
     R: JobDbRepo,
 {
+    client: Client,
     db_repo: R,
     handlers: HashMap<String, KubeHandler<R>>,
 }
@@ -137,9 +234,10 @@ impl<R> KubePipelineController<R>
 where
     R: JobDbRepo,
 {
-    fn new(repo: R) -> Self {
+    fn new(repo: R, client: Client) -> Self {
         Self {
             db_repo: repo,
+            client,
             handlers: Default::default(),
         }
     }
@@ -149,11 +247,18 @@ impl<R> PipelineController for KubePipelineController<R>
 where
     R: JobDbRepo,
 {
-    async fn get_node<'b>(&'b self, id: &'b String) -> Result<&'b impl UnitHandler> {
+    type Output = KubeHandler<R>;
+
+    //todo use iter
+    fn nodes(&self) -> Result<Vec<String>> {
+        anyhow::Ok(self.handlers.keys().map(|a| a.to_string()).collect())
+    }
+
+    async fn get_node(&self, id: &str) -> Result<&KubeHandler<R>> {
         self.handlers.get(id).anyhow("id not found")
     }
 
-    async fn get_node_mut<'b>(&'b mut self, id: &'b String) -> Result<&'b mut impl UnitHandler> {
+    async fn get_node_mut(&mut self, id: &str) -> Result<&mut KubeHandler<R>> {
         self.handlers.get_mut(id).anyhow("id not found")
     }
 }
@@ -303,7 +408,7 @@ where
         };
         repo.insert_global_state(&graph_record).await?;
 
-        let mut pipeline_ctl = KubePipelineController::new(repo.clone());
+        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone());
         for node in graph.iter() {
             if node.spec.command.is_empty() {
                 return Err(anyhow!("{} dont have command", &node.name));
@@ -395,9 +500,21 @@ where
                     .await?;
                 (
                     Some(KubeChannelHander {
-                        claim: claim_deployment,
-                        statefulset: channel_statefulset,
-                        service: channel_service,
+                        node_name: channel_node_name.clone(),
+                        client: self.client.clone(),
+                        namespace: run_id.to_string().clone(),
+                        stateset_name: channel_statefulset
+                            .name()
+                            .expect("set name in template")
+                            .to_string(),
+                        claim_name: claim_deployment
+                            .name()
+                            .expect("set name in template")
+                            .to_string(),
+                        service_name: channel_service
+                            .name()
+                            .expect("set name in template")
+                            .to_string(),
                         db_repo: repo.clone(),
                     }),
                     vec![channel_node_name],
@@ -470,9 +587,21 @@ where
                 .await?;
 
             let handler = KubeHandler {
-                claim: claim_deployment,
-                statefulset: unit_statefulset,
-                service: unit_service,
+                node_name: node.name.clone(),
+                client: self.client.clone(),
+                namespace: run_id.to_string().clone(),
+                stateset_name: unit_statefulset
+                    .name()
+                    .expect("set name in template")
+                    .to_string(),
+                claim_name: claim_deployment
+                    .name()
+                    .expect("set name in template")
+                    .to_string(),
+                service_name: unit_service
+                    .name()
+                    .expect("set name in template")
+                    .to_string(),
                 channel: channel_handler,
                 db_repo: repo.clone(),
             };
@@ -496,7 +625,7 @@ where
         let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), run_id);
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
 
-        let mut pipeline_ctl = KubePipelineController::new(repo.clone());
+        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone());
         for node in graph.iter() {
             let up_nodes = graph.get_incomming_nodes(&node.name);
             // query channel
@@ -512,9 +641,21 @@ where
                     .await?;
 
                 Some(KubeChannelHander {
-                    claim: claim_deployment,
-                    statefulset: channel_statefulset,
-                    service: channel_service,
+                    node_name:node.name.clone() + "-channel",
+                    client: self.client.clone(),
+                    namespace: run_id.to_string().clone(),
+                    stateset_name: channel_statefulset
+                        .name()
+                        .expect("set name in template")
+                        .to_string(),
+                    claim_name: claim_deployment
+                        .name()
+                        .expect("set name in template")
+                        .to_string(),
+                    service_name: channel_service
+                        .name()
+                        .expect("set name in template")
+                        .to_string(),
                     db_repo: repo.clone(),
                 })
             } else {
@@ -534,9 +675,21 @@ where
                 .await?;
 
             let handler = KubeHandler {
-                claim: claim_deployment,
-                statefulset: unit_statefulset,
-                service: unit_service,
+                node_name: node.name.clone(),
+                client: self.client.clone(),
+                namespace: run_id.to_string().clone(),
+                stateset_name: unit_statefulset
+                    .name()
+                    .expect("set name in template")
+                    .to_string(),
+                claim_name: claim_deployment
+                    .name()
+                    .expect("set name in template")
+                    .to_string(),
+                service_name: unit_service
+                    .name()
+                    .expect("set name in template")
+                    .to_string(),
                 channel: channel_handler,
                 db_repo: repo.clone(),
             };

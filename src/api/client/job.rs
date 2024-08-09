@@ -2,8 +2,7 @@ use crate::{
     core::db::{
         Job,
         JobUpdateInfo,
-    },
-    utils::StdIntoAnyhowResult,
+    }, job::job_mgr::JobDetails, utils::StdIntoAnyhowResult
 };
 use anyhow::{
     anyhow,
@@ -55,7 +54,7 @@ impl JobClient {
             .get(
                 self.base_uri
                     .clone()
-                    .join("job")?
+                    .join("job/")?
                     .join(job_id.to_hex().as_str())?,
             )
             .send()
@@ -83,13 +82,42 @@ impl JobClient {
             .anyhow()
     }
 
+    pub async fn list(&self) -> Result<Vec<Job>> {
+        let resp = self
+            .client
+            .get(
+                self.base_uri
+                    .clone()
+                    .join("jobs")?
+            )
+            .send()
+            .await
+            .anyhow()?;
+
+        if !resp.status().is_success() {
+            let code = resp.status();
+            let err_msg = resp
+                .bytes()
+                .await
+                .anyhow()
+                .and_then(|body| String::from_utf8(body.into()).anyhow())?;
+            return Err(anyhow!("get job {code} reason {err_msg}"));
+        }
+
+        resp.bytes()
+            .await
+            .anyhow()
+            .and_then(|body| serde_json::from_slice(&body).anyhow())
+            .anyhow()
+    }
+
     pub async fn delete(&self, job_id: &ObjectId) -> Result<()> {
         let resp = self
             .client
             .delete(
                 self.base_uri
                     .clone()
-                    .join("job")?
+                    .join("job/")?
                     .join(job_id.to_hex().as_str())?,
             )
             .send()
@@ -115,7 +143,7 @@ impl JobClient {
             .post(
                 self.base_uri
                     .clone()
-                    .join("job")?
+                    .join("job/")?
                     .join(job_id.to_hex().as_str())?,
             )
             .json(update_info)
@@ -134,5 +162,36 @@ impl JobClient {
         }
 
         Ok(())
+    }
+
+    pub async fn get_job_detail(&self, job_id: &ObjectId) -> Result<JobDetails> {
+        let resp = self
+            .client
+            .get(
+                self.base_uri
+                    .clone()
+                    .join("job/")?
+                    .join("detail/")?
+                    .join(job_id.to_hex().as_str())?,
+            )
+            .send()
+            .await
+            .anyhow()?;
+
+        if !resp.status().is_success() {
+            let code = resp.status();
+            let err_msg = resp
+                .bytes()
+                .await
+                .anyhow()
+                .and_then(|body| String::from_utf8(body.into()).anyhow())?;
+            return Err(anyhow!("request job {code} reason {err_msg}"));
+        }
+
+        resp.bytes()
+        .await
+        .anyhow()
+        .and_then(|body| serde_json::from_slice(&body).anyhow())
+        .anyhow()
     }
 }

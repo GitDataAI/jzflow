@@ -1,6 +1,7 @@
+use std::str::FromStr;
+
 use crate::global::GlobalOptions;
 use anyhow::Result;
-use chrono::Utc;
 use clap::{
     Args,
     Parser,
@@ -9,14 +10,20 @@ use clap::{
 use jz_action::{
     api::client::JzFlowClient,
     core::db::Job,
-    dag::Dag,
+    dag::Dag, utils::StdIntoAnyhowResult,
 };
+use mongodb::bson::oid::ObjectId;
+use serde_variant::to_variant_name;
 use tokio::fs;
+use comfy_table::Table;
+use chrono::{NaiveDateTime, Utc, DateTime};
 
 #[derive(Debug, Parser)]
 pub(super) enum JobCommands {
     /// Adds files to myapp
     Create(JobCreateArgs),
+    List,
+    Detail(JobDetailArgs)
 }
 
 pub(super) async fn run_job_subcommand(
@@ -25,6 +32,8 @@ pub(super) async fn run_job_subcommand(
 ) -> Result<()> {
     match command {
         JobCommands::Create(args) => create_job(global_opts, args).await,
+        JobCommands::List => list_job(global_opts).await,
+        JobCommands::Detail(args) => get_job_details(global_opts, args).await,
     }
 }
 
@@ -56,5 +65,41 @@ pub(super) async fn create_job(global_opts: GlobalOptions, args: JobCreateArgs) 
         "Create job successfully, job ID: {}",
         created_job.id.to_string()
     );
+    Ok(())
+}
+
+pub(super) async fn list_job(global_opts: GlobalOptions) -> Result<()> {
+    let client = JzFlowClient::new(&global_opts.listen)?.job();
+    let jobs = client.list().await?;
+
+    let mut table = Table::new();
+    table.set_header(vec!["ID", "Name", "State", "TryNumber", "CreatedAt", "UpdatedAt"]);
+
+    jobs.iter().for_each(|job|{
+        table.add_row(vec![
+            job.id.to_string(),
+            job.name.to_string(),
+            to_variant_name(&job.state).unwrap().to_string(),
+            job.retry_number.to_string(),
+            DateTime::from_timestamp(job.created_at, 0).unwrap().to_string(),
+            DateTime::from_timestamp(job.updated_at, 0).unwrap().to_string(),
+        ]);
+    });
+    println!("{table}");
+    Ok(())
+}
+
+#[derive(Debug, Args)]
+pub(super) struct JobDetailArgs {
+    #[arg(long, help = "job name, must be unique")]
+    pub(super) id: String,
+}
+
+pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailArgs) -> Result<()> {
+    let client = JzFlowClient::new(&global_opts.listen)?.job();
+    let id: ObjectId = ObjectId::from_str(&args.id)?;
+    let job_detail = client.get_job_detail(&id).await?;
+
+    println!("{}", serde_json::to_string_pretty(&job_detail)?);
     Ok(())
 }

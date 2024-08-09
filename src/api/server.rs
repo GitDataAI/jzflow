@@ -80,6 +80,7 @@ where
         App::new()
             .wrap(middleware::Logger::default())
             .app_data(Data::new(main_db_repo.clone()))
+            .app_data(Data::new(job_manager.clone()))
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
             .configure(config::<D, MAINR, JOBR>)
     })
