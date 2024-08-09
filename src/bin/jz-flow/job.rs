@@ -2,10 +2,15 @@ use std::str::FromStr;
 
 use crate::global::GlobalOptions;
 use anyhow::Result;
+use chrono::{
+    DateTime,
+    Utc,
+};
 use clap::{
     Args,
     Parser,
 };
+use comfy_table::Table;
 use jz_action::{
     api::client::JzFlowClient,
     core::db::Job,
@@ -14,15 +19,13 @@ use jz_action::{
 use mongodb::bson::oid::ObjectId;
 use serde_variant::to_variant_name;
 use tokio::fs;
-use comfy_table::Table;
-use chrono::{Utc, DateTime};
 
 #[derive(Debug, Parser)]
 pub(super) enum JobCommands {
     /// Adds files to myapp
     Create(JobCreateArgs),
     List,
-    Detail(JobDetailArgs)
+    Detail(JobDetailArgs),
 }
 
 pub(super) async fn run_job_subcommand(
@@ -60,10 +63,7 @@ pub(super) async fn create_job(global_opts: GlobalOptions, args: JobCreateArgs) 
 
     let created_job = client.create(&job).await?;
 
-    println!(
-        "Create job successfully, job ID: {}",
-        created_job.id.to_string()
-    );
+    println!("Create job successfully, job ID: {}", created_job.id);
     Ok(())
 }
 
@@ -72,16 +72,27 @@ pub(super) async fn list_job(global_opts: GlobalOptions) -> Result<()> {
     let jobs = client.list().await?;
 
     let mut table = Table::new();
-    table.set_header(vec!["ID", "Name", "State", "TryNumber", "CreatedAt", "UpdatedAt"]);
+    table.set_header(vec![
+        "ID",
+        "Name",
+        "State",
+        "TryNumber",
+        "CreatedAt",
+        "UpdatedAt",
+    ]);
 
-    jobs.iter().for_each(|job|{
+    jobs.iter().for_each(|job| {
         table.add_row(vec![
             job.id.to_string(),
             job.name.to_string(),
             to_variant_name(&job.state).unwrap().to_string(),
             job.retry_number.to_string(),
-            DateTime::from_timestamp(job.created_at, 0).unwrap().to_string(),
-            DateTime::from_timestamp(job.updated_at, 0).unwrap().to_string(),
+            DateTime::from_timestamp(job.created_at, 0)
+                .unwrap()
+                .to_string(),
+            DateTime::from_timestamp(job.updated_at, 0)
+                .unwrap()
+                .to_string(),
         ]);
     });
     println!("{table}");

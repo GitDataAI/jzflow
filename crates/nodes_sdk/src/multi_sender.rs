@@ -18,10 +18,7 @@ pub struct MultiSender {
 impl MultiSender {
     pub fn new(streams: Vec<String>) -> Self {
         let connects = streams.iter().map(|_| None).collect();
-        MultiSender {
-            streams,
-            connects: connects,
-        }
+        MultiSender { streams, connects }
     }
 }
 

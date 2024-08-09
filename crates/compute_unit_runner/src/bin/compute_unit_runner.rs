@@ -26,10 +26,7 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::{
-        Mutex,
-        RwLock,
-    },
+    sync::RwLock,
     task::JoinSet,
 };
 
@@ -112,9 +109,9 @@ async fn main() -> Result<()> {
                 _ = token.cancelled() => {
                     handler.stop(true).await;
                    info!("ipc server stopped");
-                   return Ok(());
                 }
             };
+            Ok::<(), anyhow::Error>(()) 
         });
     }
     {
@@ -135,7 +132,7 @@ async fn main() -> Result<()> {
 
     {
         //catch signal
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
             select! {

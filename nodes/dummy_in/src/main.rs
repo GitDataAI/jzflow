@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
 
     {
         //catch signal
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
             select! {
@@ -120,7 +120,7 @@ async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
             let mut tmp_file = fs::File::create(file_path).await?;
             for _ in 0..100 {
                 let word = random_word::gen(Lang::En).to_string() + "\n";
-                tmp_file.write(word.as_bytes()).await.unwrap();
+                let _ = tmp_file.write(word.as_bytes()).await.unwrap();
             }
         }
 

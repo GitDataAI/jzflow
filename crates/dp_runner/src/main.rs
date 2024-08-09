@@ -31,7 +31,6 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
 use tracing::{
-    error,
     info,
     Level,
 };
@@ -90,7 +89,6 @@ async fn main() -> Result<()> {
         args.buf_size,
         node.up_nodes,
         node.incoming_streams,
-        node.outgoing_streams,
     );
     program.run_backend(&mut join_set, token.clone())?;
 
@@ -129,7 +127,7 @@ async fn main() -> Result<()> {
 
     {
         //catch signal
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
             select! {

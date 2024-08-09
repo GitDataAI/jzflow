@@ -42,13 +42,13 @@ use tracing::{
 use nodes_sdk::{
     fs_cache::FileCache,
     multi_sender::MultiSender,
+    MessageSender,
 };
 use tokio::{
     select,
     sync::{
         broadcast,
         mpsc,
-        oneshot,
         RwLock,
     },
     task::JoinSet,
@@ -83,19 +83,16 @@ where
     pub(crate) downstreams: Vec<String>,
 
     // channel for process avaiable data request
-    pub(crate) ipc_process_data_req_tx:
-        Option<mpsc::Sender<((), oneshot::Sender<Result<Option<AvaiableDataResponse>>>)>>,
+    pub(crate) ipc_process_data_req_tx: Option<MessageSender<(), Option<AvaiableDataResponse>>>,
 
     // channel for response complete data. do clean work when receive this request
-    pub(crate) ipc_process_completed_data_tx:
-        Option<mpsc::Sender<(CompleteDataReq, oneshot::Sender<Result<()>>)>>,
+    pub(crate) ipc_process_completed_data_tx: Option<MessageSender<CompleteDataReq, ()>>,
 
     // channel for submit output data
-    pub(crate) ipc_process_submit_output_tx:
-        Option<mpsc::Sender<(SubmitOuputDataReq, oneshot::Sender<Result<()>>)>>,
+    pub(crate) ipc_process_submit_output_tx: Option<MessageSender<SubmitOuputDataReq, ()>>,
 
     // channel for receive finish state from user container
-    pub(crate) ipc_process_finish_state_tx: Option<mpsc::Sender<((), oneshot::Sender<Result<()>>)>>,
+    pub(crate) ipc_process_finish_state_tx: Option<MessageSender<(), ()>>,
 }
 impl<R> MediaDataTracker<R>
 where
@@ -114,11 +111,11 @@ where
             fs_cache,
             buf_size,
             name: name.to_string(),
-            repo: repo,
+            repo,
             local_state: Arc::new(RwLock::new(TrackerState::Init)),
-            up_nodes: up_nodes,
-            upstreams: upstreams,
-            downstreams: downstreams,
+            up_nodes,
+            upstreams,
+            downstreams,
             ipc_process_submit_output_tx: None,
             ipc_process_completed_data_tx: None,
             ipc_process_data_req_tx: None,
@@ -157,7 +154,7 @@ where
                             .map(|count| info!("revert {count} SelectForSent data to Received"))?;
 
                             //check ready if both upnodes is finish and no pending data, we think it finish
-                            if up_nodes.len() > 0 {
+                            if !up_nodes.is_empty() {
                                 let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
                                 .map_err(|err|anyhow!("query node data {err}"))?
                                 .iter()
@@ -210,7 +207,7 @@ where
         let mut join_set: JoinSet<Result<()>> = JoinSet::new();
 
         let new_data_tx = broadcast::Sender::new(1);
-        if self.downstreams.len() > 0 {
+        if !self.downstreams.is_empty() {
             //process outgoing data
             {
                 let new_data_tx = new_data_tx.clone();
@@ -247,7 +244,7 @@ where
                                 return anyhow::Ok(());
                              }
                            new_data = new_data_rx.recv() => {
-                                if let Err(_) = new_data {
+                                if new_data.is_err() {
                                     //drop fast to provent exceed channel capacity
                                     continue;
                                 }
@@ -270,7 +267,7 @@ where
                                             };
 
                                             //write outgoing
-                                            if new_batch.size >0 && downstreams.len()>0 {
+                                            if new_batch.size >0 && !downstreams.is_empty() {
                                                 info!("start to send data {} {:?}", &req.id, now.elapsed());
                                                 let sent_nodes: Vec<_>=  req.sent.iter().map(|v|v.as_str()).collect();
                                                 if let Err(sent_nodes) =  multi_sender.send(new_batch, &sent_nodes).await {
@@ -383,7 +380,7 @@ where
 
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
-        if self.upstreams.len() > 0 {
+        if !self.upstreams.is_empty() {
             //process user contaienr request
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
@@ -524,7 +521,7 @@ where
             });
         }
 
-        if self.upstreams.len() == 0 {
+        if self.upstreams.is_empty() {
             //receive event from pod
             //inputs nodes need to tell its finish
             let db_repo = self.repo.clone();

@@ -9,7 +9,10 @@ use compute_unit_runner::ipc::{
     SubmitOuputDataReq,
 };
 use jiaozifs_client_rs::{
-    apis,
+    apis::{
+        self,
+        configuration::Configuration,
+    },
     models::RefType,
 };
 use jz_action::utils::StdIntoAnyhowResult;
@@ -24,13 +27,11 @@ use tokio::{
         signal,
         SignalKind,
     },
-    sync::mpsc,
     task::JoinSet,
 };
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{
-    error,
     info,
     Level,
 };
@@ -97,7 +98,7 @@ async fn main() -> Result<()> {
 
     {
         //catch signal
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
             select! {
@@ -120,9 +121,12 @@ async fn read_jz_fs(args: Args) -> Result<()> {
         val => Err(anyhow!("ref type not correct {}", val)),
     }?;
 
-    let mut configuration = apis::configuration::Configuration::default();
-    configuration.base_path = args.jiaozifs_url;
-    configuration.basic_auth = Some((args.username, Some(args.password)));
+    let configuration = Configuration {
+        base_path: args.jiaozifs_url,
+        basic_auth: Some((args.username, Some(args.password))),
+        ..Default::default()
+    };
+
     let file_paths = apis::objects_api::get_files(
         &configuration,
         &args.owner,
@@ -154,7 +158,7 @@ async fn read_jz_fs(args: Args) -> Result<()> {
             )
             .await?;
 
-            let file_path = output_dir.as_path().join(&path);
+            let file_path = output_dir.as_path().join(path);
             let mut tmp_file = fs::File::create(file_path).await?;
             while let Some(item) = byte_stream.next().await {
                 tokio::io::copy(&mut item.unwrap().as_ref(), &mut tmp_file)

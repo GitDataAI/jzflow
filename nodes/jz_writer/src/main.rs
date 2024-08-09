@@ -12,6 +12,7 @@ use compute_unit_runner::ipc::{
 use jiaozifs_client_rs::{
     apis::{
         self,
+        configuration::Configuration,
     },
     models::RefType,
 };
@@ -39,7 +40,6 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
-    debug,
     error,
     info,
     Level,
@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
 
     {
         //catch signal
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
             select! {
@@ -127,9 +127,11 @@ async fn main() -> Result<()> {
 }
 
 async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
-    let mut configuration = apis::configuration::Configuration::default();
-    configuration.base_path = args.jiaozifs_url;
-    configuration.basic_auth = Some((args.username, Some(args.password)));
+    let configuration = Configuration {
+        base_path: args.jiaozifs_url,
+        basic_auth: Some((args.username, Some(args.password))),
+        ..Default::default()
+    };
 
     match args.ref_type.as_str() {
         "wip" => {
@@ -178,7 +180,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                 sleep(Duration::from_secs(2)).await;
                 continue;
             }
-            Err(IPCError::NodeError { code, msg }) => match code {
+            Err(IPCError::NodeError { code, msg: _ }) => match code {
                 ErrorNumber::AlreadyFinish => {
                     return Ok(());
                 }

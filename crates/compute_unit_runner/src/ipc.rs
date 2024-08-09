@@ -13,18 +13,12 @@ use actix_web::{
     HttpResponse,
     HttpServer,
 };
-use anyhow::{
-    anyhow,
-    Result,
-};
+use anyhow::Result;
 use core::str;
 use http_body_util::Collected;
-use jz_action::{
-    core::db::{
-        JobDbRepo,
-        TrackerState,
-    },
-    utils::StdIntoAnyhowResult,
+use jz_action::core::db::{
+    JobDbRepo,
+    TrackerState,
 };
 use serde::{
     ser::SerializeStruct,
@@ -64,7 +58,6 @@ use serde::de::{
     self,
     Deserializer,
     MapAccess,
-    SeqAccess,
     Visitor,
 };
 use serde_repr::*;
@@ -535,7 +528,7 @@ impl IPCClientImpl {
 
 impl IPCClient for IPCClientImpl {
     async fn finish(&self) -> Result<(), IPCError> {
-        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/status").into();
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/status");
 
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::POST)
@@ -558,7 +551,7 @@ impl IPCClient for IPCClientImpl {
     }
 
     async fn status(&self) -> Result<Status, IPCError> {
-        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/status").into();
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/status");
 
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::GET)
@@ -584,7 +577,7 @@ impl IPCClient for IPCClientImpl {
 
     async fn submit_output(&self, req: SubmitOuputDataReq) -> Result<(), IPCError> {
         let json = serde_json::to_string(&req)?;
-        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/submit").into();
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/submit");
 
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::POST)
@@ -607,7 +600,7 @@ impl IPCClient for IPCClientImpl {
     }
 
     async fn request_avaiable_data(&self) -> Result<Option<AvaiableDataResponse>, IPCError> {
-        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data").into();
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data");
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::GET)
             .uri(url)
@@ -637,7 +630,7 @@ impl IPCClient for IPCClientImpl {
     async fn complete_result(&self, id: &str) -> Result<(), IPCError> {
         let req = CompleteDataReq::new(id);
         let json = serde_json::to_string(&req)?;
-        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data").into();
+        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data");
 
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::POST)
@@ -663,8 +656,6 @@ impl IPCClient for IPCClientImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-    use tracing_subscriber;
 
     #[tokio::test]
     async fn test_my_error() {
@@ -682,7 +673,7 @@ mod tests {
                     assert_eq!(code, ErrorNumber::AlreadyFinish);
                     assert_eq!(msg, "aaaa");
                 }
-                _ => Err(anyhow!("not expect type")).unwrap(),
+                _ => panic!("unexpected error type"),
             }
         }
 
@@ -696,7 +687,7 @@ mod tests {
                 IPCError::UnKnown(msg) => {
                     assert_eq!(msg, "bbbbbbbbbbbbbb");
                 }
-                _ => Err(anyhow!("not expect type")).unwrap(),
+                _ => panic!("unexpected error type"),
             }
         }
     }

@@ -23,7 +23,6 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
-    debug,
     error,
     info,
     Level,
@@ -66,7 +65,7 @@ async fn main() -> Result<()> {
 
     {
         //catch signal
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
             select! {
@@ -109,7 +108,7 @@ async fn write_dummy(token: CancellationToken, args: Args) -> Result<()> {
                 sleep(Duration::from_secs(2)).await;
                 continue;
             }
-            Err(IPCError::NodeError { code, msg }) => match code {
+            Err(IPCError::NodeError { code, msg: _ }) => match code {
                 ErrorNumber::AlreadyFinish => {
                     return Ok(());
                 }

@@ -2,7 +2,9 @@ use crate::{
     core::db::{
         Job,
         JobUpdateInfo,
-    }, job::job_mgr::JobDetails, utils::StdIntoAnyhowResult
+    },
+    job::job_mgr::JobDetails,
+    utils::StdIntoAnyhowResult,
 };
 use anyhow::{
     anyhow,
@@ -85,11 +87,7 @@ impl JobClient {
     pub async fn list(&self) -> Result<Vec<Job>> {
         let resp = self
             .client
-            .get(
-                self.base_uri
-                    .clone()
-                    .join("jobs")?
-            )
+            .get(self.base_uri.clone().join("jobs")?)
             .send()
             .await
             .anyhow()?;
@@ -189,9 +187,9 @@ impl JobClient {
         }
 
         resp.bytes()
-        .await
-        .anyhow()
-        .and_then(|body| serde_json::from_slice(&body).anyhow())
-        .anyhow()
+            .await
+            .anyhow()
+            .and_then(|body| serde_json::from_slice(&body).anyhow())
+            .anyhow()
     }
 }

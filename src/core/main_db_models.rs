@@ -5,8 +5,7 @@ use serde::{
     Serialize,
 };
 
-#[derive(Serialize, Deserialize, Debug)]
-#[derive(Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub enum JobState {
     #[default]
     Created,

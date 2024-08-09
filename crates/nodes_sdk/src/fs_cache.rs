@@ -127,6 +127,12 @@ impl FileCache for FSCache {
 #[derive(Clone)]
 pub struct MemCache(Arc<Mutex<HashMap<String, MediaDataBatchResponse>>>);
 
+impl Default for MemCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MemCache {
     pub fn new() -> Self {
         Self(Arc::new(Mutex::new(HashMap::new())))

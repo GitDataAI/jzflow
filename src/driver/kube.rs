@@ -1,10 +1,10 @@
 use super::{
     ChannelHandler,
     Driver,
-    PipelineController,
-    UnitHandler,
     NodeStatus,
+    PipelineController,
     PodStauts,
+    UnitHandler,
 };
 use crate::{
     core::{
@@ -20,7 +20,10 @@ use crate::{
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
-    utils::{IntoAnyhowResult, StdIntoAnyhowResult},
+    utils::{
+        IntoAnyhowResult,
+        StdIntoAnyhowResult,
+    },
 };
 use anyhow::{
     anyhow,
@@ -36,13 +39,19 @@ use handlebars::{
     RenderError,
 };
 use k8s_openapi::api::{
-    apps::v1::StatefulSet, core::v1::{
-        Namespace, PersistentVolumeClaim, Pod, Service
-    }
+    apps::v1::StatefulSet,
+    core::v1::{
+        Namespace,
+        PersistentVolumeClaim,
+        Pod,
+        Service,
+    },
 };
 use kube::{
     api::{
-        DeleteParams, ListParams, PostParams
+        DeleteParams,
+        ListParams,
+        PostParams,
     },
     runtime::reflector::Lookup,
     Api,
@@ -53,10 +62,6 @@ use std::{
     collections::HashMap,
     default::Default,
     marker::PhantomData,
-    sync::{
-        Arc,
-        Mutex,
-    },
 };
 use tokio_retry::{
     strategy::ExponentialBackoff,
@@ -69,12 +74,12 @@ where
     R: JobDbRepo,
 {
     pub(crate) client: Client,
-    pub(crate) node_name:String,
+    pub(crate) node_name: String,
     pub(crate) namespace: String,
     pub(crate) stateset_name: String,
     pub(crate) claim_name: String,
-    pub(crate) service_name: String,
-    pub(crate) db_repo: R,
+    pub(crate) _service_name: String,
+    pub(crate) _db_repo: R,
 }
 
 impl<R> ChannelHandler for KubeChannelHander<R>
@@ -84,43 +89,64 @@ where
     fn name(&self) -> &str {
         &self.node_name
     }
-    
+
     async fn status(&self) -> Result<NodeStatus> {
-        let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.namespace);
-        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), &self.namespace);
-        let service_api: Api<Service> = Api::namespaced(self.client.clone(), &self.namespace);
-        let pods_api:Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+        let statefulset_api: Api<StatefulSet> =
+            Api::namespaced(self.client.clone(), &self.namespace);
+        let claim_api: Api<PersistentVolumeClaim> =
+            Api::namespaced(self.client.clone(), &self.namespace);
+        let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
 
         let statefulset = statefulset_api.get(&self.stateset_name).await.anyhow()?;
-        let selector = statefulset.spec.as_ref().unwrap().selector.match_labels.as_ref().expect("set in template")
-        .iter()
-        .map(|(key, value)| format!("{}={}", key, value))
-        .collect::<Vec<_>>()
-        .join(",");
+        let selector = statefulset
+            .spec
+            .as_ref()
+            .unwrap()
+            .selector
+            .match_labels
+            .as_ref()
+            .expect("set in template")
+            .iter()
+            .map(|(key, value)| format!("{}={}", key, value))
+            .collect::<Vec<_>>()
+            .join(",");
 
         let list_params = ListParams::default().labels(&selector);
         let pods = pods_api.list(&list_params).await.anyhow()?;
 
         let pvc = claim_api.get(&self.claim_name).await.anyhow()?;
-        let cap = pvc.status.unwrap().capacity.unwrap().get("storage").map(|cap|cap.0.clone()).unwrap_or_default();
+        let cap = pvc
+            .status
+            .unwrap()
+            .capacity
+            .unwrap()
+            .get("storage")
+            .map(|cap| cap.0.clone())
+            .unwrap_or_default();
 
         let mut node_status = NodeStatus {
             name: self.node_name.clone(),
-            replicas: statefulset.spec.as_ref().and_then(|spec|spec.replicas).unwrap_or_default() as u32,
+            replicas: statefulset
+                .spec
+                .as_ref()
+                .and_then(|spec| spec.replicas)
+                .unwrap_or_default() as u32,
             storage: cap,
             pods: HashMap::new(),
         };
 
-
         for pod in pods {
             let pod_name = pod.metadata.name.expect("set in template");
-            let phase = pod.status.and_then(|status|status.phase).unwrap_or_default();
+            let phase = pod
+                .status
+                .and_then(|status| status.phase)
+                .unwrap_or_default();
 
-            let pod_status = PodStauts{
+            let pod_status = PodStauts {
                 state: phase,
-                disk_usage:0,
-                cpu_usage:0,
-                memory_usage:0
+                disk_usage: 0,
+                cpu_usage: 0,
+                memory_usage: 0,
             };
             node_status.pods.insert(pod_name, pod_status);
         }
@@ -144,12 +170,12 @@ where
     R: JobDbRepo,
 {
     pub(crate) client: Client,
-    pub(crate) node_name:String,
+    pub(crate) node_name: String,
     pub(crate) namespace: String,
     pub(crate) stateset_name: String,
     pub(crate) claim_name: String,
-    pub(crate) service_name: String,
-    pub(crate) db_repo: R,
+    pub(crate) _service_name: String,
+    pub(crate) _db_repo: R,
     pub(crate) channel: Option<KubeChannelHander<R>>,
 }
 
@@ -157,45 +183,69 @@ impl<R> UnitHandler for KubeHandler<R>
 where
     R: JobDbRepo,
 {
+    type Output = KubeChannelHander<R>;
+
     fn name(&self) -> &str {
         &self.node_name
     }
 
     async fn status(&self) -> Result<NodeStatus> {
-        let statefulset_api: Api<StatefulSet> = Api::namespaced(self.client.clone(), &self.namespace);
-        let claim_api: Api<PersistentVolumeClaim> = Api::namespaced(self.client.clone(), &self.namespace);
-        let service_api: Api<Service> = Api::namespaced(self.client.clone(), &self.namespace);
-        let pods_api:Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+        let statefulset_api: Api<StatefulSet> =
+            Api::namespaced(self.client.clone(), &self.namespace);
+        let claim_api: Api<PersistentVolumeClaim> =
+            Api::namespaced(self.client.clone(), &self.namespace);
+        let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
 
         let statefulset = statefulset_api.get(&self.stateset_name).await.anyhow()?;
-        let selector = statefulset.spec.as_ref().unwrap().selector.match_labels.as_ref().expect("set in template")
-        .iter()
-        .map(|(key, value)| format!("{}={}", key, value))
-        .collect::<Vec<_>>()
-        .join(",");
+        let selector = statefulset
+            .spec
+            .as_ref()
+            .unwrap()
+            .selector
+            .match_labels
+            .as_ref()
+            .expect("set in template")
+            .iter()
+            .map(|(key, value)| format!("{}={}", key, value))
+            .collect::<Vec<_>>()
+            .join(",");
 
         let list_params = ListParams::default().labels(&selector);
         let pods = pods_api.list(&list_params).await.anyhow()?;
 
         let pvc = claim_api.get(&self.claim_name).await.anyhow()?;
-        let cap = pvc.status.unwrap().capacity.unwrap().get("storage").map(|cap|cap.0.clone()).unwrap_or_default();
+        let cap = pvc
+            .status
+            .unwrap()
+            .capacity
+            .unwrap()
+            .get("storage")
+            .map(|cap| cap.0.clone())
+            .unwrap_or_default();
 
         let mut node_status = NodeStatus {
             name: self.node_name.clone(),
-            replicas: statefulset.spec.as_ref().and_then(|spec|spec.replicas).unwrap_or_default() as u32,
+            replicas: statefulset
+                .spec
+                .as_ref()
+                .and_then(|spec| spec.replicas)
+                .unwrap_or_default() as u32,
             storage: cap,
             pods: HashMap::new(),
         };
 
         for pod in pods {
             let pod_name = pod.metadata.name.expect("set in template");
-            let phase = pod.status.and_then(|status|status.phase).unwrap_or_default();
+            let phase = pod
+                .status
+                .and_then(|status| status.phase)
+                .unwrap_or_default();
 
-            let pod_status = PodStauts{
+            let pod_status = PodStauts {
                 state: phase,
-                disk_usage:0,
-                cpu_usage:0,
-                memory_usage:0
+                disk_usage: 0,
+                cpu_usage: 0,
+                memory_usage: 0,
             };
             node_status.pods.insert(pod_name, pod_status);
         }
@@ -215,8 +265,8 @@ where
     }
 
     #[allow(refining_impl_trait)]
-    async fn channel_handler(&self) -> Result<Option<Arc<Mutex<KubeChannelHander<R>>>>> {
-        todo!()
+    async fn channel_handler(&self) -> Result<Option<&KubeChannelHander<R>>> {
+        Ok(self.channel.as_ref())
     }
 }
 
@@ -224,8 +274,8 @@ pub struct KubePipelineController<R>
 where
     R: JobDbRepo,
 {
-    client: Client,
-    db_repo: R,
+    _client: Client,
+    _db_repo: R,
     handlers: HashMap<String, KubeHandler<R>>,
 }
 
@@ -235,8 +285,8 @@ where
 {
     fn new(repo: R, client: Client) -> Self {
         Self {
-            db_repo: repo,
-            client,
+            _db_repo: repo,
+            _client: client,
             handlers: Default::default(),
         }
     }
@@ -509,11 +559,11 @@ where
                             .name()
                             .expect("set name in template")
                             .to_string(),
-                        service_name: channel_service
+                        _service_name: channel_service
                             .name()
                             .expect("set name in template")
                             .to_string(),
-                        db_repo: repo.clone(),
+                        _db_repo: repo.clone(),
                     }),
                     vec![channel_node_name],
                 )
@@ -596,12 +646,12 @@ where
                     .name()
                     .expect("set name in template")
                     .to_string(),
-                service_name: unit_service
+                _service_name: unit_service
                     .name()
                     .expect("set name in template")
                     .to_string(),
                 channel: channel_handler,
-                db_repo: repo.clone(),
+                _db_repo: repo.clone(),
             };
 
             pipeline_ctl.handlers.insert(node.name.clone(), handler);
@@ -639,7 +689,7 @@ where
                     .await?;
 
                 Some(KubeChannelHander {
-                    node_name:node.name.clone() + "-channel",
+                    node_name: node.name.clone() + "-channel",
                     client: self.client.clone(),
                     namespace: run_id.to_string().clone(),
                     stateset_name: channel_statefulset
@@ -650,11 +700,11 @@ where
                         .name()
                         .expect("set name in template")
                         .to_string(),
-                    service_name: channel_service
+                    _service_name: channel_service
                         .name()
                         .expect("set name in template")
                         .to_string(),
-                    db_repo: repo.clone(),
+                    _db_repo: repo.clone(),
                 })
             } else {
                 None
@@ -684,12 +734,12 @@ where
                     .name()
                     .expect("set name in template")
                     .to_string(),
-                service_name: unit_service
+                _service_name: unit_service
                     .name()
                     .expect("set name in template")
                     .to_string(),
                 channel: channel_handler,
-                db_repo: repo.clone(),
+                _db_repo: repo.clone(),
             };
 
             pipeline_ctl.handlers.insert(node.name.clone(), handler);
@@ -787,6 +837,4 @@ mod tests {
         kube_driver.deploy("ntest", &dag).await.unwrap();
         //    kube_driver.clean("ntest").await.unwrap();
     }
-
-    fn is_send_sync<T: Send + Sync>(v: T) {}
 }

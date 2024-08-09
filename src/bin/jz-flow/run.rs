@@ -70,15 +70,15 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
                 _ = token.cancelled() => {
                     handler.stop(true).await;
                    info!("rpc server stopped");
-                   return Ok(());
                 }
             };
+            anyhow::Ok(())
         });
     }
 
     {
         //catch signal
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
             select! {

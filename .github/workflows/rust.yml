@@ -17,6 +17,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Run Clippy
+      run: cargo +nightly  clippy --fix --workspace --exclude jiaozifs_client_rs --allow-dirty
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
+    - name: Run tests
+      run: cargo test --verbose --workspace
+
     - name: Start minikube
       uses: medyagh/setup-minikube@latest
 
@@ -25,5 +34,4 @@ jobs:
         eval $(minikube -p minikube docker-env)
         make minikube-docker
       
-    - name: Run tests
-      run: cargo test --verbose --workspace
+

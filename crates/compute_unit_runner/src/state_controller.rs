@@ -57,7 +57,7 @@ where
                 }
                 _ = interval.tick() => {
                     match repo
-                    .get_node_by_name(&name)
+                    .get_node_by_name(name)
                     .await{
                         Ok(record)=> {
                             debug!("{} fetch state from db", record.node_name);
@@ -70,15 +70,10 @@ where
                             *local_state = record.state.clone();
                             info!("update state {:?} -> {:?}", old_local_state, local_state);
                             drop(local_state);
-                            match record.state {
-                                TrackerState::Ready => {
-                                    if old_local_state == TrackerState::Init {
-                                        //start
-                                        info!("start data processing {:?}", record.incoming_streams);
-                                        join_set = Some(program_guard.route_data(token.clone()).await?);
-                                    }
-                                }
-                                _ => {}
+                            if record.state == TrackerState::Ready && old_local_state == TrackerState::Init {
+                                //start
+                                info!("start data processing {:?}", record.incoming_streams);
+                                join_set = Some(program_guard.route_data(token.clone()).await?);
                             }
                         },
                         Err(err)=> error!("fetch node state from db {err}")

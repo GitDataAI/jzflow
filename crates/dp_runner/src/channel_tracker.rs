@@ -14,20 +14,19 @@ use jz_action::{
     },
     network::datatransfer::MediaDataBatchResponse,
 };
-use nodes_sdk::fs_cache::FileCache;
+use nodes_sdk::{
+    fs_cache::FileCache,
+    MessageSender,
+};
 use std::{
     sync::Arc,
     time::Duration,
 };
 use tokio::{
     select,
-    sync::{
-        mpsc::{
+    sync::mpsc::{
             self,
-            Sender,
         },
-        oneshot,
-    },
     task::JoinSet,
     time::{
         self,
@@ -60,12 +59,9 @@ where
 
     pub(crate) upstreams: Vec<String>,
 
-    pub(crate) downstreams: Vec<String>,
+    pub(crate) incoming_tx: Option<MessageSender<MediaDataBatchResponse, ()>>,
 
-    pub(crate) incoming_tx: Option<Sender<(MediaDataBatchResponse, oneshot::Sender<Result<()>>)>>,
-
-    pub(crate) request_tx:
-        Option<Sender<((), oneshot::Sender<Result<Option<MediaDataBatchResponse>>>)>>,
+    pub(crate) request_tx: Option<MessageSender<(), Option<MediaDataBatchResponse>>>,
 }
 
 impl<R> ChannelTracker<R>
@@ -79,17 +75,15 @@ where
         buf_size: usize,
         up_nodes: Vec<String>,
         upstreams: Vec<String>,
-        downstreams: Vec<String>,
     ) -> Self {
         ChannelTracker {
             name: name.to_string(),
-            repo: repo,
+            repo,
             fs_cache,
             buf_size,
             local_state: TrackerState::Init,
-            up_nodes: up_nodes,
-            upstreams: upstreams,
-            downstreams: downstreams,
+            up_nodes,
+            upstreams,
             request_tx: None,
             incoming_tx: None,
         }
@@ -177,7 +171,7 @@ where
         &mut self,
         token: CancellationToken,
     ) -> Result<JoinSet<Result<()>>> {
-        if self.upstreams.len() == 0 {
+        if self.upstreams.is_empty() {
             return Err(anyhow!("no upstream"));
         }
 
@@ -292,7 +286,7 @@ where
                         //write batch files
                         if let Err(err) = fs_cache.write(data_batch).await {
                             error!("write files to disk fail {}", err);
-                            resp.send(Err(err.into())).expect("request alread listen this channel");
+                            resp.send(Err(err)).expect("request alread listen this channel");
                             continue;
                         }
 
@@ -301,7 +295,7 @@ where
                         if let Err(err) = db_repo.insert_new_path(&DataRecord{
                             node_name: node_name.clone(),
                             id:id.clone(),
-                            size: size,
+                            size,
                             state: DataState::Received,
                             sent: vec![],
                             direction:Direction::In,

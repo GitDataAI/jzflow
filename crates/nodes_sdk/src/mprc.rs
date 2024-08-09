@@ -12,6 +12,15 @@ where
     entries: Vec<(K, T)>,
 }
 
+impl<K, T> Default for Mprs<K, T>
+where
+    T: Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K, T> Mprs<K, T>
 where
     T: Clone,
@@ -20,10 +29,10 @@ where
         Mprs { entries: vec![] }
     }
 
-    pub fn remove<Q: ?Sized>(&mut self, k: &Q) -> Option<T>
+    pub fn remove<Q>(&mut self, k: &Q) -> Option<T>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         for i in 0..self.entries.len() {
             if self.entries[i].0.borrow() == k {
@@ -108,8 +117,8 @@ mod tests {
             let (tx, mut rx) = mpsc::channel(10);
             let counter = counter.clone();
             mprs.insert("A".to_string(), tx);
-            let _ = tokio::spawn(async move {
-                while let Some(_) = rx.recv().await {
+            tokio::spawn(async move {
+                while (rx.recv().await).is_some() {
                     counter.fetch_add(1, Ordering::SeqCst);
                     println!("A receive");
                 }
@@ -120,8 +129,8 @@ mod tests {
             let (tx, mut rx) = mpsc::channel(10);
             mprs.insert("B".to_string(), tx);
             let counter = counter.clone();
-            let _ = tokio::spawn(async move {
-                while let Some(_) = rx.recv().await {
+            tokio::spawn(async move {
+                while (rx.recv().await).is_some() {
                     counter.fetch_add(1, Ordering::SeqCst);
                     println!("B receive");
                 }

@@ -150,6 +150,7 @@ impl Graph {
     }
 
     /// Get the out degree of a node.
+    #[allow(dead_code)]
     pub(crate) fn get_out_degree(&self, id: &str) -> usize {
         match self.adj.get(id) {
             Some(id) => id.len(),
@@ -158,6 +159,7 @@ impl Graph {
     }
 
     /// Get the in_comming nodes.
+    #[allow(dead_code)]
     pub(crate) fn get_in_degree(&self, id: &str) -> usize {
         match self.in_degree.get(id) {
             Some(id) => id.len(),
@@ -183,6 +185,7 @@ impl Graph {
 
     /// Get all the successors of a node (direct or indirect).
     /// This function will return a vector of indices of successors (including itself).
+    #[allow(dead_code)]
     pub(crate) fn get_node_successors(&self, id: &str) -> Vec<String> {
         match self.adj.get(id) {
             Some(outs) => {

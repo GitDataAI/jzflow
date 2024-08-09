@@ -3,10 +3,7 @@ use jz_action::core::db::{
     JobDbRepo,
     TrackerState,
 };
-use std::{
-    io::Write,
-    sync::Arc,
-};
+use std::sync::Arc;
 use tokio::{
     select,
     sync::RwLock,
@@ -58,7 +55,7 @@ where
                 }
                 _ = interval.tick() => {
                     match repo
-                    .get_node_by_name(&name)
+                    .get_node_by_name(name)
                     .await{
                         Ok(record)=> {
                             debug!("{} fetch state from db", record.node_name);
@@ -69,15 +66,10 @@ where
                             let old_local_state = program_guard.local_state.clone();
                             program_guard.local_state = record.state.clone();
                             info!("update state {:?} -> {:?}", &old_local_state, &record.state);
-                            match record.state {
-                                TrackerState::Ready => {
-                                    if old_local_state == TrackerState::Init {
-                                        //start
-                                        info!("start data processing {:?}", record.incoming_streams);
-                                        join_set = Some(program_guard.route_data(token.clone()).await?);
-                                    }
-                                }
-                                _ => {}
+                            if record.state == TrackerState::Ready && old_local_state == TrackerState::Init {
+                                //start
+                                info!("start data processing {:?}", record.incoming_streams);
+                                join_set = Some(program_guard.route_data(token.clone()).await?);
                             }
                         },
                         Err(err)=> error!("fetch node state from db {err}")

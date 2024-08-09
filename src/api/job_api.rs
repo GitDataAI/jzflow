@@ -4,11 +4,11 @@ use crate::{
     core::db::{
         Job,
         JobDbRepo,
-        JobRepo,
         JobUpdateInfo,
         MainDbRepo,
     },
-    driver::Driver, job::job_mgr::JobManager,
+    driver::Driver,
+    job::job_mgr::JobManager,
 };
 use actix_web::{
     web,
@@ -17,11 +17,9 @@ use actix_web::{
 use mongodb::bson::oid::ObjectId;
 
 //TODO change to use route macro after https://github.com/actix/actix-web/issues/2866  resolved
-async fn create<D, MAINR, JOBR>(db_repo: web::Data<MAINR>, data: web::Json<Job>) -> HttpResponse
+async fn create<MAINR>(db_repo: web::Data<MAINR>, data: web::Json<Job>) -> HttpResponse
 where
-    D: Driver,
     MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
 {
     match db_repo.insert(&data.0).await {
         Ok(inserted_result) => HttpResponse::Ok().json(&inserted_result),
@@ -29,11 +27,9 @@ where
     }
 }
 
-async fn get<D, MAINR, JOBR>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) -> HttpResponse
+async fn get<MAINR>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) -> HttpResponse
 where
-    D: Driver,
     MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
 {
     match db_repo.get(&path.into_inner()).await {
         Ok(Some(inserted_result)) => HttpResponse::Ok().json(&inserted_result),
@@ -42,11 +38,9 @@ where
     }
 }
 
-async fn list<D, MAINR, JOBR>(db_repo: web::Data<MAINR>) -> HttpResponse
+async fn list<MAINR>(db_repo: web::Data<MAINR>) -> HttpResponse
 where
-    D: Driver,
     MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
 {
     match db_repo.list_jobs().await {
         Ok(jobs) => HttpResponse::Ok().json(&jobs),
@@ -54,14 +48,9 @@ where
     }
 }
 
-async fn delete<D, MAINR, JOBR>(
-    db_repo: web::Data<MAINR>,
-    path: web::Path<ObjectId>,
-) -> HttpResponse
+async fn delete<MAINR>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) -> HttpResponse
 where
-    D: Driver,
     MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
 {
     match db_repo.delete(&path.into_inner()).await {
         Ok(_) => HttpResponse::Ok().finish(),
@@ -69,15 +58,13 @@ where
     }
 }
 
-async fn update<D, MAINR, JOBR>(
+async fn update<MAINR>(
     db_repo: web::Data<MAINR>,
     path: web::Path<ObjectId>,
     query: web::Query<JobUpdateInfo>,
 ) -> HttpResponse
 where
-    D: Driver,
     MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
 {
     match db_repo
         .update(&path.into_inner(), &query.into_inner())
@@ -98,9 +85,7 @@ where
     JOBR: JobDbRepo,
 {
     let id = ObjectId::from_str(&path.into_inner()).unwrap();
-    match job_manager.get_job_details(&id)
-        .await
-    {
+    match job_manager.get_job_details(&id).await {
         Ok(detail) => HttpResponse::Ok().json(detail),
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
@@ -114,18 +99,14 @@ where
 {
     cfg.service(
         web::resource("/job")
-            .route(web::post().to(create::<D, MAINR, JOBR>))
-            .route(web::delete().to(delete::<D, MAINR, JOBR>)),
+            .route(web::post().to(create::<MAINR>))
+            .route(web::delete().to(delete::<MAINR>)),
     )
     .service(
         web::resource("/job/{id}")
-            .route(web::get().to(get::<D, MAINR, JOBR>))
-            .route(web::post().to(update::<D, MAINR, JOBR>))
-    ).service(
-                web::resource("/jobs")
-                    .route(web::get().to(list::<D, MAINR, JOBR>))
-    ).service(
-        web::resource("/job/detail/{id}")
-            .route(web::get().to(job_details::<D, MAINR, JOBR>))
-    );
+            .route(web::get().to(get::<MAINR>))
+            .route(web::post().to(update::<MAINR>)),
+    )
+    .service(web::resource("/jobs").route(web::get().to(list::<MAINR>)))
+    .service(web::resource("/job/detail/{id}").route(web::get().to(job_details::<D, MAINR, JOBR>)));
 }
