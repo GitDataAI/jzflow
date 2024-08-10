@@ -15,10 +15,17 @@ use tracing::{
 
 pub async fn monitor_tasks(join_set: &mut JoinSet<Result<()>>) -> Result<()> {
     let mut has_err = false;
-    while let Some(result) = join_set.join_next().await {
-        if let Err(err) = result {
-            has_err = true;
-            error!("Task exited with error: {err}");
+    while let Some(task_result) = join_set.join_next().await {
+        match task_result {
+            Ok(Err(err)) => {
+                has_err = true;
+                error!("Task exited with error: {err}");
+            }
+            Err(join_err) => {
+                has_err = true;
+                error!("Failed to join task: {join_err}");
+            },
+            _=>{}
         }
     }
 
