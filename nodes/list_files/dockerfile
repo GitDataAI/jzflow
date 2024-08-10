@@ -4,4 +4,4 @@ WORKDIR /app
 
 RUN mkdir -p /app
 
-ADD dist/dummy_in /dummy_in
+ADD dist/list_files /list_files

@@ -33,11 +33,11 @@ build-nodes: $(OUTPUT)
 	cargo build -p jz_writer --release
 	cp target/release/jz_writer $(OUTPUT)/jz_writer
 
-	cargo build -p dummy_in --release
-	cp target/release/dummy_in $(OUTPUT)/dummy_in
+	cargo build -p make_article --release
+	cp target/release/make_article $(OUTPUT)/make_article
 
-	cargo build -p dummy_out --release
-	cp target/release/dummy_out $(OUTPUT)/dummy_out
+	cargo build -p list_files --release
+	cp target/release/list_files $(OUTPUT)/list_files
 
 	cargo build -p copy_in_place --release
 	cp target/release/copy_in_place $(OUTPUT)/copy_in_place
@@ -45,8 +45,8 @@ build-nodes: $(OUTPUT)
 docker_nodes: build-nodes
 	docker build -f ./nodes/jz_reader/dockerfile -t gitdatateam/jz_reader:latest .
 	docker build -f ./nodes/jz_writer/dockerfile -t gitdatateam/jz_writer:latest .
-	docker build -f ./nodes/dummy_in/dockerfile -t gitdatateam/dummy_in:latest .
-	docker build -f ./nodes/dummy_out/dockerfile -t gitdatateam/dummy_out:latest .
+	docker build -f ./nodes/make_article/dockerfile -t gitdatateam/make_article:latest .
+	docker build -f ./nodes/list_files/dockerfile -t gitdatateam/list_files:latest .
 	docker build -f ./nodes/copy_in_place/dockerfile -t gitdatateam/copy_in_place:latest .
 
 ################## minikube

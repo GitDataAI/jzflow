@@ -3,10 +3,10 @@
     "version": "v1",
     "dag": [
         {
-            "name": "dummy-in",
+            "name": "make-article",
             "spec": {
-                "image": "gitdatateam/dummy_in:latest",
-                "command": "/dummy_in",
+                "image": "gitdatateam/make_article:latest",
+                "command": "/make_article",
                 "args": [
                     "--log-level=debug",
                     "--total-count=100"
@@ -17,7 +17,7 @@
             "name": "copy-in-place",
             "node_type": "ComputeUnit",
             "dependency": [
-                "dummy-in"
+                "make-article"
             ],
             "spec": {
                 "image": "gitdatateam/copy_in_place:latest",
@@ -32,14 +32,14 @@
             }
         },
         {
-            "name": "dummy-out",
+            "name": "list-files",
             "node_type": "ComputeUnit",
             "dependency": [
                 "copy-in-place"
             ],
             "spec": {
-                "image": "gitdatateam/dummy_out:latest",
-                "command": "/dummy_out",
+                "image": "gitdatateam/list_files:latest",
+                "command": "/list_files",
                 "replicas": 3,
                 "args": [
                     "--log-level=debug"

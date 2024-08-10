@@ -41,14 +41,14 @@ use handlebars::{
 };
 use k8s_metrics::v1beta1 as metricsv1;
 use k8s_openapi::api::{
-        apps::v1::StatefulSet,
-        core::v1::{
-            Namespace,
-            PersistentVolumeClaim,
-            Pod,
-            Service,
-        },
-    };
+    apps::v1::StatefulSet,
+    core::v1::{
+        Namespace,
+        PersistentVolumeClaim,
+        Pod,
+        Service,
+    },
+};
 use kube::{
     api::{
         DeleteParams,
@@ -364,7 +364,7 @@ impl<R> KubePipelineController<R>
 where
     R: JobDbRepo,
 {
-    fn new(repo: R, client: Client,topo_sort_nodes: Vec<String>) -> Self {
+    fn new(repo: R, client: Client, topo_sort_nodes: Vec<String>) -> Self {
         Self {
             _db_repo: repo,
             topo_sort_nodes,
@@ -544,7 +544,8 @@ where
         };
         repo.insert_global_state(&graph_record).await?;
         let topo_sort_nodes = graph.topo_sort_nodes();
-        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone(),topo_sort_nodes);
+        let mut pipeline_ctl =
+            KubePipelineController::new(repo.clone(), self.client.clone(), topo_sort_nodes);
         for node in graph.iter() {
             if node.spec.command.is_empty() {
                 return Err(anyhow!("{} dont have command", &node.name));
@@ -761,7 +762,8 @@ where
         let service_api: Api<Service> = Api::namespaced(self.client.clone(), run_id);
 
         let topo_sort_nodes = graph.topo_sort_nodes();
-        let mut pipeline_ctl = KubePipelineController::new(repo.clone(), self.client.clone(),topo_sort_nodes);
+        let mut pipeline_ctl =
+            KubePipelineController::new(repo.clone(), self.client.clone(), topo_sort_nodes);
         for node in graph.iter() {
             let up_nodes = graph.get_incomming_nodes(&node.name);
             // query channel
@@ -869,17 +871,17 @@ mod tests {
           "version": "v1",
           "dag": [
            {
-              "name": "dummy-in",
+              "name": "make-article",
               "spec": {
-                "image": "gitdatateam/dummy_in:latest",
-                "command":"/dummy_in",
+                "image": "gitdatateam/make_article:latest",
+                "command":"/make_article",
                 "args": ["--log-level=debug", "--total-count=100"]
               }
             },   {
               "name": "copy-in-place",
               "node_type": "ComputeUnit",
               "dependency": [
-                "dummy-in"
+                "make-article"
               ],
               "spec": {
                 "image": "gitdatateam/copy_in_place:latest",
@@ -892,14 +894,14 @@ mod tests {
               }
             },
             {
-              "name": "dummy-out",
+              "name": "list-files",
               "node_type": "ComputeUnit",
               "dependency": [
                 "copy-in-place"
               ],
               "spec": {
-                "image": "gitdatateam/dummy_out:latest",
-                "command":"/dummy_out",
+                "image": "gitdatateam/list_files:latest",
+                "command":"/list_files",
                 "replicas": 3,
                 "args": ["--log-level=debug"]
               },

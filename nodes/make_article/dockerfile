@@ -4,4 +4,4 @@ WORKDIR /app
 
 RUN mkdir -p /app
 
-ADD dist/dummy_out /dummy_out
+ADD dist/make_article /make_article

@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 
     {
         let token = token.clone();
-        join_set.spawn(async move { dummy_in(token, args).await });
+        join_set.spawn(async move { make_article(token, args).await });
     }
 
     {
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
     nodes_sdk::monitor_tasks(&mut join_set).await
 }
 
-async fn dummy_in(token: CancellationToken, args: Args) -> Result<()> {
+async fn make_article(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     let count_file = tmp_path.join("number.txt");

@@ -1,5 +1,5 @@
 [package]
-name = "dummy_out"
+name = "list_files"
 version = "0.1.0"
 repository.workspace = true
 license.workspace = true

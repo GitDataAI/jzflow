@@ -91,6 +91,7 @@ pub trait GraphRepo {
 
 pub trait NodeRepo {
     fn insert_node(&self, state: &Node) -> impl std::future::Future<Output = Result<()>> + Send;
+
     fn get_node_by_name(
         &self,
         name: &str,

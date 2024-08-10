@@ -1,5 +1,5 @@
 [package]
-name = "dummy_in"
+name = "make_article"
 version = "0.1.0"
 repository.workspace = true
 license.workspace = true

@@ -31,7 +31,7 @@ use walkdir::WalkDir;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "dummy_out",
+    name = "list_files",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-action>",
     about = "embed in k8s images"
@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
 
     {
         let token = token.clone();
-        join_set.spawn(async move { write_dummy(token, args).await });
+        join_set.spawn(async move { print_files(token, args).await });
     }
 
     {
@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
     nodes_sdk::monitor_tasks(&mut join_set).await
 }
 
-async fn write_dummy(token: CancellationToken, args: Args) -> Result<()> {
+async fn print_files(token: CancellationToken, args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     loop {
