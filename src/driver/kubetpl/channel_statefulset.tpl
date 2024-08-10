@@ -26,10 +26,10 @@
         "containers": [
           {
             "name": "channel",
-            "image": {{#if node.channel.image}} "{{{node.channel.image}}}"{{else}}"gitdatateam/dp_runner:latest"{{/if}},
+            "image": {{#if node.channel.image}} "{{{node.channel.image}}}"{{else}}"gitdatateam/channel_runner:latest"{{/if}},
             "imagePullPolicy": "IfNotPresent",
             "command": [
-              "/dp_runner"
+              "/channel_runner"
             ],
             "args": [
               "--node-name={{{node.name}}}-channel",

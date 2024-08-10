@@ -82,6 +82,27 @@ impl MongoRunDbRepo {
         }
 
         {
+            //create index for nodes
+            let idx_opts = IndexOptions::builder()
+                .name("idx_created_at".to_owned())
+                .build();
+
+            let index = IndexModel::builder()
+                .keys(doc! { "created_at": 1 })
+                .options(idx_opts)
+                .build();
+
+            if let Err(err) = data_col.create_index(index).await {
+                match *err.kind {
+                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
+                    err => {
+                        return Err(anyhow!("create data created_at error {err}"));
+                    }
+                }
+            }
+        }
+
+        {
             //create  index  for data
             let idx_opts = IndexOptions::builder()
                 .name("idx_node_name_state_direction".to_owned())
@@ -187,13 +208,12 @@ impl DataRepo for MongoRunDbRepo {
                 "updated_at":Utc::now().timestamp(),
             },
         };
-
         self
             .data_col
             .find_one_and_update(
                 doc! {"node_name":node_name, "state": doc! {"$in": ["Received","PartialSent"]}, "direction":to_variant_name(&direction)?},
-                update
-            ).await
+                update,
+            ).sort(doc! { "created_at": 1 }).await
             .anyhow()
     }
 

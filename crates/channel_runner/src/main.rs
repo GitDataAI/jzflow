@@ -37,7 +37,7 @@ use tracing::{
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "dp_runner",
+    name = "channel_runner",
     version = "0.0.1",
     author = "Author Name <github.com/GitDataAI/jz-flow>",
     about = "embed in k8s images. make process data input output"

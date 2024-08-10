@@ -56,6 +56,7 @@ pub enum DataState {
     PartialSent,
     Sent,
     EndRecieved,
+    KeeptForMetadata,
     Clean,
     Error,
 }
@@ -72,7 +73,7 @@ pub struct DataRecord {
     pub node_name: String,
     /// data id but not unique, becase the id in channel wiil transfer to compute unit
     pub id: String,
-
+    pub is_metadata: bool,
     pub size: u32,
     pub state: DataState,
     pub direction: Direction,

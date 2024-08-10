@@ -7,8 +7,6 @@ import "common.proto";
 service DataStream {
   rpc transferMediaData(MediaDataBatchResponse) returns (common.Empty) {}
   rpc requestMediaData(common.Empty) returns (MediaDataBatchResponse) {}
-  
-  rpc transferTabularData(TabularDataBatchResponse) returns (common.Empty) {}
 }
 
 message MediaDataCell {
@@ -20,35 +18,6 @@ message MediaDataCell {
 message MediaDataBatchResponse {
     string id = 1;
     uint32 size = 2;
-    repeated MediaDataCell cells = 3;
-}
-
-
-// Tabular
-
-enum DataType {
-    STRING = 0;
-    INT32 = 1;
-}
-
-message Column {
-  string name = 1;
-  DataType data_type = 2; 
-}
-
-message DataValue {
-  oneof value {
-    int32 int_value = 1;
-    string string_value = 2;
-  }
-}
-
-message Row {
-  repeated DataValue values = 1;
-}
-
-message TabularDataBatchResponse {
-  int32 size = 1;
-  repeated Column columns = 2;
-  repeated Row rows = 3;
+    string from_node = 3;
+    repeated MediaDataCell cells = 4;
 }

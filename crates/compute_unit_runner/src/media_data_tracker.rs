@@ -1,6 +1,7 @@
 use crate::ipc::{
     AvaiableDataResponse,
     CompleteDataReq,
+    RequetDataReq,
     SubmitOuputDataReq,
 };
 use anyhow::{
@@ -41,6 +42,7 @@ use tracing::{
 
 use nodes_sdk::{
     fs_cache::FileCache,
+    metadata::is_metadata,
     multi_sender::MultiSender,
     MessageSender,
 };
@@ -70,7 +72,7 @@ where
 
     pub(crate) buf_size: usize,
 
-    pub(crate) fs_cache: Arc<dyn FileCache>,
+    pub(crate) data_cache: Arc<dyn FileCache>,
 
     pub(crate) repo: R,
 
@@ -83,7 +85,8 @@ where
     pub(crate) downstreams: Vec<String>,
 
     // channel for process avaiable data request
-    pub(crate) ipc_process_data_req_tx: Option<MessageSender<(), Option<AvaiableDataResponse>>>,
+    pub(crate) ipc_process_data_req_tx:
+        Option<MessageSender<RequetDataReq, Option<AvaiableDataResponse>>>,
 
     // channel for response complete data. do clean work when receive this request
     pub(crate) ipc_process_completed_data_tx: Option<MessageSender<CompleteDataReq, ()>>,
@@ -101,14 +104,14 @@ where
     pub fn new(
         repo: R,
         name: &str,
-        fs_cache: Arc<dyn FileCache>,
+        data_cache: Arc<dyn FileCache>,
         buf_size: usize,
         up_nodes: Vec<String>,
         upstreams: Vec<String>,
         downstreams: Vec<String>,
     ) -> Self {
         MediaDataTracker {
-            fs_cache,
+            data_cache,
             buf_size,
             name: name.to_string(),
             repo,
@@ -213,7 +216,7 @@ where
                 let new_data_tx = new_data_tx.clone();
                 let token = token.clone();
                 join_set.spawn(async move {
-                    let mut interval = time::interval(Duration::from_secs(2));
+                    let mut interval = time::interval(Duration::from_secs(5));
                     loop {
                         select! {
                             _ = token.cancelled() => {
@@ -230,7 +233,7 @@ where
             for _ in 0..10 {
                 let downstreams = self.downstreams.clone();
                 let mut multi_sender = MultiSender::new(downstreams.clone());
-                let fs_cache = self.fs_cache.clone();
+                let data_cache = self.data_cache.clone();
                 let token = token.clone();
                 let node_name = self.name.clone();
                 let db_repo = self.repo.clone();
@@ -254,7 +257,7 @@ where
                                     let now = Instant::now();
                                     match db_repo.find_data_and_mark_state(&node_name, &Direction::Out, &DataState::SelectForSend).await {
                                        Ok(Some(req)) =>{
-                                            let new_batch = match fs_cache.read(&req.id).await {
+                                            let new_batch = match data_cache.read(&req.id).await {
                                                Ok(batch) => batch,
                                                 Err(err) => {
                                                     warn!("failed to read batch: {}", err);
@@ -284,7 +287,7 @@ where
                                             match db_repo.update_state(&node_name, &req.id,  &Direction::Out, &DataState::Sent, Some(downstreams.iter().map(|key|key.as_str()).collect())).await{
                                                Ok(_) =>{
                                                         //remove input data
-                                                        if let Err(err) =  fs_cache.remove(&req.id).await {
+                                                        if let Err(err) =  data_cache.remove(&req.id).await {
                                                             error!("remove template batch fail {}", err);
                                                         }
 
@@ -327,27 +330,27 @@ where
                         }
                      Some((req, resp))  = ipc_process_submit_result_rx.recv() => {
                         //check finish state
-                        if matches!(*local_state.read().await, TrackerState::Finish) {
+                        if *local_state.read().await == TrackerState::Finish {
                             resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
                             continue;
                         }
-
-                        loop {
-                            if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], Some(&Direction::Out)).await.and_then(|count|{
-                                if count > buf_size {
-                                    Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
-                                } else {
-                                    Ok(())
+                        let is_metadata = is_metadata(&req.id);
+                        if !is_metadata {
+                            loop {
+                                if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], Some(&Direction::Out)).await.and_then(|count|{
+                                    if count > buf_size {
+                                        Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
+                                    } else {
+                                        Ok(())
+                                    }
+                                }){
+                                    warn!("fail with limit {err}");
+                                    sleep(Duration::from_secs(10)).await;
+                                    continue;
                                 }
-                            }){
-                                warn!("fail with limit {err}");
-                                sleep(Duration::from_secs(10)).await;
-                                continue;
+                                break;
                             }
-                            break;
                         }
-
-
 
                         info!("start to insert data {}", &req.id);
                         // respose with nothing
@@ -357,6 +360,7 @@ where
                             id:req.id.clone(),
                             size: req.size,
                             sent: vec![],
+                            is_metadata,
                             state: DataState::Received,
                             direction: Direction::Out,
                             created_at:tm,
@@ -378,31 +382,53 @@ where
             });
         }
 
-        //TODO this make a async process to be sync process. got a low performance,
-        //if have any bottleneck here, we should refrator this one
+        let incoming_data_tx = broadcast::Sender::new(1);
         if !self.upstreams.is_empty() {
-            //process user contaienr request
+            //fetch data from channel
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
             let url = self.upstreams[0].clone();
-            let fs_cache = self.fs_cache.clone();
+            let data_cache = self.data_cache.clone();
             let token = token.clone();
             let local_state = self.local_state.clone();
+            {
+                let incoming_data_tx = incoming_data_tx.clone();
+                let token = token.clone();
+                join_set.spawn(async move {
+                    let mut interval = time::interval(Duration::from_secs(2));
+                    loop {
+                        select! {
+                            _ = token.cancelled() => {
+                               return anyhow::Ok(());
+                            }
+                            _ = interval.tick() => {
+                                if matches!(*local_state.read().await, TrackerState::Finish) {
+                                    warn!("node is finish exit fetch data ticker");
+                                    return anyhow::Ok(());
+                                }
+                                let _ = incoming_data_tx.send(());
+                            }
+                        }
+                    }
+                });
+            }
 
+            let local_state = self.local_state.clone();
+            let mut incoming_data_rx = incoming_data_tx.subscribe();
             join_set.spawn(async move {
-                //    let mut client = DataStreamClient::connect(url.clone()).await;
                 let mut client: Option<DataStreamClient<Channel>> = None;
                 loop {
                     select! {
                       _ = token.cancelled() => {
                             return anyhow::Ok(());
                       }
-                     Some((_, resp)) = ipc_process_data_req_rx.recv() => {
+                      _ = incoming_data_rx.recv() => {
                             //check finish state
-                            if matches!(*local_state.read().await, TrackerState::Finish) {
-                                resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
-                                continue;
+                            if *local_state.read().await == TrackerState::Finish {
+                                warn!("node is finish exit fetch data from channel");
+                                return anyhow::Ok(());
                             }
+
                             //select a unassgined data
                             info!("try to find avaiable data");
                             if client.is_none() {
@@ -412,37 +438,31 @@ where
                                     },
                                     Err(err) =>{
                                         error!("cannt connect upstream {err}");
-                                        resp.send(Ok(None)).expect("channel only read once");
                                         continue;
                                     }
                                 }
                             }
 
-                            let client_non = client.as_mut().unwrap();
-                            match client_non.request_media_data(Empty{}).await {
+                            let client_ref = client.as_mut().unwrap();
+                            match client_ref.request_media_data(Empty{}).await {
                                Ok(record) =>{
                                     let data = record.into_inner();
+                                    let id = data.id.clone();
+                                    let size = data.size;
                                     match db_repo.find_by_node_id(&node_name,&data.id, &Direction::In).await  {
                                        Ok(Some(_))=>{
-                                            resp.send(Ok(None)).expect("channel only read once");
+                                            //already exit in this node
                                             continue;
                                         }
                                         Err(err)=>{
                                             error!("query mongo by id {err}");
-                                            resp.send(Err(err)).expect("request alread listen this channel");
                                             continue;
                                         }
                                        _=>{}
                                     }
 
-                                    let res_data = AvaiableDataResponse{
-                                        id:   data.id.clone(),
-                                        size: data.size
-                                    };
-
-                                    if let Err(err) = fs_cache.write(data).await {
+                                    if let Err(err) = data_cache.write(data).await {
                                         error!("write cache files {err}");
-                                        resp.send(Err(anyhow!("write cache files {err}"))).expect("channel only read once");
                                         continue;
                                     }
                                     //mark data as received
@@ -451,8 +471,9 @@ where
                                     let tm =Utc::now().timestamp();
                                     if let Err(err) =  db_repo.insert_new_path(&DataRecord{
                                         node_name:node_name.clone(),
-                                        id :res_data.id.clone(),
-                                        size: res_data.size,
+                                        id : id.clone(),
+                                        size,
+                                        is_metadata: is_metadata(&id),
                                         sent: vec![],
                                         state: DataState::Received,
                                         direction: Direction::In,
@@ -460,41 +481,97 @@ where
                                         created_at:tm,
                                     }).await{
                                         error!("mark data as client receive {err}");
-                                        resp.send(Err(anyhow!("mark data as client receive {err}"))).expect("channel only read once");
                                         continue;
                                     }
 
                                     //insert a new incoming data record
-                                    if let Err(err) =  db_repo.update_state(&(node_name.clone() +"-channel"), &res_data.id, &Direction::In, &DataState::EndRecieved, None).await{
+                                    if let Err(err) =  db_repo.update_state(&(node_name.clone() +"-channel"), &id, &Direction::In, &DataState::EndRecieved, None).await{
                                         error!("mark data as client receive {err}");
-                                        resp.send(Err(anyhow!("mark data as client receive {err}"))).expect("channel only read once");
                                         continue;
                                     }
 
-                                    info!("get data batch {} to user", &res_data.id);
-                                    //response this data's position
-                                    resp.send(Ok(Some(res_data))).expect("channel only read once");
+                                    info!("save data batch {}", &id);
                                 },
                                 Err(status)=>{
                                     match status.code() {
                                         Code::NotFound =>{
-                                            resp.send(Ok(None)).expect("channel only read once");
-                                        },
-                                        Code::DeadlineExceeded =>{
-                                            client  = None;
-                                            resp.send(Err(anyhow!("network deadline exceeded"))).expect("channel only read once");
-                                        },
-                                        Code::Unavailable =>{
-                                            client  = None;
-                                            resp.send(Err(anyhow!("connect break"))).expect("channel only read once");
+                                            continue;
                                         },
                                         _=>{
+                                            client  = None;
                                             error!("unable to retrieval data from channel {:?}", status);
-                                            resp.send(Err(anyhow!("unable to retrieval data"))).expect("channel only read once");
                                         }
                                     }
                                 }
                             }
+                     }
+                    }
+                }
+            });
+        }
+
+        //TODO this make a async process to be sync process. got a low performance,
+        //if have any bottleneck here, we should refrator this one
+        if !self.upstreams.is_empty() {
+            //process user contaienr request
+            let db_repo = self.repo.clone();
+            let node_name = self.name.clone();
+            let data_cache = self.data_cache.clone();
+            let token = token.clone();
+            let local_state = self.local_state.clone();
+            let incoming_data_tx = incoming_data_tx.clone();
+            join_set.spawn(async move {
+                loop {
+                    select! {
+                      _ = token.cancelled() => {
+                            return anyhow::Ok(());
+                      }
+                     Some((req, resp)) = ipc_process_data_req_rx.recv() => {
+                            //check finish state
+                            if matches!(*local_state.read().await, TrackerState::Finish) {
+                                resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
+                                continue;
+                            }
+                            if is_metadata(&req.id) {
+                                let result = match db_repo.find_by_node_id(&node_name,&req.id, &Direction::In).await  {
+                                    Ok(Some(record))=>{
+                                      Ok(Some(AvaiableDataResponse {
+                                            id: record.id.clone(),
+                                            size: record.size,
+                                        }))
+                                     },
+                                     Ok(None)=> Ok(None),
+                                     Err(err)=>Err(err),
+                                 };
+                                resp.send(result).expect("channel send failed: channel can only be read once");
+                                continue;
+                            }
+
+                            let result = {
+                                let record = db_repo
+                                    .find_data_and_mark_state(&node_name, &Direction::In, &DataState::Assigned)
+                                    .await
+                                    .map_err(|err| anyhow!("query available data failed: {}", err))?;
+                                if record.is_none() {
+                                    let _ = incoming_data_tx.send(());
+                                    Ok(None)
+                                } else {
+                                    let record = record.unwrap();
+                                    if let Err(err) =  data_cache.read(&record.id).await {
+                                        error!("read files {} {err}, try to find another data", record.id);
+                                        if let Err(err) = db_repo.update_state(&node_name,&record.id, &Direction::In, &DataState::Error, None).await {
+                                            error!("mark data {} to error {err}", &record.id);
+                                        }
+                                        continue;
+                                    }
+                                    let res_data = AvaiableDataResponse {
+                                        id: record.id.clone(),
+                                        size: record.size,
+                                    };
+                                    Ok(Some(res_data))
+                                }
+                            };
+                            resp.send(result).expect("channel send failed: channel can only be read once");
                      },
                      Some((req, resp))  = ipc_process_completed_data_rx.recv() => {
                         //check finish state
@@ -506,7 +583,7 @@ where
                            Ok(_) =>{
                                     // respose with nothing
                                     resp.send(Ok(())).expect("channel only read once");
-                                    if let Err(err) = fs_cache.remove(&req.id).await {
+                                    if let Err(err) = data_cache.remove(&req.id).await {
                                         error!("remove tmp fs fail {}", err);
                                         continue;
                                     }

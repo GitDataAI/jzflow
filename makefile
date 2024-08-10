@@ -13,8 +13,8 @@ build-cd: $(OUTPUT)
 	cp target/release/compute_unit_runner $(OUTPUT)/compute_unit_runner
 
 build-dp: $(OUTPUT)
-	cargo build -p dp_runner --release
-	cp target/release/dp_runner $(OUTPUT)/dp_runner
+	cargo build -p channel_runner --release
+	cp target/release/channel_runner $(OUTPUT)/channel_runner
 
 build: build-cd build-dp
 	cargo build --release
@@ -23,7 +23,7 @@ docker_cd: build-cd
 	docker build -f ./crates/compute_unit_runner/dockerfile -t gitdatateam/compute_unit_runner:latest .
 
 docker_dp: build-dp
-	docker build -f ./crates/dp_runner/dockerfile -t gitdatateam/dp_runner:latest .
+	docker build -f ./crates/channel_runner/dockerfile -t gitdatateam/channel_runner:latest .
 
 ################## build nodes
 build-nodes: $(OUTPUT)

@@ -1,6 +1,7 @@
 #![feature(duration_constructors)]
 
 pub mod fs_cache;
+pub mod metadata;
 pub mod mprc;
 pub mod multi_sender;
 

@@ -16,6 +16,7 @@ use jz_flow::{
 };
 use nodes_sdk::{
     fs_cache::FileCache,
+    metadata::is_metadata,
     MessageSender,
 };
 use std::{
@@ -51,7 +52,7 @@ where
 
     pub(crate) buf_size: usize,
 
-    pub(crate) fs_cache: Arc<dyn FileCache>,
+    pub(crate) data_cache: Arc<dyn FileCache>,
 
     pub(crate) local_state: TrackerState,
 
@@ -70,7 +71,7 @@ where
 {
     pub(crate) fn new(
         repo: R,
-        fs_cache: Arc<dyn FileCache>,
+        data_cache: Arc<dyn FileCache>,
         name: &str,
         buf_size: usize,
         up_nodes: Vec<String>,
@@ -79,7 +80,7 @@ where
         ChannelTracker {
             name: name.to_string(),
             repo,
-            fs_cache,
+            data_cache,
             buf_size,
             local_state: TrackerState::Init,
             up_nodes,
@@ -97,7 +98,7 @@ where
         //process backent task to do revert clean data etc
         let db_repo = self.repo.clone();
         let node_name = self.name.clone();
-        let fs_cache = self.fs_cache.clone();
+        let data_cache = self.data_cache.clone();
         let token = token.clone();
         let up_nodes = self.up_nodes.clone();
 
@@ -106,7 +107,7 @@ where
             loop {
                 let now = Instant::now();
                 info!("backend thread start");
-                tokio::select! {
+                select! {
                     _ = token.cancelled() => {
                         return Ok(());
                      }
@@ -116,15 +117,23 @@ where
                             match db_repo.list_by_node_name_and_state(&node_name, &DataState::EndRecieved).await {
                                 Ok(datas) => {
                                     for data in datas {
-                                        match fs_cache.remove(&data.id).await {
-                                            Ok(_)=>{
-                                                if let Err(err) =  db_repo.update_state(&node_name, &data.id, &Direction::In, &DataState::Clean, None).await{
-                                                    error!("mark data as client receive {err}");
-                                                    continue;
-                                                }
-                                                debug!("remove data {}", &data.id);
-                                            },
-                                            Err(err)=> error!("remove data {err}")
+                                        if data.is_metadata {
+                                            if let Err(err) =  db_repo.update_state(&node_name, &data.id, &Direction::In, &DataState::KeeptForMetadata, None).await{
+                                                error!("mark metadata data as client receive {err}");
+                                                continue;
+                                            }
+                                            info!("mark metadata as cleint received")
+                                        }else {
+                                            match data_cache.remove(&data.id).await {
+                                                Ok(_)=>{
+                                                    if let Err(err) =  db_repo.update_state(&node_name, &data.id, &Direction::In, &DataState::Clean, None).await{
+                                                        error!("mark data as client receive {err}");
+                                                        continue;
+                                                    }
+                                                    debug!("remove data {}", &data.id);
+                                                },
+                                                Err(err)=> error!("remove data {err}")
+                                            }
                                         }
                                     }
                                 },
@@ -186,7 +195,7 @@ where
             //process request data
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
-            let fs_cache = self.fs_cache.clone();
+            let data_cache = self.data_cache.clone();
             let token = token.clone();
 
             join_set.spawn(async move {
@@ -200,7 +209,7 @@ where
                             match db_repo.find_data_and_mark_state(&node_name, &Direction::In, &DataState::SelectForSend).await {
                                 std::result::Result::Ok(Some(record)) =>{
                                     info!("return downstream's datarequest and start response data {}", &record.id);
-                                    match fs_cache.read(&record.id).await {
+                                    match data_cache.read(&record.id).await {
                                         Ok(databatch)=>{
                                             //response this data's position
                                             resp.send(Ok(Some(databatch))).expect("channel only read once");
@@ -214,7 +223,6 @@ where
                                             continue;
                                         }
                                     }
-
                                 },
                                 std::result::Result::Ok(None)=>{
                                     resp.send(Ok(None)).expect("channel only read once");
@@ -239,7 +247,7 @@ where
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
             let buf_size = self.buf_size;
-            let fs_cache = self.fs_cache.clone();
+            let data_cache = self.data_cache.clone();
             let token = token.clone();
 
             join_set.spawn(async move {
@@ -254,17 +262,6 @@ where
                         let now = Instant::now();
                         let id = data_batch.id.clone();
                         let size = data_batch.size;
-                        //check limit
-                       if let Err(err) =  db_repo.count(&node_name,&[&DataState::Received], Some(&Direction::In)).await.and_then(|count|{
-                            if count > buf_size {
-                                Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
-                            } else {
-                                Ok(())
-                            }
-                        }){
-                            resp.send(Err(anyhow!("cannt query limit from mongo {err}"))).expect("request alread listen this channel");
-                            continue;
-                        }
 
                         // processed before
                         match db_repo.find_by_node_id(&node_name,&id, &Direction::In).await  {
@@ -278,13 +275,27 @@ where
                                 resp.send(Err(err)).expect("request alread listen this channel");
                                 continue;
                             }
-                           _=>{}
+                            _=>{}
                         }
-
-                        // code below this can be move another coroutine
+                        let is_data_metadata = if is_metadata(&id) {
+                            //check limit for plain data
+                            if let Err(err) =  db_repo.count(&node_name,&[&DataState::Received], Some(&Direction::In)).await.and_then(|count|{
+                                if count > buf_size {
+                                    Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
+                                } else {
+                                    Ok(())
+                                }
+                            }){
+                                resp.send(Err(anyhow!("cannt query limit from mongo {err}"))).expect("request alread listen this channel");
+                                continue;
+                            }
+                            true
+                        }else {
+                            false
+                        };
 
                         //write batch files
-                        if let Err(err) = fs_cache.write(data_batch).await {
+                        if let Err(err) = data_cache.write(data_batch).await {
                             error!("write files to disk fail {}", err);
                             resp.send(Err(err)).expect("request alread listen this channel");
                             continue;
@@ -296,6 +307,7 @@ where
                             node_name: node_name.clone(),
                             id:id.clone(),
                             size,
+                            is_metadata:is_data_metadata,
                             state: DataState::Received,
                             sent: vec![],
                             direction:Direction::In,

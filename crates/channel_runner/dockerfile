@@ -4,4 +4,4 @@ WORKDIR /app
 
 RUN mkdir -p /app
 
-ADD dist/dp_runner /dp_runner
+ADD dist/channel_runner /channel_runner

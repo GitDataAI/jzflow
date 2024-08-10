@@ -853,14 +853,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
-    use crate::dbrepo::MongoRunDbRepo;
-
     use super::*;
-
+    use crate::dbrepo::MongoRunDbRepo;
     use mongodb::Client as MongoClient;
+    use std::env;
     use tracing_subscriber;
+
     #[tokio::test]
     async fn test_render() {
         env::set_var("RUST_LOG", "DEBUG");
@@ -914,7 +912,7 @@ mod tests {
                         "#;
         let dag = Dag::from_json(json_str).unwrap();
 
-        let db_url = "mongodb://127.0.0.1:27017";
+        let db_url = "mongodb://192.168.3.163:27017";
         let client = MongoClient::with_uri_str(db_url.to_string() + "/ntest")
             .await
             .unwrap();

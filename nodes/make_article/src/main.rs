@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 
     {
         let token = token.clone();
-        join_set.spawn(async move { make_article(token, args).await });
+        join_set.spawn(async move {make_article(token, args).await});
     }
 
     {

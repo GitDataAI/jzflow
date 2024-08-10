@@ -232,6 +232,17 @@ impl SubmitOuputDataReq {
     }
 }
 
+#[derive(Deserialize)]
+pub struct RequetDataReq {
+    pub id: String,
+}
+
+impl RequetDataReq {
+    pub fn new(id: &str) -> Self {
+        RequetDataReq { id: id.to_string() }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Status {
     pub state: TrackerState,
@@ -254,6 +265,7 @@ where
 
 async fn process_data_request<R>(
     program_mutex: web::Data<Arc<RwLock<MediaDataTracker<R>>>>,
+    req: web::Query<RequetDataReq>,
 ) -> HttpResponse
 where
     R: JobDbRepo + Clone,
@@ -276,11 +288,12 @@ where
         drop(program);
         sleep(Duration::from_secs(5)).await;
     };
+
     //read request
     let (tx, rx) = oneshot::channel::<Result<Option<AvaiableDataResponse>>>();
     match sender {
         Some(sender) => {
-            if let Err(err) = sender.send(((), tx)).await {
+            if let Err(err) = sender.send((req.into_inner(), tx)).await {
                 return HttpResponse::InternalServerError()
                     .json(format!("send to avaiable data channel {err}"));
             }

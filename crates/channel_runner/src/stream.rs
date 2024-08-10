@@ -6,7 +6,6 @@ use jz_flow::{
         datatransfer::{
             data_stream_server::DataStream,
             MediaDataBatchResponse,
-            TabularDataBatchResponse,
         },
     },
 };
@@ -83,12 +82,5 @@ where
             Ok(Err(err)) => Err(Status::from_error(err.into())),
             Err(err) => Err(Status::from_error(Box::new(err))),
         }
-    }
-
-    async fn transfer_tabular_data(
-        &self,
-        _req: Request<TabularDataBatchResponse>,
-    ) -> Result<Response<Empty>, tonic::Status> {
-        todo!()
     }
 }
