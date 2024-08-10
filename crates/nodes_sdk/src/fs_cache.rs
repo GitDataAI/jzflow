@@ -71,6 +71,9 @@ impl FileCache for FSCache {
             .iter()
             .map(|entry| (tmp_in_path.join(entry.path.clone()), entry))
         {
+            if let Some(parent) = entry_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
             if let Err(err) = fs::write(entry_path.clone(), &entry.data).await {
                 error!("write file {:?} fail {}", entry_path, err);
                 is_write_err = true;

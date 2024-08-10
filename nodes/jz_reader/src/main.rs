@@ -19,6 +19,7 @@ use jz_flow::utils::StdIntoAnyhowResult;
 use std::{
     path::Path,
     str::FromStr,
+    time::Instant,
 };
 use tokio::{
     fs,
@@ -133,9 +134,11 @@ async fn read_jz_fs(args: Args) -> Result<()> {
         &args.repo,
         &args.ref_name,
         ref_type,
-        Some("*"),
+        Some(&args.pattern),
     )
     .await?;
+
+    info!("get files {} in jizozifs", file_paths.len());
 
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
@@ -145,6 +148,7 @@ async fn read_jz_fs(args: Args) -> Result<()> {
         let output_dir = tmp_path.join(&id);
         fs::create_dir_all(output_dir.clone()).await?;
 
+        let instant = Instant::now();
         //read file from jzfs and write to output directory
         for path in batch {
             let mut byte_stream = apis::objects_api::get_object(
@@ -159,6 +163,9 @@ async fn read_jz_fs(args: Args) -> Result<()> {
             .await?;
 
             let file_path = output_dir.as_path().join(path);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
             let mut tmp_file = fs::File::create(file_path).await?;
             while let Some(item) = byte_stream.next().await {
                 tokio::io::copy(&mut item.unwrap().as_ref(), &mut tmp_file)
@@ -166,12 +173,22 @@ async fn read_jz_fs(args: Args) -> Result<()> {
                     .unwrap();
             }
         }
+        info!(
+            "read a batch files {} spent {:?}",
+            batch.len(),
+            instant.elapsed()
+        );
 
         //submit directory after completed a batch
         client
             .submit_output(SubmitOuputDataReq::new(&id, batch.len() as u32))
             .await
             .anyhow()?;
+        info!(
+            "flush batch files {} spent {:?}",
+            batch.len(),
+            instant.elapsed()
+        );
     }
     // read all files
     client.finish().await.unwrap();

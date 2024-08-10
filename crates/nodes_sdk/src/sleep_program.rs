@@ -24,8 +24,8 @@ pub async fn monitor_tasks(join_set: &mut JoinSet<Result<()>>) -> Result<()> {
             Err(join_err) => {
                 has_err = true;
                 error!("Failed to join task: {join_err}");
-            },
-            _=>{}
+            }
+            _ => {}
         }
     }
 
