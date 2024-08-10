@@ -5,7 +5,7 @@
     "name": "{{{name}}}"
   },
   "spec": {
-    "storageClassName": "jz-action-fs",
+    "storageClassName": "jz-flow-fs",
     "accessModes": [
       "ReadWriteMany"
     ],

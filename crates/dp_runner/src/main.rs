@@ -2,7 +2,7 @@ mod channel_tracker;
 mod state_controller;
 mod stream;
 
-use jz_action::{
+use jz_flow::{
     dbrepo::MongoRunDbRepo,
     network::datatransfer::data_stream_server::DataStreamServer,
     utils::StdIntoAnyhowResult,
@@ -11,7 +11,7 @@ use jz_action::{
 use anyhow::Result;
 use channel_tracker::ChannelTracker;
 use clap::Parser;
-use jz_action::core::db::NodeRepo;
+use jz_flow::core::db::NodeRepo;
 use nodes_sdk::fs_cache::*;
 use state_controller::StateController;
 use std::{
@@ -39,7 +39,7 @@ use tracing::{
 #[command(
     name = "dp_runner",
     version = "0.0.1",
-    author = "Author Name <github.com/GitDataAI/jz-action>",
+    author = "Author Name <github.com/GitDataAI/jz-flow>",
     about = "embed in k8s images. make process data input output"
 )]
 struct Args {

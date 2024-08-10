@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-jz_action = { path = "../../"}
+jz_flow = { path = "../../"}
 compute_unit_runner = {path  = "../../crates/compute_unit_runner"}
 jiaozifs_client_rs = {path  = "../../crates/jiaozifs_client_rs"}
 nodes_sdk  = {path  = "../../crates/nodes_sdk"}

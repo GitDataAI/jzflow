@@ -1,4 +1,4 @@
-# jz-action
+# jz-flow
 
 pipeline for table data and media data proprocessing
 

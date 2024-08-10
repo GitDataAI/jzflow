@@ -4,7 +4,7 @@ metadata:
   name: test-claim
   namespace: default
 spec:
-  storageClassName: jz-action-fs
+  storageClassName: jz-flow-fs
   accessModes:
     - ReadWriteMany
   resources:

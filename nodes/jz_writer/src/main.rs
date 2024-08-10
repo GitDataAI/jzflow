@@ -16,7 +16,7 @@ use jiaozifs_client_rs::{
     },
     models::RefType,
 };
-use jz_action::utils::{
+use jz_flow::utils::{
     IntoAnyhowResult,
     StdIntoAnyhowResult,
 };
@@ -50,7 +50,7 @@ use walkdir::WalkDir;
 #[command(
     name = "jz_writer",
     version = "0.0.1",
-    author = "Author Name <github.com/GitDataAI/jz-action>",
+    author = "Author Name <github.com/GitDataAI/jz-flow>",
     about = "embed in k8s images"
 )]
 

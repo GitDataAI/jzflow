@@ -3,7 +3,7 @@ use compute_unit_runner::{
     media_data_tracker,
     state_controller::StateController,
 };
-use jz_action::{
+use jz_flow::{
     core::db::NodeRepo,
     dbrepo::MongoRunDbRepo,
     utils::StdIntoAnyhowResult,
@@ -41,7 +41,7 @@ use tracing::{
 #[command(
     name = "compute_unit_runner",
     version = "0.0.1",
-    author = "Author Name <github.com/GitDataAI/jz-action>",
+    author = "Author Name <github.com/GitDataAI/jz-flow>",
     about = "embed in k8s images. work for process data input and output"
 )]
 struct Args {

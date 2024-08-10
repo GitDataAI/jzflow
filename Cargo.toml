@@ -6,7 +6,7 @@ members = [
 , "nodes/copy_in_place", "crates/nodes_sdk"]
 
 [workspace.package]
-repository = "https://github.com/GitDataAI/jz-action"
+repository = "https://github.com/GitDataAI/jz-flow"
 license = "MIT OR Apache-2.0"
 edition = "2021"
 include = [
@@ -38,7 +38,7 @@ actix-web = "4.8.0"
 reqwest = {version="0.12.5", features=["json"]}
 
 [package]
-name = "jz_action"
+name = "jz_flow"
 version = "0.1.0"
 edition = "2021"
 

@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jz-action-fs-provisioner
+  name: jz-flow-fs-provisioner
   labels:
-    app: jz-action-fs-provisioner
+    app: jz-flow-fs-provisioner
   # replace with namespace where provisioner is deployed
   namespace: default
 spec:
@@ -12,18 +12,18 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: jz-action-fs-provisioner
+      app: jz-flow-fs-provisioner
   template:
     metadata:
       labels:
-        app: jz-action-fs-provisioner
+        app: jz-flow-fs-provisioner
     spec:
-      serviceAccountName: jz-action-fs-provisioner
+      serviceAccountName: jz-flow-fs-provisioner
       containers:
-        - name: jz-action-fs-provisioner
+        - name: jz-flow-fs-provisioner
           image: eipwork/nfs-subdir-external-provisioner:v4.0.2
           volumeMounts:
-            - name: jz-action-fs-root
+            - name: jz-flow-fs-root
               mountPath: /persistentvolumes
           env:
             - name: PROVISIONER_NAME
@@ -33,7 +33,7 @@ spec:
             - name: NFS_PATH
               value: /hdd1/testdir
       volumes:
-        - name: jz-action-fs-root
+        - name: jz-flow-fs-root
           nfs:
             server: 192.168.3.163
             path: /hdd1/testdir

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Args;
 
-use jz_action::{
+use jz_flow::{
     api::server::start_rpc_server,
     core::db::MainDbRepo,
     dbrepo::{
@@ -25,7 +25,7 @@ use tracing::{
     info,
 };
 
-use jz_action::job::job_mgr::JobManager;
+use jz_flow::job::job_mgr::JobManager;
 
 use crate::global::GlobalOptions;
 
@@ -43,7 +43,7 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
     let mut join_set: JoinSet<Result<()>> = JoinSet::new();
     let token = CancellationToken::new();
 
-    let db_url = args.mongo_url.to_string() + "/jz_action";
+    let db_url = args.mongo_url.to_string() + "/jz_flow";
     let db_repo = MongoMainDbRepo::new(db_url.as_str()).await?;
     let client = Client::try_default().await.unwrap();
 

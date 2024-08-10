@@ -7,7 +7,7 @@ use compute_unit_runner::ipc::{
     IPCError,
     SubmitOuputDataReq,
 };
-use jz_action::utils::StdIntoAnyhowResult;
+use jz_flow::utils::StdIntoAnyhowResult;
 use std::{
     path::Path,
     str::FromStr,
@@ -37,7 +37,7 @@ use tracing::{
 #[command(
     name = "copy_in_place",
     version = "0.0.1",
-    author = "Author Name <github.com/GitDataAI/jz-action>",
+    author = "Author Name <github.com/GitDataAI/jz-flow>",
     about = "embed in k8s images. move input directory to dest directory."
 )]
 

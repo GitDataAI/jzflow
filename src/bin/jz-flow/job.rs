@@ -10,7 +10,7 @@ use clap::{
     Args,
     Parser,
 };
-use jz_action::{
+use jz_flow::{
     api::client::JzFlowClient,
     core::db::Job,
     dag::Dag,

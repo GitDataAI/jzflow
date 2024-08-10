@@ -7,7 +7,7 @@ edition.workspace = true
 include.workspace = true
 
 [dependencies]
-jz_action = { path = "../../"}
+jz_flow = { path = "../../"}
 
 tokio = { workspace = true }
 tokio-retry = {workspace = true}

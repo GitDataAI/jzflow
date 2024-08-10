@@ -16,7 +16,7 @@ use actix_web::{
 use anyhow::Result;
 use core::str;
 use http_body_util::Collected;
-use jz_action::core::db::{
+use jz_flow::core::db::{
     JobDbRepo,
     TrackerState,
 };
