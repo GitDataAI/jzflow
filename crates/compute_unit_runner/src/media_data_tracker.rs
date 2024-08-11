@@ -162,8 +162,8 @@ where
                                 let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
                                 .map_err(|err|anyhow!("query node data {err}"))?
                                 .iter()
-                                .any(|node| matches!(node.state, TrackerState::Finish));
-
+                                .all(|node| node.state == TrackerState::Finish);
+                            
                                 if is_all_success && db_repo.count(&node_name,  &[&DataState::Received,&DataState::Assigned], Some(&Direction::In)).await? == 0 {
                                     db_repo.update_node_by_name(&node_name, TrackerState::InComingFinish).await.map_err(|err|anyhow!("update node data {err}"))?;
                                     info!("incoming data was finished, not need to run backend");

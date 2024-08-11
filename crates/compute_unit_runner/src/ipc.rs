@@ -37,7 +37,7 @@ use tokio::{
     },
     time::sleep,
 };
-use tracing::info;
+use tracing::{debug, info};
 
 use http_body_util::{
     BodyExt,
@@ -277,6 +277,7 @@ where
     let sender = loop {
         let program = program_mutex.read().await;
         let local_state = program.local_state.read().await;
+        debug!("local state {:?}", *local_state);
         if *local_state == TrackerState::Finish {
             return HttpResponse::BadRequest().json(IPCError::NodeError {
                 code: ErrorNumber::AlreadyFinish,

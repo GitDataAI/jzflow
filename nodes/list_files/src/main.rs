@@ -110,6 +110,7 @@ async fn print_files(token: CancellationToken, args: Args) -> Result<()> {
             }
             Err(IPCError::NodeError { code, msg: _ }) => match code {
                 ErrorNumber::AlreadyFinish => {
+                    info!("receive AlreadyFinish");
                     return Ok(());
                 }
                 ErrorNumber::NotReady => {

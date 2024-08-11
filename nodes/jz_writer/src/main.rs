@@ -243,14 +243,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
             }
             Err(IPCError::NodeError { code, msg: _ }) => match code {
                 ErrorNumber::AlreadyFinish => {
-                    apis::wip_api::commit_wip(
-                        configuration,
-                        &args.owner,
-                        &args.repo,
-                        &args.ref_name,
-                        "created by jz action",
-                    )
-                    .await?;
+                    info!("receive AlreadyFinish");
                     return Ok(());
                 }
                 ErrorNumber::NotReady => {
@@ -263,6 +256,14 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                 }
                 ErrorNumber::InComingFinish => {
                     client.finish().await.anyhow()?;
+                    apis::wip_api::commit_wip(
+                        configuration,
+                        &args.owner,
+                        &args.repo,
+                        &args.ref_name,
+                        "created by jz action",
+                    )
+                    .await?;
                     info!("all data finish");
                     return Ok(());
                 }

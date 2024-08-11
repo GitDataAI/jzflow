@@ -148,7 +148,7 @@ where
                             let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
                             .map_err(|err|anyhow!("query node data {err}"))?
                             .iter()
-                            .any(|node| matches!(node.state, TrackerState::Finish));
+                            .all(|node| matches!(node.state, TrackerState::Finish));
 
                             if is_all_success {
                                 let running_state = &[
