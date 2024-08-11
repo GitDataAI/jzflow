@@ -21,7 +21,10 @@ use crate::{
         StdIntoAnyhowResult,
     },
 };
-use anyhow::{anyhow, Result};
+use anyhow::{
+    anyhow,
+    Result,
+};
 use futures::future::try_join_all;
 use kube::Client;
 use mongodb::bson::oid::ObjectId;
@@ -29,8 +32,14 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::{marker::PhantomData, time::Duration};
-use tokio::{task::JoinSet, time::sleep};
+use std::{
+    marker::PhantomData,
+    time::Duration,
+};
+use tokio::{
+    task::JoinSet,
+    time::sleep,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
@@ -147,15 +156,19 @@ where
                         for job in db.list_jobs(running_jobs_params).await? {
                             let namespace = format!("{}-{}", job.name, job.retry_number - 1);
                             let db_url = connect_string.clone() + "/" + &namespace;
-                            let job_db =  MongoRunDbRepo::new(&db_url).await?;
-                            job_db.is_all_node_finish().await.map(|_|{
-                                db.update(
-                                    &job.id,
-                                    &JobUpdateInfo {
-                                        state: Some(JobState::Finish),
-                                    },
-                                )
-                            })?.await?;
+                            let job_db = MongoRunDbRepo::new(&db_url).await?;
+                            job_db
+                                .is_all_node_finish()
+                                .await
+                                .map(|_| {
+                                    db.update(
+                                        &job.id,
+                                        &JobUpdateInfo {
+                                            state: Some(JobState::Finish),
+                                        },
+                                    )
+                                })?
+                                .await?;
                         }
                     }
 
@@ -180,7 +193,6 @@ where
                         }
                     }
 
-
                     anyhow::Ok(())
                 } {
                     error!("error in job backend {err}");
@@ -192,7 +204,6 @@ where
 
         Ok(())
     }
-
 
     pub async fn get_job_details(&self, id: &ObjectId) -> Result<JobDetails> {
         let job = self.db.get(id).await?.anyhow("job not found")?;
@@ -232,17 +243,18 @@ where
         let namespace = format!("{}-{}", job.name, job.retry_number - 1);
         let controller = self.driver.attach(&namespace, &dag).await?;
         controller.start().await?;
-       self.db
-        .update(
-            &job.id,
-            &JobUpdateInfo {
-                state: Some(JobState::Running),
-            },
-        ).await
-        .map_err(|err|{
-            error!("set job to deploy state {err}");
-            err
-        })
+        self.db
+            .update(
+                &job.id,
+                &JobUpdateInfo {
+                    state: Some(JobState::Running),
+                },
+            )
+            .await
+            .map_err(|err| {
+                error!("set job to deploy state {err}");
+                err
+            })
     }
 
     pub async fn clean_job(&self, id: &ObjectId) -> Result<()> {

@@ -30,7 +30,7 @@ use jz_flow::job::job_mgr::JobManager;
 use crate::global::GlobalOptions;
 
 #[derive(Debug, Args)]
-pub(super) struct RunArgs {
+pub(super) struct DaemonArgs {
     #[arg(
         long,
         default_value = "mongodb://127.0.0.1:27017",
@@ -39,7 +39,7 @@ pub(super) struct RunArgs {
     mongo_url: String,
 }
 
-pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Result<()> {
+pub(super) async fn run_daemon(global_opts: GlobalOptions, args: DaemonArgs) -> Result<()> {
     let mut join_set: JoinSet<Result<()>> = JoinSet::new();
     let token = CancellationToken::new();
 

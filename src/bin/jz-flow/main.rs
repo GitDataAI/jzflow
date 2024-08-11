@@ -2,9 +2,9 @@
 #[macro_use]
 extern crate prettytable;
 
+mod daemon;
 mod global;
 mod job;
-mod run;
 
 use anyhow::Result;
 use clap::{
@@ -12,24 +12,26 @@ use clap::{
     Subcommand,
 };
 
+use daemon::{
+    run_daemon,
+    DaemonArgs,
+};
 use global::GlobalOptions;
 use job::{
     run_job_subcommand,
     JobCommands,
 };
+
 use jz_flow::{
     core::db::MainDbRepo,
     utils::StdIntoAnyhowResult,
 };
-use run::{
-    run_backend,
-    RunArgs,
-};
+
 use std::str::FromStr;
 use tracing::Level;
 
 #[derive(Debug, Parser)]
-#[command(name = "jz-flow-backend", author = "Author Name <github.com/GitDataAI/jz-flow>", version, about= "jz-flow backend", long_about = None, disable_version_flag = true)]
+#[command(name = "jz-flow-daemon", author = "Author Name <github.com/GitDataAI/jz-flow>", version, about= "jz-flow daemon", long_about = None, disable_version_flag = true)]
 struct Cli {
     #[clap(flatten)]
     global_opts: GlobalOptions,
@@ -41,7 +43,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Adds files to myapp
-    Run(RunArgs),
+    Daemon(DaemonArgs),
 
     #[command(subcommand)]
     Job(JobCommands),
@@ -57,7 +59,7 @@ async fn main() -> Result<()> {
         .anyhow()?;
 
     match args.command {
-        Commands::Run(run_args) => run_backend(args.global_opts, run_args).await,
+        Commands::Daemon(run_args) => run_daemon(args.global_opts, run_args).await,
         Commands::Job(job_commands) => run_job_subcommand(args.global_opts, job_commands).await,
     }
 }
