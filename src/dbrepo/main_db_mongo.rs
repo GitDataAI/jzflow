@@ -118,9 +118,6 @@ impl JobRepo for MongoMainDbRepo {
                 "state": to_variant_name(&JobState::Selected)?,
                 "updated_at":Utc::now().timestamp(),
             },
-            "$inc":{
-                "retry_number":1
-            }
         };
 
         self.job_col

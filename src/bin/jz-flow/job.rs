@@ -107,7 +107,6 @@ pub(super) async fn list_job(global_opts: GlobalOptions, args: ListJobArgs) -> R
             cell!(job.id),
             cell!(job.name),
             cell!(to_variant_name(&job.state).unwrap()),
-            cell!(job.retry_number),
             cell!(DateTime::from_timestamp(job.created_at, 0).unwrap()),
             cell!(DateTime::from_timestamp(job.updated_at, 0).unwrap()),
         ]));
@@ -150,7 +149,6 @@ pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailA
         cell!(job_detail.job.id),
         cell!(job_detail.job.name),
         cell!(to_variant_name(&job_detail.job.state).unwrap()),
-        cell!(job_detail.job.retry_number),
         cell!(DateTime::from_timestamp(job_detail.job.created_at, 0).unwrap()),
         cell!(DateTime::from_timestamp(job_detail.job.updated_at, 0).unwrap()),
     ]));

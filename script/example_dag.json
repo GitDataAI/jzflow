@@ -22,7 +22,7 @@
             "spec": {
                 "image": "gitdatateam/copy_in_place:latest",
                 "command": "/copy_in_place",
-                "replicas": 3,
+                "replicas": 5,
                 "args": [
                     "--log-level=debug"
                 ]

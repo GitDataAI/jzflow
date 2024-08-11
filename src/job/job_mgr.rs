@@ -113,8 +113,7 @@ where
                     {
                         while let Some(job) = db.get_job_for_running().await? {
                             let dag = Dag::from_json(job.graph_json.as_str())?;
-                            let namespace = format!("{}-{}", job.name, job.retry_number);
-                            match driver.deploy(namespace.as_str(), &dag).await {
+                            match driver.deploy(job.name.as_str(), &dag).await {
                                 Ok(_) => {
                                     if let Err(err) = db
                                         .update(
@@ -130,7 +129,7 @@ where
                                 }
                                 Err(err) => {
                                     error!("run job {} {err}, start cleaning", job.name);
-                                    if let Err(err) = driver.clean(namespace.as_str()).await {
+                                    if let Err(err) = driver.clean(job.name.as_str()).await {
                                         error!("clean job resource {err}");
                                     }
                                     if let Err(err) = db
@@ -154,20 +153,19 @@ where
                             state: Some(JobState::Running),
                         };
                         for job in db.list_jobs(running_jobs_params).await? {
-                            let namespace = format!("{}-{}", job.name, job.retry_number - 1);
+                            let namespace = job.name;
                             let db_url = connect_string.clone() + "/" + &namespace;
                             let job_db = MongoRunDbRepo::new(&db_url).await?;
-                            let is_job_finish =  job_db
-                            .is_all_node_finish()
-                            .await?;
-                            
+                            let is_job_finish = job_db.is_all_node_finish().await?;
+
                             if is_job_finish {
                                 db.update(
                                     &job.id,
                                     &JobUpdateInfo {
                                         state: Some(JobState::Finish),
                                     },
-                                ).await?;
+                                )
+                                .await?;
                             }
                         }
                     }
@@ -179,7 +177,7 @@ where
                         };
 
                         for job in db.list_jobs(finish_jobs_params).await? {
-                            let namespace = format!("{}-{}", job.name, job.retry_number - 1);
+                            let namespace = job.name;
                             driver.clean(&namespace).await?;
                             let db_url = connect_string.clone() + "/" + &namespace;
                             MongoRunDbRepo::drop(&db_url).await?;
@@ -210,8 +208,7 @@ where
 
         let node_status = if job.state == JobState::Running {
             let dag = Dag::from_json(job.graph_json.as_str())?;
-            let namespace = format!("{}-{}", job.name, job.retry_number - 1);
-            let controller = self.driver.attach(&namespace, &dag).await?;
+            let controller = self.driver.attach(&job.name, &dag).await?;
             let nodes = controller.nodes_in_order().anyhow()?;
             let nodes_controller =
                 try_join_all(nodes.iter().map(|node_name| controller.get_node(node_name))).await?;
@@ -240,8 +237,7 @@ where
         }
 
         let dag = Dag::from_json(job.graph_json.as_str())?;
-        let namespace = format!("{}-{}", job.name, job.retry_number - 1);
-        let controller = self.driver.attach(&namespace, &dag).await?;
+        let controller = self.driver.attach(&job.name, &dag).await?;
         controller.start().await?;
         self.db
             .update(
@@ -259,8 +255,6 @@ where
 
     pub async fn clean_job(&self, id: &ObjectId) -> Result<()> {
         let job = self.db.get(id).await?.anyhow("job not found")?;
-        let namespace = format!("{}-{}", job.name, job.retry_number - 1);
-
         //clean k8s
         self.db
             .update(
@@ -270,9 +264,9 @@ where
                 },
             )
             .await?;
-        self.driver.clean(&namespace).await?;
+        self.driver.clean(&job.name).await?;
         //drop database
-        let db_url = self.connection_string.clone() + "/" + &namespace;
+        let db_url = self.connection_string.clone() + "/" + &job.name;
         MongoRunDbRepo::drop(&db_url).await?;
         self.db
             .update(

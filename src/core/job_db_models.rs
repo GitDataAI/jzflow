@@ -118,6 +118,11 @@ pub trait NodeRepo {
         name: &str,
         state: TrackerState,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn mark_incoming_finish(
+        &self,
+        name: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 pub trait DataRepo {

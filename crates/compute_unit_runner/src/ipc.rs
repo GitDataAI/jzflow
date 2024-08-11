@@ -37,7 +37,10 @@ use tokio::{
     },
     time::sleep,
 };
-use tracing::{debug, info};
+use tracing::{
+    debug,
+    info,
+};
 
 use http_body_util::{
     BodyExt,

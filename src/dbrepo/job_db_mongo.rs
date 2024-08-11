@@ -205,6 +205,30 @@ impl NodeRepo for MongoRunDbRepo {
             .anyhow()
     }
 
+    async fn mark_incoming_finish(&self, name: &str) -> Result<()> {
+        let update = doc! {
+            "$set": {
+                "state": to_variant_name(&TrackerState::InComingFinish)?,
+                "updated_at":Utc::now().timestamp(),
+            },
+        };
+
+        //provent override finish state
+        self.node_col
+            .update_one(
+                doc! {
+                    "node_name":name,
+                    "state": {
+                        "$ne": to_variant_name(&TrackerState::Finish)?
+                    },
+                },
+                update,
+            )
+            .await
+            .map(|_| ())
+            .anyhow()
+    }
+
     async fn is_all_node_finish(&self) -> Result<bool> {
         Ok(self
             .node_col

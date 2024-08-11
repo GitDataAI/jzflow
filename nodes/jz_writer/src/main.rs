@@ -255,7 +255,6 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                     continue;
                 }
                 ErrorNumber::InComingFinish => {
-                    client.finish().await.anyhow()?;
                     apis::wip_api::commit_wip(
                         configuration,
                         &args.owner,
@@ -264,6 +263,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                         "created by jz action",
                     )
                     .await?;
+                    client.finish().await.anyhow()?;
                     info!("all data finish");
                     return Ok(());
                 }

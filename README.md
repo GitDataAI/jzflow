@@ -20,6 +20,7 @@ jz-flow is a versatile pipeline framework designed for the concurrent preprocess
 2. MongoDB: Used to store runtime data. [Install MongoDB](https://www.mongodb.com/zh-cn/docs/manual/installation/)
 3. Protobuf: Utilizes Protocol Buffers for data exchange between nodes. [Install Protobuf Compiler](https://grpc.io/docs/protoc-installation/)
 4. Kubernetes: Relies on Kubernetes for deployment and scaling. Requires K8s 1.21 or higher. [Install Kubernetes](https://kubernetes.io/docs/setup/)
+5. StorageClass: Require a storage class named ```jz-flow-fs```
 
 ## Quick Start
 

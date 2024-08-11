@@ -24,7 +24,6 @@ pub struct Job {
     pub name: String,
     pub graph_json: String,
     pub state: JobState,
-    pub retry_number: u32,
     pub created_at: i64,
     pub updated_at: i64,
 }
