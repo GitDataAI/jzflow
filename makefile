@@ -26,9 +26,6 @@ docker_dp: build-dp
 	docker build -f ./crates/channel_runner/dockerfile -t gitdatateam/channel_runner:latest .
 
 ################## build nodes
-jz_reader:
-	cargo build -p jz_writer --release
-	cp target/release/jz_writer $(OUTPUT)/jz_writer
 
 build-nodes: $(OUTPUT)
 	cargo build -p jz_reader --release
@@ -55,6 +52,13 @@ docker_nodes: build-nodes
 
 ################## minikube
 docker: docker_cd docker_dp docker_nodes
+
+docker-push: docker_nodes
+	docker push gitdatateam/jz_reader:latest
+	docker push gitdatateam/jz_writer:latest
+	docker push gitdatateam/make_article:latest
+	docker push gitdatateam/list_files:latest
+	docker push gitdatateam/copy_in_place:latest
 
 minikube-env:
 	@echo "Setting up Docker environment for Minikube"

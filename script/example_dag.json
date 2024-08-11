@@ -9,7 +9,7 @@
                 "command": "/make_article",
                 "args": [
                     "--log-level=debug",
-                    "--total-count=100"
+                    "--total-count=60"
                 ]
             }
         },

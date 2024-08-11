@@ -157,18 +157,18 @@ where
                             let namespace = format!("{}-{}", job.name, job.retry_number - 1);
                             let db_url = connect_string.clone() + "/" + &namespace;
                             let job_db = MongoRunDbRepo::new(&db_url).await?;
-                            job_db
-                                .is_all_node_finish()
-                                .await
-                                .map(|_| {
-                                    db.update(
-                                        &job.id,
-                                        &JobUpdateInfo {
-                                            state: Some(JobState::Finish),
-                                        },
-                                    )
-                                })?
-                                .await?;
+                            let is_job_finish =  job_db
+                            .is_all_node_finish()
+                            .await?;
+                            
+                            if is_job_finish {
+                                db.update(
+                                    &job.id,
+                                    &JobUpdateInfo {
+                                        state: Some(JobState::Finish),
+                                    },
+                                ).await?;
+                            }
                         }
                     }
 
