@@ -10,7 +10,11 @@ use crate::{
     dag::Dag,
     dbrepo::MongoRunDbRepo,
     driver::{
-        ChannelHandler, Driver, NodeStatus, PipelineController, UnitHandler
+        ChannelHandler,
+        Driver,
+        NodeStatus,
+        PipelineController,
+        UnitHandler,
     },
     utils::{
         IntoAnyhowResult,
@@ -156,7 +160,7 @@ where
             for node_ctl in nodes_controller {
                 if let Some(channel) = node_ctl.channel_handler() {
                     let status = channel.status().await?;
-                    node_status.push(status);  
+                    node_status.push(status);
                 }
                 let status = node_ctl.status().await?;
                 node_status.push(status);

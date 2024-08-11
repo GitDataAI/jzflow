@@ -19,7 +19,7 @@ use tokio::{
         SignalKind,
     },
     task::JoinSet,
-    time::{sleep},
+    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
@@ -119,6 +119,11 @@ async fn print_files(token: CancellationToken, args: Args) -> Result<()> {
                 ErrorNumber::DataNotFound => {
                     sleep(Duration::from_secs(2)).await;
                     continue;
+                }
+                ErrorNumber::InComingFinish => {
+                    client.finish().await.anyhow()?;
+                    info!("all data finish");
+                    return Ok(());
                 }
             },
             Err(IPCError::UnKnown(msg)) => {

@@ -44,7 +44,10 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
-    debug, error, info, Level
+    debug,
+    error,
+    info,
+    Level,
 };
 use walkdir::WalkDir;
 
@@ -93,10 +96,14 @@ struct Args {
     #[arg(long, help = "dont overide file if exit")]
     no_overide: bool,
 
-    #[arg(long, help ="create repo branch if not exit")]
+    #[arg(long, help = "create repo branch if not exit")]
     create_if_not_exit: bool,
 
-    #[arg(long, default_value = "main", help = "create repo base on this branch, must set --create-if-not-exit")]
+    #[arg(
+        long,
+        default_value = "main",
+        help = "create repo base on this branch, must set --create-if-not-exit"
+    )]
     source: String,
 }
 
@@ -191,7 +198,9 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
             .map_err(|err| anyhow!("create branch {err}"))?;
     }
 
-    apis::wip_api::get_wip(configuration, &args.repo, &args.owner, &args.ref_name).await.map_err(|err|anyhow!("get wip {err}"))?;
+    apis::wip_api::get_wip(configuration, &args.repo, &args.owner, &args.ref_name)
+        .await
+        .map_err(|err| anyhow!("get wip {err}"))?;
 
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
@@ -251,6 +260,11 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                 ErrorNumber::DataNotFound => {
                     sleep(Duration::from_secs(2)).await;
                     continue;
+                }
+                ErrorNumber::InComingFinish => {
+                    client.finish().await.anyhow()?;
+                    info!("all data finish");
+                    return Ok(());
                 }
             },
             Err(IPCError::UnKnown(msg)) => {

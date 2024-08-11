@@ -6,15 +6,24 @@ pub fn get_pod_status(pod: &Pod) -> String {
             for container in container_statuses {
                 if let Some(state) = &container.state {
                     if let Some(waiting) = &state.waiting {
-                        return waiting.reason.clone().unwrap_or_else(|| "Unknown".to_string());
+                        return waiting
+                            .reason
+                            .clone()
+                            .unwrap_or_else(|| "Unknown".to_string());
                     } else if let Some(terminated) = &state.terminated {
-                        return terminated.reason.clone().unwrap_or_else(|| "Unknown".to_string());
+                        return terminated
+                            .reason
+                            .clone()
+                            .unwrap_or_else(|| "Unknown".to_string());
                     }
                 }
             }
         }
 
-        return status.phase.clone().unwrap_or_else(|| "Unknown".to_string());
+        return status
+            .phase
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string());
     }
     "Unknown".to_string()
 }

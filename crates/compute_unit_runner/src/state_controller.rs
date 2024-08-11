@@ -70,7 +70,7 @@ where
                             *local_state = record.state.clone();
                             info!("update state {:?} -> {:?}", old_local_state, local_state);
                             drop(local_state);
-                            if record.state == TrackerState::Ready && old_local_state == TrackerState::Init {
+                            if  record.state!= TrackerState::Init && !record.state.is_end_state() {
                                 //start
                                 info!("start data processing {:?}", record.incoming_streams);
                                 join_set = Some(program_guard.route_data(token.clone()).await?);

@@ -16,9 +16,22 @@ pub enum TrackerState {
     Ready,
     Stop,
     Stopped,
+    InComingFinish, //mean all incoming data was processed
     Finish,
 }
 
+impl TrackerState {
+    pub fn is_end_state(&self) -> bool {
+        match self {
+            TrackerState::Init => false,
+            TrackerState::Ready => false,
+            TrackerState::Stop => false,
+            TrackerState::Stopped => true,
+            TrackerState::InComingFinish => false,
+            TrackerState::Finish => true,
+        }
+    }
+}
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Graph {
     pub graph_json: String,

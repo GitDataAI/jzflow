@@ -10,7 +10,7 @@
                 "replicas": 3,
                 "args": [
                     "--log-level=debug",
-                    "--total-count=5"
+                    "--total-count=2"
                 ]
             }
         },
@@ -30,7 +30,7 @@
                     "--username=jimmy",
                     "--password=12345678", 
                     "--owner=jimmy",
-                    "--repo=jz_write_test2",
+                    "--repo=jz_write_test4",
                     "--ref-name=main",
                     "--create-if-not-exit"
                 ]

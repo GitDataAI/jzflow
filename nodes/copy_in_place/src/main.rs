@@ -130,6 +130,11 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
                     sleep(Duration::from_secs(2)).await;
                     continue;
                 }
+                ErrorNumber::InComingFinish => {
+                    client.finish().await.anyhow()?;
+                    info!("all data finish");
+                    return Ok(());
+                }
             },
             Err(IPCError::UnKnown(msg)) => {
                 error!("got unknow error {msg}");

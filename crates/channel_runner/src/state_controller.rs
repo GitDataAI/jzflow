@@ -61,14 +61,12 @@ where
                             debug!("{} fetch state {:?} from db", record.node_name, record.state);
                             let mut program_guard = program.write().await;
                             if program_guard.local_state == record.state {
-                                println!("xcxxxxxx {:?}",program_guard.local_state);
                                 continue
                             }
-                            println!("xxxxxxxxxxxx");
                             let old_local_state = program_guard.local_state.clone();
                             program_guard.local_state = record.state.clone();
                             info!("update state {:?} -> {:?}", &old_local_state, &record.state);
-                            if record.state == TrackerState::Ready && old_local_state == TrackerState::Init {
+                            if  record.state!= TrackerState::Init && !record.state.is_end_state() {
                                 //start
                                 info!("start data processing {:?}", record.incoming_streams);
                                 join_set = Some(program_guard.route_data(token.clone()).await?);

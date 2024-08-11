@@ -84,8 +84,9 @@ use std::fmt;
 #[repr(u8)]
 pub enum ErrorNumber {
     NotReady = 1,
-    AlreadyFinish = 2,
-    DataNotFound = 3,
+    InComingFinish = 2,
+    AlreadyFinish = 3,
+    DataNotFound = 4,
 }
 
 #[derive(Debug)]
@@ -239,7 +240,9 @@ pub struct RequetDataReq {
 
 impl RequetDataReq {
     pub fn new(metadata_id: &str) -> Self {
-        RequetDataReq { metadata_id: Some(metadata_id.to_string()) }
+        RequetDataReq {
+            metadata_id: Some(metadata_id.to_string()),
+        }
     }
 }
 
@@ -274,14 +277,21 @@ where
     let sender = loop {
         let program = program_mutex.read().await;
         let local_state = program.local_state.read().await;
-        if matches!(*local_state, TrackerState::Finish) {
+        if *local_state == TrackerState::Finish {
             return HttpResponse::BadRequest().json(IPCError::NodeError {
                 code: ErrorNumber::AlreadyFinish,
                 msg: "node is already finish".to_string(),
             });
         }
 
-        if matches!(*local_state, TrackerState::Ready) {
+        if *local_state == TrackerState::InComingFinish {
+            return HttpResponse::BadRequest().json(IPCError::NodeError {
+                code: ErrorNumber::InComingFinish,
+                msg: "incoming is already finish".to_string(),
+            });
+        }
+
+        if *local_state != TrackerState::Init {
             break program.ipc_process_data_req_tx.as_ref().cloned();
         }
         drop(local_state);
@@ -299,7 +309,7 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready");
+            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
         }
     }
 
@@ -326,14 +336,14 @@ where
         let program = program_mutex.read().await;
         let local_state = program.local_state.read().await;
 
-        if matches!(*local_state, TrackerState::Finish) {
+        if *local_state == TrackerState::Finish {
             return HttpResponse::BadRequest().json(IPCError::NodeError {
                 code: ErrorNumber::AlreadyFinish,
                 msg: "node is already finish".to_string(),
             });
         }
 
-        if matches!(*local_state, TrackerState::Ready) {
+        if *local_state != TrackerState::Init {
             break program.ipc_process_completed_data_tx.as_ref().cloned();
         }
         drop(local_state);
@@ -351,7 +361,7 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready");
+            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
         }
     }
 
@@ -377,14 +387,14 @@ where
         let program = program_mutex.read().await;
         let local_state = program.local_state.read().await;
 
-        if matches!(*local_state, TrackerState::Finish) {
+        if *local_state == TrackerState::Finish {
             return HttpResponse::BadRequest().json(IPCError::NodeError {
                 code: ErrorNumber::AlreadyFinish,
                 msg: "node is already finish".to_string(),
             });
         }
 
-        if matches!(*local_state, TrackerState::Ready) {
+        if *local_state != TrackerState::Init {
             break program.ipc_process_submit_output_tx.as_ref().cloned();
         }
         drop(local_state);
@@ -402,7 +412,7 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready");
+            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
         }
     }
 
@@ -423,15 +433,14 @@ where
     let sender = loop {
         let program = program_mutex.read().await;
         let local_state = program.local_state.read().await;
-
-        if matches!(*local_state, TrackerState::Finish) {
-            return HttpResponse::BadRequest().json(IPCError::NodeError {
+        if *local_state == TrackerState::Finish {
+            return HttpResponse::Conflict().json(IPCError::NodeError {
                 code: ErrorNumber::AlreadyFinish,
                 msg: "node is already finish".to_string(),
             });
         }
 
-        if matches!(*local_state, TrackerState::Ready) {
+        if *local_state != TrackerState::Init {
             break program.ipc_process_finish_state_tx.as_ref().cloned();
         }
         drop(local_state);
@@ -449,10 +458,10 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready");
+            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
         }
     }
-
+    
     match rx.await {
         Ok(Ok(resp)) => HttpResponse::Ok().json(resp),
         Ok(Err(err)) => HttpResponse::InternalServerError().json(err.to_string()),
@@ -520,8 +529,8 @@ pub trait IPCClient {
         id: &str,
     ) -> impl std::future::Future<Output = Result<(), IPCError>> + Send;
     fn request_avaiable_data(
-        &self, 
-        metadata_id: Option<String>
+        &self,
+        metadata_id: Option<String>,
     ) -> impl std::future::Future<Output = Result<Option<AvaiableDataResponse>, IPCError>> + Send;
 }
 
@@ -613,11 +622,12 @@ impl IPCClient for IPCClientImpl {
         Err(serde_json::from_slice(&resp_bytes).map_err(IPCError::from)?)
     }
 
-    async fn request_avaiable_data(&self, metadata_id: Option<String>) -> Result<Option<AvaiableDataResponse>, IPCError> {
+    async fn request_avaiable_data(
+        &self,
+        metadata_id: Option<String>,
+    ) -> Result<Option<AvaiableDataResponse>, IPCError> {
         let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data");
-        let json = serde_json::to_string(&RequetDataReq{
-            metadata_id,
-        })?;
+        let json = serde_json::to_string(&RequetDataReq { metadata_id })?;
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::GET)
             .uri(url)

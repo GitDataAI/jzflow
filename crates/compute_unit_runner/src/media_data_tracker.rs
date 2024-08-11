@@ -80,7 +80,7 @@ where
 
     pub(crate) up_nodes: Vec<String>,
 
-    pub(crate) upstreams: Vec<String>,
+    pub(crate) incoming_streams: Vec<String>,
 
     pub(crate) downstreams: Vec<String>,
 
@@ -107,7 +107,7 @@ where
         data_cache: Arc<dyn FileCache>,
         buf_size: usize,
         up_nodes: Vec<String>,
-        upstreams: Vec<String>,
+        incoming_streams: Vec<String>,
         downstreams: Vec<String>,
     ) -> Self {
         MediaDataTracker {
@@ -117,7 +117,7 @@ where
             repo,
             local_state: Arc::new(RwLock::new(TrackerState::Init)),
             up_nodes,
-            upstreams,
+            incoming_streams,
             downstreams,
             ipc_process_submit_output_tx: None,
             ipc_process_completed_data_tx: None,
@@ -142,6 +142,7 @@ where
         let node_name = self.name.clone();
         join_set.spawn(async move {
                 let mut interval = time::interval(Duration::from_secs(30));
+                let mut to_check_finish = true;
                 loop {
                     select! {
                         _ = token.cancelled() => {
@@ -157,26 +158,16 @@ where
                             .map(|count| info!("revert {count} SelectForSent data to Received"))?;
 
                             //check ready if both upnodes is finish and no pending data, we think it finish
-                            if !up_nodes.is_empty() {
+                            if to_check_finish && !up_nodes.is_empty() {
                                 let is_all_success = try_join_all(up_nodes.iter().map(|node_name|db_repo.get_node_by_name(node_name))).await
                                 .map_err(|err|anyhow!("query node data {err}"))?
                                 .iter()
                                 .any(|node| matches!(node.state, TrackerState::Finish));
 
-                                if is_all_success {
-                                    let running_state = &[
-                                            &DataState::Received,
-                                            &DataState::Assigned,
-                                            &DataState::SelectForSend,
-                                            &DataState::PartialSent
-                                    ];
-
-                                    if db_repo.count(&node_name, running_state.as_slice(), Some(&Direction::Out)).await? == 0 &&
-                                    db_repo.count(&node_name,  &[&DataState::Received,&DataState::Assigned], Some(&Direction::In)).await? == 0 {
-                                        db_repo.update_node_by_name(&node_name, TrackerState::Finish).await.map_err(|err|anyhow!("update node data {err}"))?;
-                                        info!("node was finished, not need to run backend");
-                                        return anyhow::Ok(());
-                                    }
+                                if is_all_success && db_repo.count(&node_name,  &[&DataState::Received,&DataState::Assigned], Some(&Direction::In)).await? == 0 {
+                                    db_repo.update_node_by_name(&node_name, TrackerState::InComingFinish).await.map_err(|err|anyhow!("update node data {err}"))?;
+                                    info!("incoming data was finished, not need to run backend");
+                                    to_check_finish = false;
                                 }
                             }
                             info!("backend thread end {:?}", now.elapsed());
@@ -383,11 +374,11 @@ where
         }
 
         let incoming_data_tx = broadcast::Sender::new(1);
-        if !self.upstreams.is_empty() {
+        if !self.incoming_streams.is_empty() {
             //fetch data from channel
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
-            let url = self.upstreams[0].clone();
+            let url = self.incoming_streams[0].clone();
             let data_cache = self.data_cache.clone();
             let token = token.clone();
             let local_state = self.local_state.clone();
@@ -512,7 +503,7 @@ where
 
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
-        if !self.upstreams.is_empty() {
+        {
             //process user contaienr request
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();
@@ -550,7 +541,6 @@ where
                                 resp.send(Err(anyhow!("expect a metadata id with metadata suffix"))).expect("channel only read once");
                                 continue;
                             }
-                      
 
                             let result = {
                                 let record = db_repo
@@ -603,7 +593,7 @@ where
             });
         }
 
-        if self.upstreams.is_empty() {
+        {
             //receive event from pod
             //inputs nodes need to tell its finish
             let db_repo = self.repo.clone();
@@ -626,6 +616,7 @@ where
                                 ];
                                 match db_repo.count(&node_name, running_state.as_slice(), Some(&Direction::Out)).await {
                                     Ok(count) => {
+                                        info!(count);
                                         if count ==0 {
                                             break;
                                         }

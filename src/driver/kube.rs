@@ -21,7 +21,9 @@ use crate::{
     dag::Dag,
     dbrepo::MongoRunDbRepo,
     utils::{
-        k8s_helper::get_pod_status, IntoAnyhowResult, StdIntoAnyhowResult
+        k8s_helper::get_pod_status,
+        IntoAnyhowResult,
+        StdIntoAnyhowResult,
     },
 };
 use anyhow::{
@@ -70,7 +72,8 @@ use tokio_retry::{
 };
 use tracing::{
     debug,
-    error, warn,
+    error,
+    warn,
 };
 
 pub struct KubeChannelHander<R>
@@ -152,14 +155,16 @@ where
             let pod_name = pod.metadata.name.as_ref().expect("set in template");
             let phase = get_pod_status(&pod);
 
-            let metrics = metrics_api.get(pod_name).await
-            .anyhow()
-            .map_err(|err|{
-                warn!("get metrics fail {err} {}", pod_name);
-                err
-            })
-            .unwrap_or_default();
-            
+            let metrics = metrics_api
+                .get(pod_name)
+                .await
+                .anyhow()
+                .map_err(|err| {
+                    warn!("get metrics fail {err} {}", pod_name);
+                    err
+                })
+                .unwrap_or_default();
+
             let mut cpu_sum = 0.0;
             let mut memory_sum = 0;
             for container in metrics.containers.iter() {
@@ -291,14 +296,16 @@ where
             let pod_name = pod.metadata.name.as_ref().expect("set in template");
             let phase = get_pod_status(&pod);
 
-            let metrics = metrics_api.get(pod_name).await
-            .anyhow()
-            .map_err(|err|{
-                warn!("get metrics fail {err} {}", pod_name);
-                err
-            })
-            .unwrap_or_default();
-        
+            let metrics = metrics_api
+                .get(pod_name)
+                .await
+                .anyhow()
+                .map_err(|err| {
+                    warn!("get metrics fail {err} {}", pod_name);
+                    err
+                })
+                .unwrap_or_default();
+
             let mut cpu_sum = 0.0;
             let mut memory_sum = 0;
             for container in metrics.containers.iter() {
@@ -862,10 +869,10 @@ where
 mod tests {
     use super::*;
     use crate::dbrepo::MongoRunDbRepo;
+    use local_ip_address::local_ip;
     use mongodb::Client as MongoClient;
     use std::env;
     use tracing_subscriber;
-    use local_ip_address::local_ip;
 
     #[tokio::test]
     async fn test_render() {

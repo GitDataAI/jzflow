@@ -1,5 +1,5 @@
-pub mod sizefmt;
 pub mod k8s_helper;
+pub mod sizefmt;
 
 use core::fmt;
 
