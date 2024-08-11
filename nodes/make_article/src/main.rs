@@ -5,7 +5,7 @@ use compute_unit_runner::ipc::{
     IPCClient,
     SubmitOuputDataReq,
 };
-use jz_flow::{
+use jiaoziflow::{
     core::db::TrackerState,
     utils::StdIntoAnyhowResult,
 };
@@ -35,7 +35,7 @@ use tracing::{
 #[command(
     name = "dummyu_in",
     version = "0.0.1",
-    author = "Author Name <github.com/GitDataAI/jz-flow>",
+    author = "Author Name <github.com/GitDataAI/jiaoziflow>",
     about = "embed in k8s images. "
 )]
 

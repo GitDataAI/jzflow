@@ -22,7 +22,7 @@ use job::{
     JobCommands,
 };
 
-use jz_flow::{
+use jiaoziflow::{
     core::db::MainDbRepo,
     utils::StdIntoAnyhowResult,
 };

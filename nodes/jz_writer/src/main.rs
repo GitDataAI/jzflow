@@ -9,6 +9,10 @@ use compute_unit_runner::ipc::{
     IPCClient,
     IPCError,
 };
+use jiaoziflow::utils::{
+    IntoAnyhowResult,
+    StdIntoAnyhowResult,
+};
 use jiaozifs_client_rs::{
     apis::{
         self,
@@ -19,10 +23,6 @@ use jiaozifs_client_rs::{
         BranchCreation,
         CreateRepository,
     },
-};
-use jz_flow::utils::{
-    IntoAnyhowResult,
-    StdIntoAnyhowResult,
 };
 use std::{
     path::Path,
@@ -55,7 +55,7 @@ use walkdir::WalkDir;
 #[command(
     name = "jz_writer",
     version = "0.0.1",
-    author = "Author Name <github.com/GitDataAI/jz-flow>",
+    author = "Author Name <github.com/GitDataAI/jiaoziflow>",
     about = "embed in k8s images"
 )]
 

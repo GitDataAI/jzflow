@@ -12,7 +12,7 @@ members = [
 ]
 
 [workspace.package]
-repository = "https://github.com/GitDataAI/jz-flow"
+repository = "https://github.com/GitDataAI/jiaoziflow"
 license = "MIT OR Apache-2.0"
 edition = "2021"
 include = [
@@ -44,7 +44,7 @@ actix-web = "4.8.0"
 reqwest = {version="0.12.5", features=["json"]}
 
 [package]
-name = "jz_flow"
+name = "jiaoziflow"
 version = "0.1.0"
 edition = "2021"
 

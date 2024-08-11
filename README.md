@@ -1,10 +1,10 @@
-# jz-flow
+# JiaoZiFlow
 
-Pipeline for Table Data and Media Data Preprocessing
+A flexible, extensible, and customizable pipeline.
 
 ## Overview
 
-jz-flow is a versatile pipeline framework designed for the concurrent preprocessing of various data types, including tables, images, videos, and text. It enables users to define and customize the behavior of each node, seamlessly integrating with Jiaozifs to unlock the potential of versioned data. jz-flow is built for cloud-native deployment, offering flexible scaling to handle large data volumes.
+jiaoziflow is a versatile pipeline framework designed for the concurrent preprocessing of various data types, including tables, images, videos, and text. It enables users to define and customize the behavior of each node, seamlessly integrating with Jiaozifs to unlock the potential of versioned data. jiaoziflow is built for cloud-native deployment, offering flexible scaling to handle large data volumes.
 
 ## Features
 
@@ -26,21 +26,29 @@ jz-flow is a versatile pipeline framework designed for the concurrent preprocess
 
 ### 1. Build
 
-git clone https://github.com/GitDataAI/jz-flow.git
+```
+git clone https://github.com/GitDataAI/jiaoziflow.git
 build-jz
+```
 
 ### 2. Run Daemon
 
+```
+# dont specify the database; it is created dynamically.
 ./dist/jz-flow daemon --mongo-url mongodb://<ip>:27017
-# No need to specify the database; it is created dynamically.
+```
 
-### 3. Run a Test Flow
 
+
+### 3. Run a Example Flow
+
+```
 ./dist/jz-flow job create --name simple --path ./script/example_dag.json  # Create a job and deploy all pods
 ./dist/jz-flow job run <job id>                                           # Start the job
+```
 
 ### 4. Monitor the Job
-
+```
 ./dist/jz-flow job detail <job id>                                        # Monitor the job's details
-
+```
 ![job_detail](./docs/images/job_detail.png)

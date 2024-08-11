@@ -6,7 +6,7 @@ use compute_unit_runner::ipc::{
     IPCClient,
     IPCError,
 };
-use jz_flow::utils::StdIntoAnyhowResult;
+use jiaoziflow::utils::StdIntoAnyhowResult;
 use std::{
     path::Path,
     str::FromStr,
@@ -33,7 +33,7 @@ use walkdir::WalkDir;
 #[command(
     name = "list_files",
     version = "0.0.1",
-    author = "Author Name <github.com/GitDataAI/jz-flow>",
+    author = "Author Name <github.com/GitDataAI/jiaoziflow>",
     about = "embed in k8s images"
 )]
 
