@@ -5,7 +5,7 @@ use crate::{
         JobState,
         JobUpdateInfo,
         ListJobParams,
-        MainDbRepo,
+        MainDbRepo, NodeRepo,
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
@@ -29,8 +29,8 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use std::marker::PhantomData;
-use tokio::task::JoinSet;
+use std::{marker::PhantomData, time::Duration};
+use tokio::{task::JoinSet, time::sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
@@ -90,6 +90,8 @@ where
     ) -> Result<()> {
         let db = self.db.clone();
         let driver = self.driver.clone();
+        let connect_string = self.connection_string.clone();
+
         join_set.spawn(async move {
             info!("backend thead is running");
             loop {
@@ -98,68 +100,99 @@ where
                 }
 
                 if let Err(err) = {
-                    while let Some(job) = db.get_job_for_running().await? {
-                        let dag = Dag::from_json(job.graph_json.as_str())?;
-                        let namespace = format!("{}-{}", job.name, job.retry_number);
-
-                        match driver.deploy(namespace.as_str(), &dag).await {
-                            Ok(_) => {
-                                if let Err(err) = db
-                                    .update(
-                                        &job.id,
-                                        &JobUpdateInfo {
-                                            state: Some(JobState::Deployed),
-                                        },
-                                    )
-                                    .await
-                                {
-                                    error!("set job to deploy state {err}");
+                    //fetch data to deploy
+                    {
+                        while let Some(job) = db.get_job_for_running().await? {
+                            let dag = Dag::from_json(job.graph_json.as_str())?;
+                            let namespace = format!("{}-{}", job.name, job.retry_number);
+                            match driver.deploy(namespace.as_str(), &dag).await {
+                                Ok(_) => {
+                                    if let Err(err) = db
+                                        .update(
+                                            &job.id,
+                                            &JobUpdateInfo {
+                                                state: Some(JobState::Deployed),
+                                            },
+                                        )
+                                        .await
+                                    {
+                                        error!("set job to deploy state {err}");
+                                    }
                                 }
-                            }
-                            Err(err) => {
-                                error!("run job {} {err}, start cleaning", job.name);
-                                if let Err(err) = driver.clean(namespace.as_str()).await {
-                                    error!("clean job resource {err}");
+                                Err(err) => {
+                                    error!("run job {} {err}, start cleaning", job.name);
+                                    if let Err(err) = driver.clean(namespace.as_str()).await {
+                                        error!("clean job resource {err}");
+                                    }
+                                    if let Err(err) = db
+                                        .update(
+                                            &job.id,
+                                            &JobUpdateInfo {
+                                                state: Some(JobState::Error),
+                                            },
+                                        )
+                                        .await
+                                    {
+                                        error!("set job to error state {err}");
+                                    }
                                 }
-                                if let Err(err) = db
-                                    .update(
-                                        &job.id,
-                                        &JobUpdateInfo {
-                                            state: Some(JobState::Error),
-                                        },
-                                    )
-                                    .await
-                                {
-                                    error!("set job to error state {err}");
-                                }
-                            }
+                            };
+                        }
+                    }
+                    //mark finish if all nodes was finish
+                    {
+                        let running_jobs_params = &ListJobParams {
+                            state: Some(JobState::Running),
                         };
+                        for job in db.list_jobs(running_jobs_params).await? {
+                            let namespace = format!("{}-{}", job.name, job.retry_number - 1);
+                            let db_url = connect_string.clone() + "/" + &namespace;
+                            let job_db =  MongoRunDbRepo::new(&db_url).await?;
+                            job_db.is_all_node_finish().await.map(|_|{
+                                db.update(
+                                    &job.id,
+                                    &JobUpdateInfo {
+                                        state: Some(JobState::Finish),
+                                    },
+                                )
+                            })?.await?;
+                        }
                     }
 
-                    let finish_jobs_params = &ListJobParams {
-                        state: Some(JobState::Finish),
-                    };
+                    //clean data
+                    {
+                        let finish_jobs_params = &ListJobParams {
+                            state: Some(JobState::Finish),
+                        };
 
-                    for job in db.list_jobs(finish_jobs_params).await? {
-                        let namespace = format!("{}-{}", job.name, job.retry_number - 1);
-                        driver.clean(&namespace).await?;
-                        db.update(
-                            &job.id,
-                            &JobUpdateInfo {
-                                state: Some(JobState::Clean),
-                            },
-                        )
-                        .await?;
+                        for job in db.list_jobs(finish_jobs_params).await? {
+                            let namespace = format!("{}-{}", job.name, job.retry_number - 1);
+                            driver.clean(&namespace).await?;
+                            let db_url = connect_string.clone() + "/" + &namespace;
+                            MongoRunDbRepo::drop(&db_url).await?;
+                            db.update(
+                                &job.id,
+                                &JobUpdateInfo {
+                                    state: Some(JobState::Clean),
+                                },
+                            )
+                            .await?;
+                        }
                     }
+
+
                     anyhow::Ok(())
                 } {
                     error!("error in job backend {err}");
                 }
+
+                sleep(Duration::from_secs(5)).await;
             }
         });
 
         Ok(())
     }
+
 
     pub async fn get_job_details(&self, id: &ObjectId) -> Result<JobDetails> {
         let job = self.db.get(id).await?.anyhow("job not found")?;
@@ -194,7 +227,7 @@ where
         if job.state != JobState::Deployed {
             return Err(anyhow!("only can run a deployed job"));
         }
-        
+
         let dag = Dag::from_json(job.graph_json.as_str())?;
         let namespace = format!("{}-{}", job.name, job.retry_number - 1);
         let controller = self.driver.attach(&namespace, &dag).await?;

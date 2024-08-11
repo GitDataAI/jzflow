@@ -111,6 +111,10 @@ pub trait NodeRepo {
         name: &str,
     ) -> impl std::future::Future<Output = Result<Node>> + Send;
 
+    fn is_all_node_finish(
+        &self
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
+
     fn update_node_by_name(
         &self,
         name: &str,

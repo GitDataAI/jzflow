@@ -204,6 +204,12 @@ impl NodeRepo for MongoRunDbRepo {
             .map(|_| ())
             .anyhow()
     }
+    
+    async fn is_all_node_finish(
+        &self
+    ) -> Result<bool> {
+       Ok(self.node_col.count_documents(doc! {"state": {"$ne": to_variant_name(&TrackerState::Finish)?}}).await?==0)
+    }
 }
 
 impl DataRepo for MongoRunDbRepo {
