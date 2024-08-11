@@ -21,7 +21,7 @@ use crate::{
         StdIntoAnyhowResult,
     },
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures::future::try_join_all;
 use kube::Client;
 use mongodb::bson::oid::ObjectId;
@@ -101,21 +101,37 @@ where
                     while let Some(job) = db.get_job_for_running().await? {
                         let dag = Dag::from_json(job.graph_json.as_str())?;
                         let namespace = format!("{}-{}", job.name, job.retry_number);
-                        if let Err(err) = driver.deploy(namespace.as_str(), &dag).await {
-                            error!("run job {} {err}, start cleaning", job.name);
-                            if let Err(err) = driver.clean(namespace.as_str()).await {
-                                error!("clean job resource {err}");
+
+                        match driver.deploy(namespace.as_str(), &dag).await {
+                            Ok(_) => {
+                                if let Err(err) = db
+                                    .update(
+                                        &job.id,
+                                        &JobUpdateInfo {
+                                            state: Some(JobState::Deployed),
+                                        },
+                                    )
+                                    .await
+                                {
+                                    error!("set job to deploy state {err}");
+                                }
                             }
-                            if let Err(err) = db
-                                .update(
-                                    &job.id,
-                                    &JobUpdateInfo {
-                                        state: Some(JobState::Error),
-                                    },
-                                )
-                                .await
-                            {
-                                error!("set job to error state {err}");
+                            Err(err) => {
+                                error!("run job {} {err}, start cleaning", job.name);
+                                if let Err(err) = driver.clean(namespace.as_str()).await {
+                                    error!("clean job resource {err}");
+                                }
+                                if let Err(err) = db
+                                    .update(
+                                        &job.id,
+                                        &JobUpdateInfo {
+                                            state: Some(JobState::Error),
+                                        },
+                                    )
+                                    .await
+                                {
+                                    error!("set job to error state {err}");
+                                }
                             }
                         };
                     }
@@ -175,10 +191,25 @@ where
 
     pub async fn start_job(&self, id: &ObjectId) -> Result<()> {
         let job = self.db.get(id).await?.anyhow("job not found")?;
+        if job.state != JobState::Deployed {
+            return Err(anyhow!("only can run a deployed job"));
+        }
+        
         let dag = Dag::from_json(job.graph_json.as_str())?;
         let namespace = format!("{}-{}", job.name, job.retry_number - 1);
         let controller = self.driver.attach(&namespace, &dag).await?;
-        controller.start().await
+        controller.start().await?;
+       self.db
+        .update(
+            &job.id,
+            &JobUpdateInfo {
+                state: Some(JobState::Running),
+            },
+        ).await
+        .map_err(|err|{
+            error!("set job to deploy state {err}");
+            err
+        })
     }
 
     pub async fn clean_job(&self, id: &ObjectId) -> Result<()> {

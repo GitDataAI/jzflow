@@ -26,6 +26,10 @@ docker_dp: build-dp
 	docker build -f ./crates/channel_runner/dockerfile -t gitdatateam/channel_runner:latest .
 
 ################## build nodes
+jz_reader:
+	cargo build -p jz_writer --release
+	cp target/release/jz_writer $(OUTPUT)/jz_writer
+
 build-nodes: $(OUTPUT)
 	cargo build -p jz_reader --release
 	cp target/release/jz_reader $(OUTPUT)/jz_reader

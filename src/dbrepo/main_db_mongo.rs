@@ -115,7 +115,7 @@ impl JobRepo for MongoMainDbRepo {
     async fn get_job_for_running(&self) -> Result<Option<Job>> {
         let update = doc! {
             "$set": {
-                "state": to_variant_name(&JobState::Running)?,
+                "state": to_variant_name(&JobState::Selected)?,
                 "updated_at":Utc::now().timestamp(),
             },
             "$inc":{

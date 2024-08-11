@@ -309,7 +309,8 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
+            return HttpResponse::InternalServerError()
+                .json("channel is not ready maybe not start route data");
         }
     }
 
@@ -361,7 +362,8 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
+            return HttpResponse::InternalServerError()
+                .json("channel is not ready maybe not start route data");
         }
     }
 
@@ -412,7 +414,8 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
+            return HttpResponse::InternalServerError()
+                .json("channel is not ready maybe not start route data");
         }
     }
 
@@ -458,10 +461,11 @@ where
             }
         }
         None => {
-            return HttpResponse::InternalServerError().json("channel is not ready maybe not start route data");
+            return HttpResponse::InternalServerError()
+                .json("channel is not ready maybe not start route data");
         }
     }
-    
+
     match rx.await {
         Ok(Ok(resp)) => HttpResponse::Ok().json(resp),
         Ok(Err(err)) => HttpResponse::InternalServerError().json(err.to_string()),

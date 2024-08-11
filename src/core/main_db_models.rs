@@ -9,6 +9,8 @@ use serde::{
 pub enum JobState {
     #[default]
     Created,
+    Selected,
+    Deployed,
     Running,
     Error,
     Finish,
