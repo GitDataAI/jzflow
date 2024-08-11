@@ -5,7 +5,7 @@ use crate::{
         JobState,
         JobUpdateInfo,
         ListJobParams,
-        MainDbRepo, NodeRepo,
+        MainDbRepo,
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
