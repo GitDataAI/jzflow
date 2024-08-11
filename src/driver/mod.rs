@@ -50,7 +50,7 @@ pub trait UnitHandler: Send {
     fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
 
     //return a channel handler
-    fn channel_handler(&self) -> impl Future<Output = Result<Option<&Self::Output>>> + Send;
+    fn channel_handler(&self) -> Option<&Self::Output>;
 }
 
 pub trait ChannelHandler: Send {

@@ -8,11 +8,9 @@ use crate::{
         MainDbRepo,
     },
     dag::Dag,
+    dbrepo::MongoRunDbRepo,
     driver::{
-        Driver,
-        NodeStatus,
-        PipelineController,
-        UnitHandler,
+        ChannelHandler, Driver, NodeStatus, PipelineController, UnitHandler
     },
     utils::{
         IntoAnyhowResult,
@@ -50,6 +48,7 @@ where
 {
     driver: D,
     db: MAINR,
+    connection_string: String,
     _phantom_data: PhantomData<JOBR>,
 }
 
@@ -59,10 +58,16 @@ where
     JOBR: JobDbRepo,
     MAINR: MainDbRepo,
 {
-    pub async fn new(_client: Client, driver: D, db: MAINR, _db_url: &str) -> Result<Self> {
+    pub async fn new(
+        _client: Client,
+        connection_string: &str,
+        driver: D,
+        db: MAINR,
+    ) -> Result<Self> {
         Ok(JobManager {
             db,
             driver,
+            connection_string: connection_string.to_string(),
             _phantom_data: PhantomData,
         })
     }
@@ -149,6 +154,10 @@ where
 
             let mut node_status = vec![];
             for node_ctl in nodes_controller {
+                if let Some(channel) = node_ctl.channel_handler() {
+                    let status = channel.status().await?;
+                    node_status.push(status);  
+                }
                 let status = node_ctl.status().await?;
                 node_status.push(status);
             }
@@ -171,6 +180,8 @@ where
     pub async fn clean_job(&self, id: &ObjectId) -> Result<()> {
         let job = self.db.get(id).await?.anyhow("job not found")?;
         let namespace = format!("{}-{}", job.name, job.retry_number - 1);
+
+        //clean k8s
         self.db
             .update(
                 id,
@@ -180,6 +191,9 @@ where
             )
             .await?;
         self.driver.clean(&namespace).await?;
+        //drop database
+        let db_url = self.connection_string.clone() + "/" + &namespace;
+        MongoRunDbRepo::drop(&db_url).await?;
         self.db
             .update(
                 id,

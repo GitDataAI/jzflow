@@ -232,14 +232,14 @@ impl SubmitOuputDataReq {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RequetDataReq {
-    pub id: String,
+    pub metadata_id: Option<String>,
 }
 
 impl RequetDataReq {
-    pub fn new(id: &str) -> Self {
-        RequetDataReq { id: id.to_string() }
+    pub fn new(metadata_id: &str) -> Self {
+        RequetDataReq { metadata_id: Some(metadata_id.to_string()) }
     }
 }
 
@@ -520,7 +520,8 @@ pub trait IPCClient {
         id: &str,
     ) -> impl std::future::Future<Output = Result<(), IPCError>> + Send;
     fn request_avaiable_data(
-        &self,
+        &self, 
+        metadata_id: Option<String>
     ) -> impl std::future::Future<Output = Result<Option<AvaiableDataResponse>, IPCError>> + Send;
 }
 
@@ -612,13 +613,16 @@ impl IPCClient for IPCClientImpl {
         Err(serde_json::from_slice(&resp_bytes).map_err(IPCError::from)?)
     }
 
-    async fn request_avaiable_data(&self) -> Result<Option<AvaiableDataResponse>, IPCError> {
+    async fn request_avaiable_data(&self, metadata_id: Option<String>) -> Result<Option<AvaiableDataResponse>, IPCError> {
         let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data");
+        let json = serde_json::to_string(&RequetDataReq{
+            metadata_id,
+        })?;
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::GET)
             .uri(url)
             .header("Content-Type", "application/json")
-            .body(Full::default())
+            .body(Full::from(json))
             .map_err(IPCError::from)?;
 
         let resp = self.client.request(req).await.map_err(IPCError::from)?;

@@ -92,7 +92,7 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
         }
 
         let instant = Instant::now();
-        match client.request_avaiable_data().await {
+        match client.request_avaiable_data(None).await {
             Ok(Some(req)) => {
                 let id = req.id;
                 let path_str = tmp_path.join(&id);
@@ -133,6 +133,7 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
             },
             Err(IPCError::UnKnown(msg)) => {
                 error!("got unknow error {msg}");
+                sleep(Duration::from_secs(5)).await
             }
         }
     }

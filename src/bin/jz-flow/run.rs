@@ -43,7 +43,7 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
     let mut join_set: JoinSet<Result<()>> = JoinSet::new();
     let token = CancellationToken::new();
 
-    let db_url = args.mongo_url.to_string() + "/jz_flow";
+    let db_url = args.mongo_url.clone() + "/jz_flow";
     let db_repo = MongoMainDbRepo::new(db_url.as_str()).await?;
     let client = Client::try_default().await.unwrap();
 
@@ -51,9 +51,9 @@ pub(super) async fn run_backend(global_opts: GlobalOptions, args: RunArgs) -> Re
     let job_manager =
         JobManager::<KubeDriver<MongoRunDbRepo>, MongoMainDbRepo, MongoRunDbRepo>::new(
             client,
+            &args.mongo_url,
             driver,
             db_repo.clone(),
-            &args.mongo_url,
         )
         .await?;
 

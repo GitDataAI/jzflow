@@ -532,20 +532,25 @@ where
                                 resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
                                 continue;
                             }
-                            if is_metadata(&req.id) {
-                                let result = match db_repo.find_by_node_id(&node_name,&req.id, &Direction::In).await  {
-                                    Ok(Some(record))=>{
-                                      Ok(Some(AvaiableDataResponse {
-                                            id: record.id.clone(),
-                                            size: record.size,
-                                        }))
-                                     },
-                                     Ok(None)=> Ok(None),
-                                     Err(err)=>Err(err),
-                                 };
-                                resp.send(result).expect("channel send failed: channel can only be read once");
+                            if let Some(metadata_id) = req.metadata_id {
+                                if is_metadata(&metadata_id) {
+                                    let result = match db_repo.find_by_node_id(&node_name,&metadata_id, &Direction::In).await  {
+                                        Ok(Some(record))=>{
+                                          Ok(Some(AvaiableDataResponse {
+                                                id: record.id.clone(),
+                                                size: record.size,
+                                            }))
+                                         },
+                                         Ok(None)=> Ok(None),
+                                         Err(err)=>Err(err),
+                                     };
+                                    resp.send(result).expect("channel send failed: channel can only be read once");
+                                    continue;
+                                }
+                                resp.send(Err(anyhow!("expect a metadata id with metadata suffix"))).expect("channel only read once");
                                 continue;
                             }
+                      
 
                             let result = {
                                 let record = db_repo

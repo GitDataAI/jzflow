@@ -13,8 +13,12 @@ use jiaozifs_client_rs::{
     apis::{
         self,
         configuration::Configuration,
+        ResponseContent,
     },
-    models::RefType,
+    models::{
+        BranchCreation,
+        CreateRepository,
+    },
 };
 use jz_flow::utils::{
     IntoAnyhowResult,
@@ -40,9 +44,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
-    error,
-    info,
-    Level,
+    debug, error, info, Level
 };
 use walkdir::WalkDir;
 
@@ -83,16 +85,19 @@ struct Args {
     repo: String,
 
     #[arg(long)]
-    ref_type: String,
-
-    #[arg(long, default_value = "main")]
-    source: String,
-
-    #[arg(long)]
     ref_name: String,
 
-    #[arg(long, default_value = "*")]
+    #[arg(long, default_value = "*", help = "gob format path match string")]
     pattern: String,
+
+    #[arg(long, help = "dont overide file if exit")]
+    no_overide: bool,
+
+    #[arg(long, help ="create repo branch if not exit")]
+    create_if_not_exit: bool,
+
+    #[arg(long, default_value = "main", help = "create repo base on this branch, must set --create-if-not-exit")]
+    source: String,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -127,20 +132,66 @@ async fn main() -> Result<()> {
 }
 
 async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
-    let configuration = Configuration {
-        base_path: args.jiaozifs_url,
-        basic_auth: Some((args.username, Some(args.password))),
+    let configuration = &Configuration {
+        base_path: args.jiaozifs_url.clone(),
+        basic_auth: Some((args.username.clone(), Some(args.password.clone()))),
         ..Default::default()
     };
 
-    match args.ref_type.as_str() {
-        "wip" => {
-            //ensure wip exit
-            apis::wip_api::get_wip(&configuration, &args.owner, &args.repo, &args.ref_name).await?;
-            anyhow::Ok(RefType::Wip)
+    let repo_exists =
+        match apis::repo_api::get_repository(configuration, &args.owner, &args.repo).await {
+            Err(apis::Error::ResponseError(ResponseContent {
+                status: reqwest::StatusCode::NOT_FOUND,
+                ..
+            })) => {
+                if args.create_if_not_exit {
+                    apis::repo_api::create_repository(
+                        configuration,
+                        CreateRepository {
+                            name: args.repo.clone(),
+                            description: Some("created by jz writer".to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map_err(|err| anyhow!("create repository {err}"))?;
+                    false
+                } else {
+                    return Err(anyhow!("repo not exit"));
+                }
+            }
+            Err(err) => return Err(anyhow!("Failed to query repository: {}", err)),
+            Ok(_) => true,
+        };
+
+    if repo_exists {
+        if let Err(err) =
+            apis::branches_api::get_branch(configuration, &args.owner, &args.repo, &args.ref_name)
+                .await
+        {
+            match err {
+                apis::Error::ResponseError(ResponseContent {
+                    status: reqwest::StatusCode::NOT_FOUND,
+                    ..
+                }) => {
+                    if args.create_if_not_exit {
+                        create_branch(configuration, &args)
+                            .await
+                            .map_err(|err| anyhow!("create branch {err}"))?;
+                    } else {
+                        return Err(anyhow!("branch not exit"));
+                    }
+                }
+                _ => return Err(anyhow!("Failed to get branch: {}", err)),
+            }
         }
-        val => Err(anyhow!("ref type not support {}", val)),
-    }?;
+    } else {
+        create_branch(configuration, &args)
+            .await
+            .map_err(|err| anyhow!("create branch {err}"))?;
+    }
+
+    apis::wip_api::get_wip(configuration, &args.repo, &args.owner, &args.ref_name).await.map_err(|err|anyhow!("get wip {err}"))?;
 
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
@@ -150,7 +201,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
         }
 
         let instant = Instant::now();
-        match client.request_avaiable_data().await {
+        match client.request_avaiable_data(None).await {
             Ok(Some(req)) => {
                 let id = req.id;
                 let path_str = tmp_path.join(&id);
@@ -162,7 +213,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                         let content = fs::read(path).await?;
                         let rel_path = path.strip_prefix(root_input_dir)?;
                         apis::objects_api::upload_object(
-                            &configuration,
+                            configuration,
                             &args.owner,
                             &args.repo,
                             &args.ref_name,
@@ -171,10 +222,11 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                             Some(content),
                         )
                         .await?;
+                        debug!("upload file {path:?} to jiaozifs");
                     }
                 }
                 client.complete_result(&id).await.anyhow()?;
-                info!("submit new data {:?}", instant.elapsed());
+                info!("process a batch data {:?}", instant.elapsed());
             }
             Ok(None) => {
                 sleep(Duration::from_secs(2)).await;
@@ -182,6 +234,14 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
             }
             Err(IPCError::NodeError { code, msg: _ }) => match code {
                 ErrorNumber::AlreadyFinish => {
+                    apis::wip_api::commit_wip(
+                        configuration,
+                        &args.owner,
+                        &args.repo,
+                        &args.ref_name,
+                        "created by jz action",
+                    )
+                    .await?;
                     return Ok(());
                 }
                 ErrorNumber::NotReady => {
@@ -197,5 +257,29 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                 error!("got unknow error {msg}");
             }
         }
+    }
+}
+
+async fn create_branch(configuration: &Configuration, args: &Args) -> Result<()> {
+    if let Err(err) = apis::branches_api::create_branch(
+        configuration,
+        &args.owner,
+        &args.repo,
+        BranchCreation {
+            name: args.ref_name.clone(),
+            source: args.source.clone(),
+        },
+    )
+    .await
+    {
+        match err {
+            apis::Error::ResponseError(ResponseContent {
+                status: reqwest::StatusCode::CONFLICT,
+                ..
+            }) => Ok(()),
+            _ => Err(anyhow!("Failed to create branch: {}", err)),
+        }
+    } else {
+        Ok(())
     }
 }

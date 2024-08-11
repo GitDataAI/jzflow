@@ -1,0 +1,43 @@
+{
+    "name": "example",
+    "version": "v1",
+    "dag": [
+        {
+            "name": "make-article",
+            "spec": {
+                "image": "gitdatateam/make_article:latest",
+                "command": "/make_article",
+                "replicas": 3,
+                "args": [
+                    "--log-level=debug",
+                    "--total-count=5"
+                ]
+            }
+        },
+        {
+            "name": "write-jiaozifs",
+            "node_type": "ComputeUnit",
+            "dependency": [
+                "make-article"
+            ],
+            "spec": {
+                "image": "gitdatateam/jz_writer:latest",
+                "command": "/jz_writer",
+           
+                "args": [
+                    "--log-level=debug",
+                    "--jiaozifs-url=http://192.168.3.163:34913/api/v1",
+                    "--username=jimmy",
+                    "--password=12345678", 
+                    "--owner=jimmy",
+                    "--repo=jz_write_test2",
+                    "--ref-name=main",
+                    "--create-if-not-exit"
+                ]
+            },
+            "channel": {
+                "cache_type": "Memory"
+            }
+        }
+    ]
+}

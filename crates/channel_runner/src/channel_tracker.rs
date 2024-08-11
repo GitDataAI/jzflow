@@ -154,7 +154,6 @@ where
                                 let running_state = &[
                                     &DataState::Received,
                                     &DataState::Assigned,
-                                    &DataState::SelectForSend,
                                     &DataState::EndRecieved
                                 ];
                                 if db_repo.count(&node_name, running_state.as_slice(), Some(&Direction::Out)).await? == 0 {

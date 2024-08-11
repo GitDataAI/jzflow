@@ -150,6 +150,17 @@ impl MongoRunDbRepo {
             data_col,
         })
     }
+
+    pub async fn drop(connectstring: &str) -> Result<()> {
+        let options = ClientOptions::parse(connectstring).await?;
+        let database = options
+            .default_database
+            .as_ref()
+            .expect("set db name in url")
+            .clone();
+        let client = Client::with_options(options)?;
+        client.database(database.as_str()).drop().await.anyhow()
+    }
 }
 
 impl GraphRepo for MongoRunDbRepo {

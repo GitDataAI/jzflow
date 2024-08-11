@@ -21,8 +21,7 @@ use crate::{
     dag::Dag,
     dbrepo::MongoRunDbRepo,
     utils::{
-        IntoAnyhowResult,
-        StdIntoAnyhowResult,
+        k8s_helper::get_pod_status, IntoAnyhowResult, StdIntoAnyhowResult
     },
 };
 use anyhow::{
@@ -71,7 +70,7 @@ use tokio_retry::{
 };
 use tracing::{
     debug,
-    error,
+    error, warn,
 };
 
 pub struct KubeChannelHander<R>
@@ -150,13 +149,17 @@ where
         };
 
         for pod in pods {
-            let pod_name = pod.metadata.name.expect("set in template");
-            let phase = pod
-                .status
-                .and_then(|status| status.phase)
-                .unwrap_or_default();
+            let pod_name = pod.metadata.name.as_ref().expect("set in template");
+            let phase = get_pod_status(&pod);
 
-            let metrics = metrics_api.get(&pod_name).await.anyhow()?;
+            let metrics = metrics_api.get(pod_name).await
+            .anyhow()
+            .map_err(|err|{
+                warn!("get metrics fail {err} {}", pod_name);
+                err
+            })
+            .unwrap_or_default();
+            
             let mut cpu_sum = 0.0;
             let mut memory_sum = 0;
             for container in metrics.containers.iter() {
@@ -182,7 +185,7 @@ where
                 cpu_usage: cpu_sum,
                 memory_usage: memory_sum,
             };
-            node_status.pods.insert(pod_name, pod_status);
+            node_status.pods.insert(pod_name.clone(), pod_status);
         }
         Ok(node_status)
     }
@@ -285,13 +288,17 @@ where
         };
 
         for pod in pods {
-            let pod_name = pod.metadata.name.expect("set in template");
-            let phase = pod
-                .status
-                .and_then(|status| status.phase)
-                .unwrap_or_default();
+            let pod_name = pod.metadata.name.as_ref().expect("set in template");
+            let phase = get_pod_status(&pod);
 
-            let metrics = metrics_api.get(&pod_name).await.anyhow()?;
+            let metrics = metrics_api.get(pod_name).await
+            .anyhow()
+            .map_err(|err|{
+                warn!("get metrics fail {err} {}", pod_name);
+                err
+            })
+            .unwrap_or_default();
+        
             let mut cpu_sum = 0.0;
             let mut memory_sum = 0;
             for container in metrics.containers.iter() {
@@ -317,7 +324,7 @@ where
                 cpu_usage: cpu_sum,
                 memory_usage: memory_sum,
             };
-            node_status.pods.insert(pod_name, pod_status);
+            node_status.pods.insert(pod_name.clone(), pod_status);
         }
         Ok(node_status)
     }
@@ -345,8 +352,8 @@ where
     }
 
     #[allow(refining_impl_trait)]
-    async fn channel_handler(&self) -> Result<Option<&KubeChannelHander<R>>> {
-        Ok(self.channel.as_ref())
+    fn channel_handler(&self) -> Option<&KubeChannelHander<R>> {
+        self.channel.as_ref()
     }
 }
 
@@ -858,6 +865,7 @@ mod tests {
     use mongodb::Client as MongoClient;
     use std::env;
     use tracing_subscriber;
+    use local_ip_address::local_ip;
 
     #[tokio::test]
     async fn test_render() {
@@ -911,15 +919,15 @@ mod tests {
         }
                         "#;
         let dag = Dag::from_json(json_str).unwrap();
-
-        let db_url = "mongodb://192.168.3.163:27017";
+        let my_local_ip = local_ip().unwrap();
+        let db_url = format!("mongodb://{}:27017", my_local_ip);
         let client = MongoClient::with_uri_str(db_url.to_string() + "/ntest")
             .await
             .unwrap();
         client.database("ntest").drop().await.unwrap();
 
         let client = Client::try_default().await.unwrap();
-        let kube_driver = KubeDriver::<MongoRunDbRepo>::new(client, db_url)
+        let kube_driver = KubeDriver::<MongoRunDbRepo>::new(client, &db_url)
             .await
             .unwrap();
         kube_driver.deploy("ntest", &dag).await.unwrap();

@@ -19,7 +19,7 @@ use tokio::{
         SignalKind,
     },
     task::JoinSet,
-    time::sleep,
+    time::{sleep},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{
@@ -88,7 +88,7 @@ async fn print_files(token: CancellationToken, args: Args) -> Result<()> {
         }
 
         info!("request data");
-        match client.request_avaiable_data().await {
+        match client.request_avaiable_data(None).await {
             Ok(Some(req)) => {
                 let id = req.id;
                 let path_str = tmp_path.join(&id);
@@ -123,6 +123,7 @@ async fn print_files(token: CancellationToken, args: Args) -> Result<()> {
             },
             Err(IPCError::UnKnown(msg)) => {
                 error!("got unknow error {msg}");
+                sleep(Duration::from_secs(5)).await
             }
         }
     }

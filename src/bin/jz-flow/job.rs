@@ -166,7 +166,7 @@ pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailA
     table.add_row(Row::from(vec![
         "NodeName",
         "State",
-        "DataCount",
+        "DataBatchCount",
         "Replicas",
         "TmpStorage",
         "Pods",
