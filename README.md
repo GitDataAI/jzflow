@@ -38,8 +38,6 @@ build-jz
 ./dist/jz-flow daemon --mongo-url mongodb://<ip>:27017
 ```
 
-
-
 ### 3. Run a Example Flow
 
 ```
