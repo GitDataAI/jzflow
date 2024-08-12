@@ -1,5 +1,4 @@
 use super::{
-    ChannelHandler,
     Driver,
     NodeStatus,
     PipelineController,
@@ -76,7 +75,7 @@ use tracing::{
     warn,
 };
 
-pub struct KubeChannelHander<R>
+pub struct KubeHandler<R>
 where
     R: JobDbRepo,
 {
@@ -89,7 +88,7 @@ where
     pub(crate) db_repo: R,
 }
 
-impl<R> ChannelHandler for KubeChannelHander<R>
+impl<R> UnitHandler for KubeHandler<R>
 where
     R: JobDbRepo,
 {
@@ -211,156 +210,6 @@ where
 
     async fn stop(&mut self) -> Result<()> {
         todo!()
-    }
-}
-
-pub struct KubeHandler<R>
-where
-    R: JobDbRepo,
-{
-    pub(crate) client: Client,
-    pub(crate) node_name: String,
-    pub(crate) namespace: String,
-    pub(crate) stateset_name: String,
-    pub(crate) claim_name: String,
-    pub(crate) _service_name: String,
-    pub(crate) db_repo: R,
-    pub(crate) channel: Option<KubeChannelHander<R>>,
-}
-
-impl<R> UnitHandler for KubeHandler<R>
-where
-    R: JobDbRepo,
-{
-    type Output = KubeChannelHander<R>;
-
-    fn name(&self) -> &str {
-        &self.node_name
-    }
-
-    async fn status(&self) -> Result<NodeStatus> {
-        let statefulset_api: Api<StatefulSet> =
-            Api::namespaced(self.client.clone(), &self.namespace);
-        let claim_api: Api<PersistentVolumeClaim> =
-            Api::namespaced(self.client.clone(), &self.namespace);
-        let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
-        let metrics_api: Api<metricsv1::PodMetrics> =
-            Api::<metricsv1::PodMetrics>::namespaced(self.client.clone(), &self.namespace);
-
-        let statefulset = statefulset_api.get(&self.stateset_name).await.anyhow()?;
-        let selector = statefulset
-            .spec
-            .as_ref()
-            .unwrap()
-            .selector
-            .match_labels
-            .as_ref()
-            .expect("set in template")
-            .iter()
-            .map(|(key, value)| format!("{}={}", key, value))
-            .collect::<Vec<_>>()
-            .join(",");
-
-        let list_params = ListParams::default().labels(&selector);
-        let pods = pods_api.list(&list_params).await.anyhow()?;
-
-        let pvc = claim_api.get(&self.claim_name).await.anyhow()?;
-        let cap = pvc
-            .status
-            .unwrap()
-            .capacity
-            .unwrap()
-            .get("storage")
-            .map(|cap| cap.0.clone())
-            .unwrap_or_default();
-
-        let db_node = self.db_repo.get_node_by_name(&self.node_name).await?;
-        let data_count = self
-            .db_repo
-            .count(&self.node_name, &Vec::new(), None)
-            .await?;
-        let mut node_status = NodeStatus {
-            name: self.node_name.clone(),
-            state: db_node.state,
-            data_count,
-            replicas: statefulset
-                .spec
-                .as_ref()
-                .and_then(|spec| spec.replicas)
-                .unwrap_or_default() as u32,
-            storage: cap,
-            pods: HashMap::new(),
-        };
-
-        for pod in pods {
-            let pod_name = pod.metadata.name.as_ref().expect("set in template");
-            let phase = get_pod_status(&pod);
-
-            let metrics = metrics_api
-                .get(pod_name)
-                .await
-                .anyhow()
-                .map_err(|err| {
-                    warn!("get metrics fail {err} {}", pod_name);
-                    err
-                })
-                .unwrap_or_default();
-
-            let mut cpu_sum = 0.0;
-            let mut memory_sum = 0;
-            for container in metrics.containers.iter() {
-                cpu_sum += container
-                    .usage
-                    .cpu()
-                    .map_err(|err| {
-                        error!("cpu not exit {err}");
-                        err
-                    })
-                    .unwrap_or(0.0);
-                memory_sum += container
-                    .usage
-                    .memory()
-                    .map_err(|err| {
-                        error!("cpu not exit {err}");
-                        err
-                    })
-                    .unwrap_or(0);
-            }
-            let pod_status = PodStauts {
-                state: phase,
-                cpu_usage: cpu_sum,
-                memory_usage: memory_sum,
-            };
-            node_status.pods.insert(pod_name.clone(), pod_status);
-        }
-        Ok(node_status)
-    }
-
-    async fn start(&self) -> Result<()> {
-        self.db_repo
-            .update_node_by_name(&self.node_name, TrackerState::Ready)
-            .await?;
-        if let Some(channel) = self.channel.as_ref() {
-            channel.start().await?;
-        }
-        Ok(())
-    }
-
-    async fn pause(&mut self) -> Result<()> {
-        todo!()
-    }
-
-    async fn restart(&mut self) -> Result<()> {
-        todo!()
-    }
-
-    async fn stop(&mut self) -> Result<()> {
-        todo!()
-    }
-
-    #[allow(refining_impl_trait)]
-    fn channel_handler(&self) -> Option<&KubeChannelHander<R>> {
-        self.channel.as_ref()
     }
 }
 
@@ -459,14 +308,6 @@ where
 
         reg.register_template_string("statefulset", include_str!("kubetpl/statefulset.tpl"))?;
         reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
-        reg.register_template_string(
-            "channel_statefulset",
-            include_str!("kubetpl/channel_statefulset.tpl"),
-        )?;
-        reg.register_template_string(
-            "channel_service",
-            include_str!("kubetpl/channel_service.tpl"),
-        )?;
         reg.register_helper("join_array", Box::new(join_array));
         Ok(KubeDriver {
             reg,
@@ -573,105 +414,6 @@ where
             };
             let up_nodes = graph.get_incomming_nodes(&node.name);
             let down_nodes = graph.get_outgoing_nodes(&node.name);
-            // apply channel
-            let (channel_handler, channel_nodes) = if !up_nodes.is_empty() {
-                //if node have no upstream node, no need to create channel points
-                //channel node receive upstreams from upstream nodes
-                let upstreams = up_nodes
-                    .iter()
-                    .map(|node_name| {
-                        graph
-                            .get_node(node_name)
-                            .expect("node added already before")
-                    })
-                    .flat_map(|node| {
-                        //<pod-name>.<service-name>.<namespace>.svc.cluster.local
-                        (0..node.spec.replicas).map(|seq| {
-                            format!(
-                                "http://{}-statefulset-{}.{}-headless-service.{}.svc.cluster.local:80",
-                                node.name, seq, node.name, run_id
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>();
-
-                let node_stream = (0..node.spec.replicas)
-                    .map(|seq| {
-                        format!(
-                            "http://{}-statefulset-{}.{}-headless-service.{}.svc.cluster.local:80",
-                            node.name, seq, node.name, run_id
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let channel_node_name = node.name.clone() + "-channel";
-                let channel_record = Node {
-                    node_name: channel_node_name.clone(),
-                    state: TrackerState::Init,
-                    node_type: NodeType::Channel,
-                    up_nodes: up_nodes.iter().map(|node| node.to_string()).collect(),
-                    incoming_streams: upstreams,
-                    outgoing_streams: node_stream, //only node read this channel
-                    created_at: cur_tm,
-                    updated_at: cur_tm,
-                };
-                repo.insert_node(&channel_record).await?;
-
-                let claim_string = self.reg.render(
-                    "claim",
-                    &ClaimRenderParams {
-                        name: node.name.clone() + "-channel-claim",
-                    },
-                )?;
-                debug!("rendered channel claim string {}", claim_string);
-                let claim: PersistentVolumeClaim = serde_json::from_str(&claim_string)?;
-                let claim_deployment = claim_api.create(&PostParams::default(), &claim).await?;
-
-                let channel_statefulset_string = self
-                    .reg
-                    .render("channel_statefulset", &data_unit_render_args)?;
-                debug!(
-                    "rendered channel statefulset string {}",
-                    channel_statefulset_string
-                );
-                let channel_statefulset: StatefulSet =
-                    serde_json::from_str(channel_statefulset_string.as_str())?;
-                let channel_statefulset = statefulset_api
-                    .create(&PostParams::default(), &channel_statefulset)
-                    .await?;
-
-                let channel_service_string =
-                    self.reg.render("channel_service", &data_unit_render_args)?;
-                debug!("rendered channel service string {}", channel_service_string);
-
-                let channel_service: Service =
-                    serde_json::from_str(channel_service_string.as_str())?;
-                let channel_service = service_api
-                    .create(&PostParams::default(), &channel_service)
-                    .await?;
-                (
-                    Some(KubeChannelHander {
-                        node_name: channel_node_name.clone(),
-                        client: self.client.clone(),
-                        namespace: run_id.to_string().clone(),
-                        stateset_name: channel_statefulset
-                            .name()
-                            .expect("set name in template")
-                            .to_string(),
-                        claim_name: claim_deployment
-                            .name()
-                            .expect("set name in template")
-                            .to_string(),
-                        _service_name: channel_service
-                            .name()
-                            .expect("set name in template")
-                            .to_string(),
-                        db_repo: repo.clone(),
-                    }),
-                    vec![channel_node_name],
-                )
-            } else {
-                (None, vec![])
-            };
 
             // apply nodes
             let claim_string = self.reg.render(
@@ -693,34 +435,21 @@ where
                 .await?;
 
             // compute unit only receive data from channel
-            let channel_stream = (!up_nodes.is_empty()).then(||{
-                vec![format!(
-                    "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
-                      node.name, 0, node.name, run_id
-                  )]
-            }).unwrap_or_else(std::vec::Vec::new);
             let outgoing_node_streams = down_nodes
-                    .iter()
-                    .map(|node_name| {
-                        graph
-                            .get_node(node_name)
-                            .expect("node added already before")
-                    })
-                    .map(|node| {
-                        //<pod-name>.<service-name>.<namespace>.svc.cluster.local
-                        format!(
-                            "http://{}-channel-statefulset-{}.{}-channel-headless-service.{}.svc.cluster.local:80",
-                            node.name, 0, node.name, run_id
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                .iter()
+                .map(|node_name| {
+                    format!(
+                        "http://{}-service.{}.svc.cluster.local:80",
+                        node_name, run_id
+                    )
+                })
+                .collect::<Vec<_>>();
 
             let node_record = Node {
                 node_name: node.name.clone(),
                 state: TrackerState::Init,
                 node_type: NodeType::CoputeUnit,
-                up_nodes: channel_nodes,
-                incoming_streams: channel_stream,
+                up_nodes: up_nodes.iter().map(|v| v.to_string()).collect(),
                 outgoing_streams: outgoing_node_streams,
                 created_at: cur_tm,
                 updated_at: cur_tm,
@@ -752,7 +481,6 @@ where
                     .name()
                     .expect("set name in template")
                     .to_string(),
-                channel: channel_handler,
                 db_repo: repo.clone(),
             };
 
@@ -779,41 +507,6 @@ where
         let mut pipeline_ctl =
             KubePipelineController::new(repo.clone(), self.client.clone(), topo_sort_nodes);
         for node in graph.iter() {
-            let up_nodes = graph.get_incomming_nodes(&node.name);
-            // query channel
-            let channel_handler = if !up_nodes.is_empty() {
-                let claim_deployment = claim_api
-                    .get((node.name.clone() + "-channel-claim").as_str())
-                    .await?;
-                let channel_statefulset = statefulset_api
-                    .get((node.name.clone() + "-channel-statefulset").as_str())
-                    .await?;
-                let channel_service = service_api
-                    .get((node.name.clone() + "-channel-headless-service").as_str())
-                    .await?;
-
-                Some(KubeChannelHander {
-                    node_name: node.name.clone() + "-channel",
-                    client: self.client.clone(),
-                    namespace: run_id.to_string().clone(),
-                    stateset_name: channel_statefulset
-                        .name()
-                        .expect("set name in template")
-                        .to_string(),
-                    claim_name: claim_deployment
-                        .name()
-                        .expect("set name in template")
-                        .to_string(),
-                    _service_name: channel_service
-                        .name()
-                        .expect("set name in template")
-                        .to_string(),
-                    db_repo: repo.clone(),
-                })
-            } else {
-                None
-            };
-
             // apply nodes
             let claim_deployment = claim_api
                 .get((node.name.clone() + "-node-claim").as_str())
@@ -823,7 +516,7 @@ where
                 .await?;
 
             let unit_service = service_api
-                .get((node.name.clone() + "-headless-service").as_str())
+                .get((node.name.clone() + "-service").as_str())
                 .await?;
 
             let handler = KubeHandler {
@@ -842,7 +535,6 @@ where
                     .name()
                     .expect("set name in template")
                     .to_string(),
-                channel: channel_handler,
                 db_repo: repo.clone(),
             };
 
@@ -888,7 +580,7 @@ mod tests {
               "spec": {
                 "image": "gitdatateam/make_article:latest",
                 "command":"/make_article",
-                "args": ["--log-level=debug", "--total-count=100"]
+                "args": ["--log-level=debug", "--total-count=5"]
               }
             },   {
               "name": "copy-in-place",
@@ -901,9 +593,6 @@ mod tests {
                 "command":"/copy_in_place",
                 "replicas": 3,
                 "args": ["--log-level=debug"]
-              },
-              "channel":{
-                "cache_type":"Memory"
               }
             },
             {
@@ -917,9 +606,6 @@ mod tests {
                 "command":"/list_files",
                 "replicas": 3,
                 "args": ["--log-level=debug"]
-              },
-              "channel":{
-                "cache_type":"Memory"
               }
             }
           ]

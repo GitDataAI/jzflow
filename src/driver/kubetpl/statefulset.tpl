@@ -8,7 +8,7 @@
     }
   },
   "spec": {
-    "serviceName": "{{{node.name}}}-headless-service",
+    "serviceName": "{{{node.name}}}-service",
     "replicas": {{{node.spec.replicas}}},
     "selector": {
       "matchLabels": {

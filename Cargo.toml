@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "crates/channel_runner",
   "crates/compute_unit_runner",
   "crates/jiaozifs_client_rs", 
   "nodes/jz_reader", 

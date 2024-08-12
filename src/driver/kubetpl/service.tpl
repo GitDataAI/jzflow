@@ -2,11 +2,10 @@
   "apiVersion": "v1",
   "kind": "Service",
   "metadata": {
-    "name": "{{{name}}}-headless-service",
+    "name": "{{{name}}}-service",
     "exec-type": "compute-unit"
   },
   "spec": {
-    "clusterIP": "None",
     "selector": {
       "app": "{{{name}}}-pod"
     },

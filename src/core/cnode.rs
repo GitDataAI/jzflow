@@ -18,9 +18,6 @@ pub struct ComputeUnit {
     pub spec: MachineSpec,
 
     #[serde(default)]
-    pub channel: MachineSpec,
-
-    #[serde(default)]
     pub(crate) dependency: Vec<String>,
 }
 

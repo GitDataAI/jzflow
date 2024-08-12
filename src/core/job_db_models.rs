@@ -45,7 +45,6 @@ pub struct Node {
     pub state: TrackerState,
     pub node_type: NodeType,
     pub up_nodes: Vec<String>,
-    pub incoming_streams: Vec<String>,
     pub outgoing_streams: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,

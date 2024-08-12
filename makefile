@@ -12,18 +12,11 @@ build-cd: $(OUTPUT)
 	cargo build -p compute_unit_runner --release --bin compute_unit_runner
 	cp target/release/compute_unit_runner $(OUTPUT)/compute_unit_runner
 
-build-channel: $(OUTPUT)
-	cargo build -p channel_runner --release
-	cp target/release/channel_runner $(OUTPUT)/channel_runner
-
-build: build-cd build-channel
+build: build-cd 
 	cargo build --release
 
 docker_cd: build-cd
 	docker build -f ./crates/compute_unit_runner/dockerfile -t gitdatateam/compute_unit_runner:latest .
-
-docker_channel: build-channel
-	docker build -f ./crates/channel_runner/dockerfile -t gitdatateam/channel_runner:latest .
 
 ################## build nodes
 
@@ -51,7 +44,7 @@ docker_nodes: build-nodes
 	docker build -f ./nodes/copy_in_place/dockerfile -t gitdatateam/copy_in_place:latest .
 
 ################## minikube
-docker: docker_cd docker_channel docker_nodes
+docker: docker_cd docker_nodes
 
 docker-push: docker_nodes
 	docker push gitdatateam/jz_reader:latest

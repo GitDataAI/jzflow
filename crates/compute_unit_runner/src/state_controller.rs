@@ -20,7 +20,7 @@ use tracing::{
     info,
 };
 
-use crate::media_data_tracker::MediaDataTracker;
+use crate::data_tracker::MediaDataTracker;
 
 pub struct StateController<R>
 where
@@ -72,7 +72,7 @@ where
                             drop(local_state);
                             if  record.state!= TrackerState::Init && !record.state.is_end_state() {
                                 //start
-                                info!("start data processing {:?}", record.incoming_streams);
+                                info!("start data processing");
                                 join_set = Some(program_guard.route_data(token.clone()).await?);
                             }
                         },

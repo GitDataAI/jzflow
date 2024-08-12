@@ -21,10 +21,7 @@ use jiaoziflow::{
         JobDbRepo,
         TrackerState,
     },
-    network::{
-        common::Empty,
-        datatransfer::data_stream_client::DataStreamClient,
-    },
+    network::datatransfer::MediaDataBatchResponse,
     utils::k8s_helper::get_machine_name,
 };
 use std::{
@@ -33,10 +30,6 @@ use std::{
     vec,
 };
 
-use tonic::{
-    transport::Channel,
-    Code,
-};
 use tracing::{
     debug,
     error,
@@ -83,9 +76,7 @@ where
 
     pub(crate) up_nodes: Vec<String>,
 
-    pub(crate) incoming_streams: Vec<String>,
-
-    pub(crate) downstreams: Vec<String>,
+    pub(crate) outgoing_streams: Vec<String>,
 
     // channel for process avaiable data request
     pub(crate) ipc_process_data_req_tx:
@@ -99,6 +90,8 @@ where
 
     // channel for receive finish state from user container
     pub(crate) ipc_process_finish_state_tx: Option<MessageSender<(), ()>>,
+
+    pub(crate) incoming_tx: Option<MessageSender<MediaDataBatchResponse, ()>>,
 }
 impl<R> MediaDataTracker<R>
 where
@@ -110,8 +103,7 @@ where
         data_cache: Arc<dyn FileCache>,
         buf_size: usize,
         up_nodes: Vec<String>,
-        incoming_streams: Vec<String>,
-        downstreams: Vec<String>,
+        outgoing_streams: Vec<String>,
     ) -> Self {
         MediaDataTracker {
             data_cache,
@@ -120,12 +112,13 @@ where
             repo,
             local_state: Arc::new(RwLock::new(TrackerState::Init)),
             up_nodes,
-            incoming_streams,
-            downstreams,
+            outgoing_streams,
             ipc_process_submit_output_tx: None,
             ipc_process_completed_data_tx: None,
             ipc_process_data_req_tx: None,
             ipc_process_finish_state_tx: None,
+
+            incoming_tx: None,
         }
     }
 }
@@ -167,6 +160,7 @@ where
                                 .iter()
                                 .all(|node| node.state == TrackerState::Finish);
 
+                                println!(" is upnodes finish {}", is_all_success);
                                 if is_all_success && db_repo.count(&node_name,  &[&DataState::Received,&DataState::Assigned], Some(&Direction::In)).await? == 0 {
                                     db_repo.mark_incoming_finish(&node_name).await.map_err(|err|anyhow!("update node data {err}"))?;
                                     info!("incoming data was finished, not need to run backend");
@@ -201,11 +195,14 @@ where
         let (ipc_process_finish_state_tx, mut ipc_process_finish_state_rx) = mpsc::channel(1);
         self.ipc_process_finish_state_tx = Some(ipc_process_finish_state_tx);
 
+        let (incoming_tx, mut incoming_rx) = mpsc::channel(1);
+        self.incoming_tx = Some(incoming_tx);
+
         let machine_name = get_machine_name();
         let mut join_set: JoinSet<Result<()>> = JoinSet::new();
 
         let new_data_tx = broadcast::Sender::new(1);
-        if !self.downstreams.is_empty() {
+        if !self.outgoing_streams.is_empty() {
             //process outgoing data
             {
                 let new_data_tx = new_data_tx.clone();
@@ -226,7 +223,7 @@ where
             }
 
             for _ in 0..10 {
-                let downstreams = self.downstreams.clone();
+                let downstreams = self.outgoing_streams.clone();
                 let mut multi_sender = MultiSender::new(downstreams.clone());
                 let data_cache = self.data_cache.clone();
                 let token = token.clone();
@@ -383,177 +380,6 @@ where
             });
         }
 
-        let incoming_data_tx = broadcast::Sender::new(1);
-        if !self.incoming_streams.is_empty() {
-            //fetch data from channel
-            let db_repo = self.repo.clone();
-            let node_name = self.name.clone();
-            let url = self.incoming_streams[0].clone();
-            let data_cache = self.data_cache.clone();
-            let token = token.clone();
-            let local_state = self.local_state.clone();
-            {
-                let incoming_data_tx = incoming_data_tx.clone();
-                let token = token.clone();
-                join_set.spawn(async move {
-                    let mut interval = time::interval(Duration::from_secs(2));
-                    loop {
-                        select! {
-                            _ = token.cancelled() => {
-                               return anyhow::Ok(());
-                            }
-                            _ = interval.tick() => {
-                                if matches!(*local_state.read().await, TrackerState::Finish) {
-                                    warn!("node is finish exit fetch data ticker");
-                                    return anyhow::Ok(());
-                                }
-                                let _ = incoming_data_tx.send(());
-                            }
-                        }
-                    }
-                });
-            }
-
-            let local_state = self.local_state.clone();
-            let mut incoming_data_rx = incoming_data_tx.subscribe();
-            let outgoing_stream = self.downstreams.clone();
-            join_set.spawn(async move {
-                let mut client: Option<DataStreamClient<Channel>> = None;
-                loop {
-                    select! {
-                      _ = token.cancelled() => {
-                            return anyhow::Ok(());
-                      }
-                      _ = incoming_data_rx.recv() => {
-                            //check finish state
-                            if *local_state.read().await == TrackerState::Finish {
-                                warn!("node is finish exit fetch data from channel");
-                                return anyhow::Ok(());
-                            }
-
-                            if client.is_none() {
-                                match DataStreamClient::connect(url.clone()).await{
-                                   Ok(new_client)=>{
-                                        client = Some(new_client)
-                                    },
-                                    Err(err) =>{
-                                        error!("cannt connect upstream {err}");
-                                        continue;
-                                    }
-                                }
-                            }
-
-                            let client_ref = client.as_mut().unwrap();
-                            match client_ref.request_media_data(Empty{}).await {
-                               Ok(record) =>{
-                                    let data = record.into_inner();
-                                    let id = data.id.clone();
-                                    let size = data.size;
-                                    match db_repo.find_by_node_id(&node_name,&data.id, &Direction::In).await  {
-                                       Ok(Some(_))=>{
-                                            //already exit in this node
-                                            continue;
-                                        }
-                                        Err(err)=>{
-                                            error!("query mongo by id {err}");
-                                            continue;
-                                        }
-                                       _=>{}
-                                    }
-
-                                    let data_flag = DataFlag::new_from_bit(data.data_flag);
-                                    let priority  = data.priority as u8;
-                                    if let Err(err) = data_cache.write(data).await {
-                                        error!("write cache files {err}");
-                                        continue;
-                                    }
-
-                                    //mark data as received, 
-                                    //TODO transaction
-                                    let tm =Utc::now().timestamp();
-                                     if data_flag.is_transparent_data {
-                                        //record as output, skip process
-                                        if !outgoing_stream.is_empty() {
-                                            if let Err(err) =  db_repo.insert_new_path(&DataRecord{
-                                                node_name:node_name.clone(),
-                                                id : id.clone(),
-                                                size,
-                                                sent: vec![],
-                                                machine: "".to_string(),
-                                                flag: data_flag.clone(),
-                                                priority,
-                                                state: DataState::Received,
-                                                direction: Direction::Out,
-                                                updated_at:tm,
-                                                created_at:tm,
-                                            }).await{
-                                                error!("mark data as client receive {err}");
-                                                continue;
-                                            }
-                                        }
-
-                                        if let Err(err) =  db_repo.insert_new_path(&DataRecord{
-                                            node_name:node_name.clone(),
-                                            id : id.clone(),
-                                            size,
-                                            sent: vec![],
-                                            flag: data_flag.clone(),
-                                            machine: "".to_string(),
-                                            priority,
-                                            state: DataState::Processed,
-                                            direction: Direction::In,
-                                            updated_at:tm,
-                                            created_at:tm,
-                                        }).await{
-                                            error!("mark data as client receive {err}");
-                                            continue;
-                                        };
-                                        info!("transparent data received");
-                                    } else if let Err(err) =  db_repo.insert_new_path(&DataRecord{
-                                        node_name:node_name.clone(),
-                                        id : id.clone(),
-                                        size,
-                                        sent: vec![],
-                                        machine: "".to_string(),
-                                        flag: data_flag.clone(),
-                                        priority,
-                                        state: DataState::Received,
-                                        direction: Direction::In,
-                                        updated_at:tm,
-                                        created_at:tm,
-                                    }).await{
-                                        error!("mark data as client receive {err}");
-                                        continue;
-                                    }
-
-
-
-                                    //insert a new incoming data record
-                                    if let Err(err) =  db_repo.update_state(&(node_name.clone() +"-channel"), &id, &Direction::In, &DataState::EndRecieved, None).await{
-                                        error!("mark data as client receive {err}");
-                                        continue;
-                                    }
-
-                                    info!("save data batch {}", &id);
-                                },
-                                Err(status)=>{
-                                    match status.code() {
-                                        Code::NotFound =>{
-                                            continue;
-                                        },
-                                        _=>{
-                                            client  = None;
-                                            error!("unable to retrieval data from channel {:?}", status);
-                                        }
-                                    }
-                                }
-                            }
-                     }
-                    }
-                }
-            });
-        }
-
         //TODO this make a async process to be sync process. got a low performance,
         //if have any bottleneck here, we should refrator this one
         {
@@ -565,7 +391,6 @@ where
             let local_state = self.local_state.clone();
             let machine_name = machine_name.clone();
 
-            let incoming_data_tx = incoming_data_tx.clone();
             join_set.spawn(async move {
                 loop {
                     select! {
@@ -618,7 +443,6 @@ where
                                     .await
                                     .map_err(|err| anyhow!("query available data failed: {}", err))?;
                                 if record.is_none() {
-                                    let _ = incoming_data_tx.send(());
                                     Ok(None)
                                 } else {
                                     let record = record.unwrap();
@@ -703,6 +527,130 @@ where
                     }
                 }
         });
+        }
+
+        {
+            //process incoming data
+            let db_repo = self.repo.clone();
+            let node_name = self.name.clone();
+            let buf_size = self.buf_size;
+            let data_cache = self.data_cache.clone();
+            let outgoing_streams = self.outgoing_streams.clone();
+
+            let token = token.clone();
+            join_set.spawn(async move {
+                loop {
+                    select!{
+                        _ = token.cancelled() => {
+                            return Ok(());
+                         }
+                     Some((data_batch, resp)) = incoming_rx.recv() => { //make this params
+                        //save to fs
+                        //create input directory
+                        let now = Instant::now();
+                        let id = data_batch.id.clone();
+                        let size = data_batch.size;
+                        let data_flag = DataFlag::new_from_bit(data_batch.data_flag);
+                        let priority = data_batch.priority as u8;
+
+                        // is processed before
+                        match db_repo.find_by_node_id(&node_name,&id, &Direction::In).await  {
+                            Ok(Some(_))=>{
+                                warn!("data {} processed before", &id);
+                                resp.send(Ok(())).expect("request alread listen this channel");
+                                continue;
+                            }
+                            Err(err)=>{
+                                error!("query mongo by id {err}");
+                                resp.send(Err(err)).expect("request alread listen this channel");
+                                continue;
+                            }
+                            _=>{}
+                        }
+
+                        //check limit for plain data
+                        if let Err(err) =  db_repo.count(&node_name,&[&DataState::Received], Some(&Direction::In)).await.and_then(|count|{
+                            if count > buf_size {
+                                Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
+                            } else {
+                                Ok(())
+                            }
+                        }){
+                            resp.send(Err(anyhow!("cannt query limit from mongo {err}"))).expect("request alread listen this channel");
+                            continue;
+                        }
+
+                        //write batch files
+                        if let Err(err) = data_cache.write(data_batch).await {
+                            error!("write files to disk fail {}", err);
+                            resp.send(Err(err)).expect("request alread listen this channel");
+                            continue;
+                        }
+
+                        //insert record to database
+                        //TODO transaction
+                        let tm =Utc::now().timestamp();
+                            if data_flag.is_transparent_data {
+                            //record as output, skip process
+                            if !outgoing_streams.is_empty() {
+                                if let Err(err) =  db_repo.insert_new_path(&DataRecord{
+                                    node_name:node_name.clone(),
+                                    id : id.clone(),
+                                    size,
+                                    sent: vec![],
+                                    machine: "".to_string(),
+                                    flag: data_flag.clone(),
+                                    priority,
+                                    state: DataState::Received,
+                                    direction: Direction::Out,
+                                    updated_at:tm,
+                                    created_at:tm,
+                                }).await{
+                                    error!("mark data as client receive {err}");
+                                    continue;
+                                }
+                            }
+
+                            if let Err(err) =  db_repo.insert_new_path(&DataRecord{
+                                node_name:node_name.clone(),
+                                id : id.clone(),
+                                size,
+                                sent: vec![],
+                                flag: data_flag.clone(),
+                                machine: "".to_string(),
+                                priority,
+                                state: DataState::Processed,
+                                direction: Direction::In,
+                                updated_at:tm,
+                                created_at:tm,
+                            }).await{
+                                error!("mark data as client receive {err}");
+                                continue;
+                            };
+                            info!("transparent data received");
+                        } else if let Err(err) =  db_repo.insert_new_path(&DataRecord{
+                            node_name:node_name.clone(),
+                            id : id.clone(),
+                            size,
+                            sent: vec![],
+                            machine: "".to_string(),
+                            flag: data_flag.clone(),
+                            priority,
+                            state: DataState::Received,
+                            direction: Direction::In,
+                            updated_at:tm,
+                            created_at:tm,
+                        }).await{
+                            error!("mark data as client receive {err}");
+                            continue;
+                        }
+
+                        resp.send(Ok(())).expect("request alread listen this channel ");
+                        info!("insert a data batch in {} {:?}", &id, now.elapsed());
+                     },
+                    }
+                }
+            });
         }
         Ok(join_set)
     }

@@ -1,11 +1,13 @@
 use compute_unit_runner::{
+    data_tracker,
     ipc,
-    media_data_tracker,
     state_controller::StateController,
+    stream::ChannelDataStream,
 };
 use jiaoziflow::{
     core::db::NodeRepo,
     dbrepo::MongoRunDbRepo,
+    network::datatransfer::data_stream_server::DataStreamServer,
     utils::StdIntoAnyhowResult,
 };
 use nodes_sdk::fs_cache::{
@@ -15,7 +17,7 @@ use nodes_sdk::fs_cache::{
 
 use anyhow::Result;
 use clap::Parser;
-use media_data_tracker::MediaDataTracker;
+use data_tracker::MediaDataTracker;
 use std::{
     str::FromStr,
     sync::Arc,
@@ -29,6 +31,7 @@ use tokio::{
     sync::RwLock,
     task::JoinSet,
 };
+use tonic::transport::Server;
 
 use nodes_sdk::monitor_tasks;
 use tokio_util::sync::CancellationToken;
@@ -62,6 +65,9 @@ struct Args {
 
     #[arg(short, long, default_value = "/unix_socket/compute_unit_runner_d")]
     unix_socket_addr: String,
+
+    #[arg(long, default_value = "0.0.0.0:80")]
+    host_port: String,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -89,7 +95,6 @@ async fn main() -> Result<()> {
         fs_cache,
         args.buf_size,
         node.up_nodes,
-        node.incoming_streams,
         node.outgoing_streams,
     );
     program.run_backend(&mut join_set, token.clone())?;
@@ -128,6 +133,24 @@ async fn main() -> Result<()> {
                 .apply_db_state(cloned_token, db_repo, &node_name)
                 .await
         });
+    }
+
+    {
+        //listen port
+        let addr = args.host_port.parse()?;
+        join_set.spawn(async move {
+            let data_stream = ChannelDataStream {
+                program: program_safe,
+            };
+
+            Server::builder()
+                .add_service(DataStreamServer::new(data_stream))
+                .serve(addr)
+                .await
+                .anyhow()
+        });
+
+        info!("node listening on {}", addr);
     }
 
     {

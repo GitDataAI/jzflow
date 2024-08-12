@@ -20,13 +20,13 @@ use tonic::{
     Status,
 };
 
-use super::channel_tracker::ChannelTracker;
+use crate::data_tracker::MediaDataTracker;
 
 pub struct ChannelDataStream<R>
 where
     R: JobDbRepo,
 {
-    pub(crate) program: Arc<RwLock<ChannelTracker<R>>>,
+    pub program: Arc<RwLock<MediaDataTracker<R>>>,
 }
 
 #[tonic::async_trait]
@@ -63,24 +63,6 @@ where
         &self,
         _: Request<Empty>,
     ) -> Result<Response<MediaDataBatchResponse>, Status> {
-        let send_tx = {
-            let program = self.program.read().await;
-            if program.request_tx.is_none() {
-                return Err(Status::internal("not ready"));
-            }
-            program.request_tx.as_ref().unwrap().clone()
-        };
-
-        let (tx, rx) = oneshot::channel::<Result<Option<MediaDataBatchResponse>>>();
-        if let Err(err) = send_tx.send(((), tx)).await {
-            return Err(Status::from_error(Box::new(err)));
-        }
-
-        match rx.await {
-            Ok(Ok(Some(resp))) => Ok(Response::new(resp)),
-            Ok(Ok(None)) => Err(Status::not_found("no avaiable data")),
-            Ok(Err(err)) => Err(Status::from_error(err.into())),
-            Err(err) => Err(Status::from_error(Box::new(err))),
-        }
+        todo!();
     }
 }

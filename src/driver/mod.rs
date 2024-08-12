@@ -32,28 +32,6 @@ pub struct NodeStatus {
 }
 
 pub trait UnitHandler: Send {
-    type Output: ChannelHandler;
-
-    fn name(&self) -> &str;
-
-    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
-    //pause graph running for now
-    fn status(&self) -> impl Future<Output = Result<NodeStatus>> + Send;
-
-    //pause graph running for now
-    fn pause(&mut self) -> impl Future<Output = Result<()>> + Send;
-
-    //restart paused graph
-    fn restart(&mut self) -> impl Future<Output = Result<()>> + Send;
-
-    //stop resource about this graph
-    fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
-
-    //return a channel handler
-    fn channel_handler(&self) -> Option<&Self::Output>;
-}
-
-pub trait ChannelHandler: Send {
     fn name(&self) -> &str;
 
     fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
@@ -69,7 +47,6 @@ pub trait ChannelHandler: Send {
     //stop resource about this graph
     fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
 }
-
 pub trait PipelineController: Send {
     type Output: UnitHandler;
 
