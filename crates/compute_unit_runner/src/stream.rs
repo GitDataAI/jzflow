@@ -5,7 +5,7 @@ use jiaoziflow::{
         common::Empty,
         datatransfer::{
             data_stream_server::DataStream,
-            MediaDataBatchResponse,
+            DataBatch,
         },
     },
 };
@@ -36,7 +36,7 @@ where
 {
     async fn transfer_media_data(
         &self,
-        req: Request<MediaDataBatchResponse>,
+        req: Request<DataBatch>,
     ) -> Result<Response<Empty>, Status> {
         let send_tx = {
             let program = self.program.read().await;
@@ -47,7 +47,7 @@ where
         };
 
         let (tx, rx) = oneshot::channel::<Result<()>>();
-        let req: MediaDataBatchResponse = req.into_inner();
+        let req: DataBatch = req.into_inner();
         if let Err(err) = send_tx.send((req, tx)).await {
             return Err(Status::from_error(Box::new(err)));
         }
@@ -62,7 +62,7 @@ where
     async fn request_media_data(
         &self,
         _: Request<Empty>,
-    ) -> Result<Response<MediaDataBatchResponse>, Status> {
+    ) -> Result<Response<DataBatch>, Status> {
         todo!();
     }
 }

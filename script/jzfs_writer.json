@@ -30,13 +30,10 @@
                     "--username=jimmy",
                     "--password=12345678", 
                     "--owner=jimmy",
-                    "--repo=jz_write_test6",
+                    "--repo=jz_write_test7",
                     "--ref-name=main",
                     "--create-if-not-exit"
                 ]
-            },
-            "channel": {
-                "cache_type": "Memory"
             }
         }
     ]

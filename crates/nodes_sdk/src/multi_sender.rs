@@ -1,6 +1,6 @@
 use jiaoziflow::network::datatransfer::{
     data_stream_client::DataStreamClient,
-    MediaDataBatchResponse,
+    DataBatch,
 };
 use tokio::time::Instant;
 use tonic::transport::Channel;
@@ -25,7 +25,7 @@ impl MultiSender {
 impl MultiSender {
     pub async fn send(
         &mut self,
-        val: MediaDataBatchResponse,
+        val: DataBatch,
         sent_nodes: &[&str],
     ) -> Result<(), Vec<String>> {
         let mut sent = vec![];

@@ -21,7 +21,7 @@ use jiaoziflow::{
         JobDbRepo,
         TrackerState,
     },
-    network::datatransfer::MediaDataBatchResponse,
+    network::datatransfer::DataBatch,
     utils::k8s_helper::get_machine_name,
 };
 use std::{
@@ -91,7 +91,7 @@ where
     // channel for receive finish state from user container
     pub(crate) ipc_process_finish_state_tx: Option<MessageSender<(), ()>>,
 
-    pub(crate) incoming_tx: Option<MessageSender<MediaDataBatchResponse, ()>>,
+    pub(crate) incoming_tx: Option<MessageSender<DataBatch, ()>>,
 }
 impl<R> MediaDataTracker<R>
 where

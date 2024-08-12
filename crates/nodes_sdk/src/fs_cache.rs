@@ -5,7 +5,7 @@ use anyhow::{
 use async_trait::async_trait;
 use jiaoziflow::{
     network::datatransfer::{
-        MediaDataBatchResponse,
+        DataBatch,
         MediaDataCell,
     },
     utils::StdIntoAnyhowResult,
@@ -32,8 +32,8 @@ use walkdir::WalkDir;
 
 #[async_trait]
 pub trait FileCache: Send + Sync + 'static {
-    async fn write(&self, batch: MediaDataBatchResponse) -> Result<()>;
-    async fn read(&self, id: &str) -> Result<MediaDataBatchResponse>;
+    async fn write(&self, batch: DataBatch) -> Result<()>;
+    async fn read(&self, id: &str) -> Result<DataBatch>;
     async fn remove(&self, id: &str) -> Result<()>;
     async fn exit(&self, id: &str) -> Result<bool>;
 }
@@ -53,7 +53,7 @@ impl FSCache {
 
 #[async_trait]
 impl FileCache for FSCache {
-    async fn write(&self, batch: MediaDataBatchResponse) -> Result<()> {
+    async fn write(&self, batch: DataBatch) -> Result<()> {
         let now = Instant::now();
         let tmp_in_path = self.path.join(&batch.id);
         debug!(
@@ -88,10 +88,10 @@ impl FileCache for FSCache {
         Ok(())
     }
 
-    async fn read(&self, id: &str) -> Result<MediaDataBatchResponse> {
+    async fn read(&self, id: &str) -> Result<DataBatch> {
         let now = Instant::now();
         let tmp_out_path = self.path.join(id);
-        let mut new_batch = MediaDataBatchResponse::default();
+        let mut new_batch = DataBatch::default();
         for entry in WalkDir::new(&tmp_out_path) {
             match entry {
                 std::result::Result::Ok(entry) => {
@@ -134,7 +134,7 @@ impl FileCache for FSCache {
 }
 
 #[derive(Clone)]
-pub struct MemCache(Arc<Mutex<HashMap<String, MediaDataBatchResponse>>>);
+pub struct MemCache(Arc<Mutex<HashMap<String, DataBatch>>>);
 
 impl Default for MemCache {
     fn default() -> Self {
@@ -150,7 +150,7 @@ impl MemCache {
 
 #[async_trait]
 impl FileCache for MemCache {
-    async fn write(&self, batch: MediaDataBatchResponse) -> Result<()> {
+    async fn write(&self, batch: DataBatch) -> Result<()> {
         let now = Instant::now();
         let mut store = self.0.lock().await;
         let id = batch.id.clone();
@@ -159,7 +159,7 @@ impl FileCache for MemCache {
         Ok(())
     }
 
-    async fn read(&self, id: &str) -> Result<MediaDataBatchResponse> {
+    async fn read(&self, id: &str) -> Result<DataBatch> {
         let now = Instant::now();
         let store = self.0.lock().await;
         let result = match store.get(id) {

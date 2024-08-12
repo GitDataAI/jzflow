@@ -34,9 +34,6 @@
                 "args": [
                     "--log-level=debug"
                 ]
-            },
-            "channel": {
-                "cache_type": "Memory"
             }
         },
         {
@@ -53,9 +50,6 @@
                     "--log-level=debug",
                     "--label-node=test_labels"
                 ]
-            },
-            "channel": {
-                "cache_type": "Memory"
             }
         }
     ]

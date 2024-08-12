@@ -26,9 +26,6 @@
                 "args": [
                     "--log-level=debug"
                 ]
-            },
-            "channel": {
-                "cache_type": "Memory"
             }
         },
         {
@@ -44,9 +41,6 @@
                 "args": [
                     "--log-level=debug"
                 ]
-            },
-            "channel": {
-                "cache_type": "Memory"
             }
         }
     ]
