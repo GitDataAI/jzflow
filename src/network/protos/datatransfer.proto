@@ -18,6 +18,7 @@ message MediaDataCell {
 message MediaDataBatchResponse {
     string id = 1;
     uint32 size = 2;
-    string from_node = 3;
-    repeated MediaDataCell cells = 4;
+    uint32 data_flag = 3;
+    uint32 priority  = 4;
+    repeated MediaDataCell cells = 5;
 }

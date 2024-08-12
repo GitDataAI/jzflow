@@ -41,6 +41,16 @@
                 "containerPort": 80
               }
             ],
+            "env": [
+              {
+                "name": "MACHINE_NAME",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.name"
+                  }
+                }
+              }
+            ],
             "volumeMounts": [
               {
                 "mountPath": "/unix_socket",

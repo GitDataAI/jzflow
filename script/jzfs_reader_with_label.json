@@ -1,0 +1,62 @@
+{
+    "name": "example",
+    "version": "v1",
+    "dag": [
+        {
+            "name": "read-jiaozifs",
+            "spec": {
+                "image": "gitdatateam/jz_reader:latest",
+                "command": "/jz_reader",
+                "args": [
+                    "--log-level=debug",
+                    "--jiaozifs-url=http://192.168.3.163:34913/api/v1",
+                    "--username=jimmy",
+                    "--password=12345678", 
+                    "--owner=jimmy",
+                    "--repo=jz_write_test6",
+                    "--ref-type=branch",
+                    "--ref-name=main",
+                    "--enable-directory-labeling",
+                    "--labels-name=test_labels"
+                ]
+            }
+        },
+        {
+            "name": "copy-in-place",
+            "node_type": "ComputeUnit",
+            "dependency": [
+                "read-jiaozifs"
+            ],
+            "spec": {
+                "image": "gitdatateam/copy_in_place:latest",
+                "command": "/copy_in_place",
+                "replicas": 5,
+                "args": [
+                    "--log-level=debug"
+                ]
+            },
+            "channel": {
+                "cache_type": "Memory"
+            }
+        },
+        {
+            "name": "list-files",
+            "node_type": "ComputeUnit",
+            "dependency": [
+                "copy-in-place"
+            ],
+            "spec": {
+                "image": "gitdatateam/list_files:latest",
+                "command": "/list_files",
+                "replicas": 3,
+                "args": [
+                    "--log-level=debug",
+                    "--label-node=test_labels"
+                ]
+            },
+            "channel": {
+                "cache_type": "Memory"
+            }
+        }
+    ]
+}

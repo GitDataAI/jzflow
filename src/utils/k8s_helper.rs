@@ -1,3 +1,5 @@
+use std::env;
+
 use k8s_openapi::api::core::v1::Pod;
 
 pub fn get_pod_status(pod: &Pod) -> String {
@@ -26,4 +28,14 @@ pub fn get_pod_status(pod: &Pod) -> String {
             .unwrap_or_else(|| "Unknown".to_string());
     }
     "Unknown".to_string()
+}
+
+pub fn get_machine_name() -> String {
+    match env::var("MACHINE_NAME") {
+        Ok(val) => val,
+        Err(_) => hostname::get()
+            .expect("os provide host name")
+            .to_string_lossy()
+            .to_string(),
+    }
 }

@@ -22,7 +22,10 @@ use chrono::{
 };
 use futures::TryStreamExt;
 use mongodb::{
-    bson::doc,
+    bson::{
+        doc,
+        Document,
+    },
     error::ErrorKind,
     options::{
         ClientOptions,
@@ -59,90 +62,66 @@ impl MongoRunDbRepo {
         let node_col: Collection<Node> = database.collection(NODE_COL_NAME);
         let data_col: Collection<DataRecord> = database.collection(DATA_COL_NAME);
 
+        async fn create_index<T>(
+            collection: &Collection<T>,
+            keys: Document,
+            name: &str,
+            unique: bool,
+        ) -> Result<()>
+        where
+            T: Send + Sync,
         {
-            //create index for nodes
             let idx_opts = IndexOptions::builder()
-                .unique(true)
-                .name("idx_node_name_unique".to_owned())
+                .name(name.to_owned())
+                .unique(unique)
                 .build();
+            let index = IndexModel::builder().keys(keys).options(idx_opts).build();
 
-            let index = IndexModel::builder()
-                .keys(doc! { "node_name": 1 })
-                .options(idx_opts)
-                .build();
-
-            if let Err(err) = node_col.create_index(index).await {
+            if let Err(err) = collection.create_index(index).await {
                 match *err.kind {
-                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    err => {
-                        return Err(anyhow!("create index error {err}"));
-                    }
+                    ErrorKind::Command(ref command_error) if command_error.code == 85 => Ok(()),
+                    err => Err(anyhow!("create index error {err}")),
                 }
+            } else {
+                Ok(())
             }
         }
 
-        {
-            //create index for nodes
-            let idx_opts = IndexOptions::builder()
-                .name("idx_created_at".to_owned())
-                .build();
+        // Create index for nodes
+        create_index(
+            &node_col,
+            doc! { "node_name": 1 },
+            "idx_node_name_unique",
+            true,
+        )
+        .await?;
 
-            let index = IndexModel::builder()
-                .keys(doc! { "created_at": 1 })
-                .options(idx_opts)
-                .build();
+        // Create index for data
+        create_index(&data_col, doc! { "created_at": 1 }, "idx_created_at", false).await?;
 
-            if let Err(err) = data_col.create_index(index).await {
-                match *err.kind {
-                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    err => {
-                        return Err(anyhow!("create data created_at error {err}"));
-                    }
-                }
-            }
-        }
+        create_index(
+            &data_col,
+            doc! { "node_name": 1, "state": 1, "direction": 1 },
+            "idx_node_name_state_direction",
+            false,
+        )
+        .await?;
 
-        {
-            //create  index  for data
-            let idx_opts = IndexOptions::builder()
-                .name("idx_node_name_state_direction".to_owned())
-                .build();
+        create_index(
+            &data_col,
+            doc! { "node_name": 1, "id": 1, "direction": 1 },
+            "idx_node_name_id_direction",
+            false,
+        )
+        .await?;
 
-            let index = IndexModel::builder()
-                .keys(doc! { "node_name": 1,"state": 1,"direction": 1})
-                .options(idx_opts)
-                .build();
-
-            if let Err(err) = data_col.create_index(index).await {
-                match *err.kind {
-                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    err => {
-                        return Err(anyhow!("create index error {err}"));
-                    }
-                }
-            }
-        }
-
-        {
-            //create  index  for data
-            let idx_opts = IndexOptions::builder()
-                .name("idx_node_name_id_direction".to_owned())
-                .build();
-
-            let index = IndexModel::builder()
-                .keys(doc! { "node_name": 1,"id": 1,"direction": 1})
-                .options(idx_opts)
-                .build();
-
-            if let Err(err) = data_col.create_index(index).await {
-                match *err.kind {
-                    ErrorKind::Command(ref command_error) if command_error.code == 85 => {}
-                    err => {
-                        return Err(anyhow!("create index error {err}"));
-                    }
-                }
-            }
-        }
+        create_index(
+            &data_col,
+            doc! { "node_name": 1, "id": 1, "direction": 1, "data.is_transparent_data": 1 },
+            "idx_node_name_id_direction_transparent_data",
+            false,
+        )
+        .await?;
 
         Ok(MongoRunDbRepo {
             graph_col,
@@ -243,20 +222,34 @@ impl DataRepo for MongoRunDbRepo {
         &self,
         node_name: &str,
         direction: &Direction,
+        include_transparent_data: bool,
         state: &DataState,
+        machine_name: Option<String>,
     ) -> Result<Option<DataRecord>> {
-        let update = doc! {
-            "$set": {
-                "state": to_variant_name(&state)?,
-                "updated_at":Utc::now().timestamp(),
-            },
+        let mut set = doc! {
+            "state": to_variant_name(&state)?,
+            "updated_at":Utc::now().timestamp(),
         };
-        self
-            .data_col
-            .find_one_and_update(
-                doc! {"node_name":node_name, "state": doc! {"$in": ["Received","PartialSent"]}, "direction":to_variant_name(&direction)?},
-                update,
-            ).sort(doc! { "created_at": 1 }).await
+        if let Some(machine_name) = machine_name {
+            set.insert("machine", machine_name);
+        }
+
+        let update = doc! {"$set":set};
+
+        let mut query = doc! {
+            "node_name":node_name,
+            "state": doc! {"$in": ["Received","PartialSent"]},
+            "direction":to_variant_name(&direction)?,
+        };
+
+        if !include_transparent_data {
+            query.insert("flag.is_transparent_data", false);
+        }
+
+        self.data_col
+            .find_one_and_update(query, update)
+            .sort(doc! { "priority": 1 })
+            .await
             .anyhow()
     }
 

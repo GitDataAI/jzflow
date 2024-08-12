@@ -30,7 +30,7 @@
                     "--username=jimmy",
                     "--password=12345678", 
                     "--owner=jimmy",
-                    "--repo=jz_write_test4",
+                    "--repo=jz_write_test6",
                     "--ref-name=main",
                     "--create-if-not-exit"
                 ]

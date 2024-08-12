@@ -69,7 +69,7 @@ pub enum DataState {
     PartialSent,
     Sent,
     EndRecieved,
-    KeeptForMetadata,
+    CleanButKeepData,
     Clean,
     Error,
 }
@@ -80,16 +80,51 @@ pub enum Direction {
     Out,
 }
 
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct DataFlag {
+    pub is_keep_data: bool,
+    pub is_transparent_data: bool,
+}
+
+pub const KEEP_DATA: u32 = 0b00000001;
+pub const TRANSPARENT_DATA: u32 = 0b00000010;
+
+impl DataFlag {
+    pub fn to_bit(&self) -> u32 {
+        let mut result = 0;
+        if self.is_transparent_data {
+            result |= TRANSPARENT_DATA;
+        }
+        if self.is_keep_data {
+            result |= KEEP_DATA;
+        }
+        result
+    }
+
+    pub fn new_from_bit(bits: u32) -> Self {
+        let mut flag = DataFlag::default();
+        if bits & KEEP_DATA == KEEP_DATA {
+            flag.is_keep_data = true;
+        }
+        if bits & TRANSPARENT_DATA == TRANSPARENT_DATA {
+            flag.is_transparent_data = true;
+        }
+        flag
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DataRecord {
     /// node's for compute unit its a name,  for channel its node_name+ "-channel"
     pub node_name: String,
     /// data id but not unique, becase the id in channel wiil transfer to compute unit
     pub id: String,
-    pub is_metadata: bool,
+    pub priority: u8,
+    pub flag: DataFlag,
     pub size: u32,
     pub state: DataState,
     pub direction: Direction,
+    pub machine: String,
     pub sent: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -130,7 +165,9 @@ pub trait DataRepo {
         &self,
         node_name: &str,
         direction: &Direction,
+        include_transparent_data: bool,
         state: &DataState,
+        machine_name: Option<String>,
     ) -> impl std::future::Future<Output = Result<Option<DataRecord>>> + Send;
 
     fn find_by_node_id(
@@ -175,3 +212,18 @@ pub trait DataRepo {
 }
 
 pub trait JobDbRepo = GraphRepo + NodeRepo + DataRepo + Clone + Send + Sync + 'static;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_data_flag() {
+        let data = DataFlag::new_from_bit(KEEP_DATA | TRANSPARENT_DATA);
+        assert!(data.is_keep_data);
+        assert!(data.is_transparent_data);
+
+        let bit_value = data.to_bit();
+        assert_eq!(bit_value, 3);
+    }
+}

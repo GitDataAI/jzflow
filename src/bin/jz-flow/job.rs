@@ -97,7 +97,6 @@ pub(super) async fn list_job(global_opts: GlobalOptions, args: ListJobArgs) -> R
         "ID",
         "Name",
         "State",
-        "TryNumber",
         "CreatedAt",
         "UpdatedAt",
     ]));
@@ -140,7 +139,6 @@ pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailA
         "ID",
         "Name",
         "State",
-        "TryNumber",
         "CreatedAt",
         "UpdatedAt",
     ]));

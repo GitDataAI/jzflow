@@ -35,6 +35,7 @@ pub trait FileCache: Send + Sync + 'static {
     async fn write(&self, batch: MediaDataBatchResponse) -> Result<()>;
     async fn read(&self, id: &str) -> Result<MediaDataBatchResponse>;
     async fn remove(&self, id: &str) -> Result<()>;
+    async fn exit(&self, id: &str) -> Result<bool>;
 }
 
 #[derive(Clone)]
@@ -125,6 +126,11 @@ impl FileCache for FSCache {
         let tmp_out_path = self.path.join(id);
         fs::remove_dir_all(&tmp_out_path).await.anyhow()
     }
+
+    async fn exit(&self, id: &str) -> Result<bool> {
+        let tmp_out_path = self.path.join(id);
+        fs::try_exists(&tmp_out_path).await.anyhow()
+    }
 }
 
 #[derive(Clone)]
@@ -169,5 +175,10 @@ impl FileCache for MemCache {
         let mut store = self.0.lock().await;
         store.remove(id);
         Ok(())
+    }
+
+    async fn exit(&self, id: &str) -> Result<bool> {
+        let store = self.0.lock().await;
+        Ok(store.contains_key(id))
     }
 }

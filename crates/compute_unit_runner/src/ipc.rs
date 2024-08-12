@@ -17,6 +17,7 @@ use anyhow::Result;
 use core::str;
 use http_body_util::Collected;
 use jiaoziflow::core::db::{
+    DataFlag,
     JobDbRepo,
     TrackerState,
 };
@@ -57,6 +58,7 @@ use hyperlocal::{
     UnixConnector,
     Uri,
 };
+use query_string_builder::QueryString;
 use serde::de::{
     self,
     Deserializer,
@@ -87,9 +89,10 @@ use std::fmt;
 #[repr(u8)]
 pub enum ErrorNumber {
     NotReady = 1,
-    InComingFinish = 2,
-    AlreadyFinish = 3,
-    DataNotFound = 4,
+    DataMissing = 2,
+    InComingFinish = 3,
+    AlreadyFinish = 4,
+    NoAvaiableData = 5,
 }
 
 #[derive(Debug)]
@@ -225,32 +228,37 @@ impl<'de> Deserialize<'de> for IPCError {
 pub struct SubmitOuputDataReq {
     pub id: String,
     pub size: u32,
+    pub data_flag: DataFlag,
+    pub priority: u8,
 }
 
 impl SubmitOuputDataReq {
-    pub fn new(id: &str, size: u32) -> Self {
+    pub fn new(id: &str, size: u32, data_flag: DataFlag, priority: u8) -> Self {
         SubmitOuputDataReq {
             id: id.to_string(),
             size,
+            data_flag,
+            priority,
         }
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct RequetDataReq {
-    pub metadata_id: Option<String>,
+    pub id: Option<String>,
 }
 
 impl RequetDataReq {
-    pub fn new(metadata_id: &str) -> Self {
+    pub fn new(id: &str) -> Self {
         RequetDataReq {
-            metadata_id: Some(metadata_id.to_string()),
+            id: Some(id.to_string()),
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Status {
+    pub node_name: String,
     pub state: TrackerState,
 }
 
@@ -263,6 +271,7 @@ where
         let program = program_mutex.read().await;
         let local_state = program.local_state.read().await;
         Status {
+            node_name: program.name.clone(),
             state: local_state.clone(),
         }
     };
@@ -276,24 +285,12 @@ async fn process_data_request<R>(
 where
     R: JobDbRepo + Clone,
 {
-    info!("receive avaiable data reqeust");
+    let req = req.into_inner();
+    info!("receive avaiable data reqeust {:?}", req.id.as_ref());
     let sender = loop {
         let program = program_mutex.read().await;
         let local_state = program.local_state.read().await;
         debug!("local state {:?}", *local_state);
-        if *local_state == TrackerState::Finish {
-            return HttpResponse::BadRequest().json(IPCError::NodeError {
-                code: ErrorNumber::AlreadyFinish,
-                msg: "node is already finish".to_string(),
-            });
-        }
-
-        if *local_state == TrackerState::InComingFinish {
-            return HttpResponse::BadRequest().json(IPCError::NodeError {
-                code: ErrorNumber::InComingFinish,
-                msg: "incoming is already finish".to_string(),
-            });
-        }
 
         if *local_state != TrackerState::Init {
             break program.ipc_process_data_req_tx.as_ref().cloned();
@@ -304,10 +301,10 @@ where
     };
 
     //read request
-    let (tx, rx) = oneshot::channel::<Result<Option<AvaiableDataResponse>>>();
+    let (tx, rx) = oneshot::channel::<Result<Option<AvaiableDataResponse>, IPCError>>();
     match sender {
         Some(sender) => {
-            if let Err(err) = sender.send((req.into_inner(), tx)).await {
+            if let Err(err) = sender.send((req, tx)).await {
                 return HttpResponse::InternalServerError()
                     .json(format!("send to avaiable data channel {err}"));
             }
@@ -321,10 +318,10 @@ where
     match rx.await {
         Ok(Ok(Some(resp))) => HttpResponse::Ok().json(resp),
         Ok(Ok(None)) => HttpResponse::NotFound().json(IPCError::NodeError {
-            code: ErrorNumber::DataNotFound,
+            code: ErrorNumber::NoAvaiableData,
             msg: "no avaiable data".to_string(),
         }),
-        Ok(Err(err)) => HttpResponse::InternalServerError().json(err.to_string()),
+        Ok(Err(err)) => HttpResponse::InternalServerError().json(err),
         Err(err) => HttpResponse::ServiceUnavailable().json(err.to_string()),
     }
 }
@@ -538,7 +535,7 @@ pub trait IPCClient {
     ) -> impl std::future::Future<Output = Result<(), IPCError>> + Send;
     fn request_avaiable_data(
         &self,
-        metadata_id: Option<String>,
+        metadata_id: Option<&str>,
     ) -> impl std::future::Future<Output = Result<Option<AvaiableDataResponse>, IPCError>> + Send;
 }
 
@@ -632,15 +629,20 @@ impl IPCClient for IPCClientImpl {
 
     async fn request_avaiable_data(
         &self,
-        metadata_id: Option<String>,
+        id: Option<&str>,
     ) -> Result<Option<AvaiableDataResponse>, IPCError> {
-        let url: Uri = Uri::new(self.unix_socket_addr.clone(), "/api/v1/data");
-        let json = serde_json::to_string(&RequetDataReq { metadata_id })?;
+        let qs = QueryString::new().with_opt_value("id", id);
+        let url: hyper::Uri = Uri::new(
+            self.unix_socket_addr.clone(),
+            format!("/api/v1/data{qs}").as_str(),
+        )
+        .into();
+
         let req: Request<Full<Bytes>> = Request::builder()
             .method(Method::GET)
             .uri(url)
             .header("Content-Type", "application/json")
-            .body(Full::from(json))
+            .body(Full::default())
             .map_err(IPCError::from)?;
 
         let resp = self.client.request(req).await.map_err(IPCError::from)?;
@@ -700,7 +702,7 @@ mod tests {
                 msg: "aaaa".to_string(),
             };
             let result = serde_json::to_string(&my_err).unwrap();
-            assert_eq!(result, r#"{"code":2,"msg":"aaaa"}"#);
+            assert_eq!(result, r#"{"code":4,"msg":"aaaa"}"#);
 
             let de_my_err = serde_json::from_str(&result).unwrap();
             match de_my_err {

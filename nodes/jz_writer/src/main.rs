@@ -231,7 +231,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                             Some(content),
                         )
                         .await?;
-                        debug!("upload file {path:?} to jiaozifs");
+                        debug!("upload file {rel_path:?} to jiaozifs");
                     }
                 }
                 client.complete_result(&id).await.anyhow()?;
@@ -250,7 +250,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                     sleep(Duration::from_secs(2)).await;
                     continue;
                 }
-                ErrorNumber::DataNotFound => {
+                ErrorNumber::NoAvaiableData => {
                     sleep(Duration::from_secs(2)).await;
                     continue;
                 }
@@ -267,6 +267,7 @@ async fn write_jz_fs(token: CancellationToken, args: Args) -> Result<()> {
                     info!("all data finish");
                     return Ok(());
                 }
+                ErrorNumber::DataMissing => panic!("no this error without specific id"),
             },
             Err(IPCError::UnKnown(msg)) => {
                 error!("got unknow error {msg}");

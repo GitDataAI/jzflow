@@ -8,7 +8,15 @@ use compute_unit_runner::ipc::{
     IPCClient,
     SubmitOuputDataReq,
 };
-use jiaoziflow::utils::StdIntoAnyhowResult;
+use itertools::Itertools;
+use jiaoziflow::{
+    core::db::{
+        DataFlag,
+        KEEP_DATA,
+        TRANSPARENT_DATA,
+    },
+    utils::StdIntoAnyhowResult,
+};
 use jiaozifs_client_rs::{
     apis::{
         self,
@@ -81,6 +89,12 @@ struct Args {
 
     #[arg(long, default_value = "*")]
     pattern: String,
+
+    #[arg(long, help = "output directory labeling as name")]
+    enable_directory_labeling: bool,
+
+    #[arg(long)]
+    labels_name: Option<String>,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -139,9 +153,35 @@ async fn read_jz_fs(args: Args) -> Result<()> {
     .await?;
 
     info!("get files {} in jizozifs", file_paths.len());
-
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
+    let status = client.status().await.anyhow()?;
+
+    //write label
+    if args.enable_directory_labeling {
+        let labels = get_directory_labes(&file_paths);
+        let id = args
+            .labels_name
+            .unwrap_or_else(|| status.node_name.clone() + "-label");
+        let output_dir = tmp_path.join(&id).join("labels.txt");
+        if let Some(parent) = output_dir.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
+        fs::write(&output_dir, labels.join("\n")).await?;
+        client
+            .submit_output(SubmitOuputDataReq::new(
+                &id,
+                1,
+                DataFlag::new_from_bit(KEEP_DATA | TRANSPARENT_DATA),
+                1,
+            ))
+            .await
+            .anyhow()?;
+        info!("flush label files {:?}", output_dir);
+    }
+
+    //write data
     for batch in file_paths.chunks(args.batch_size) {
         //create temp output directory
         let id = uuid::Uuid::new_v4().to_string();
@@ -181,7 +221,12 @@ async fn read_jz_fs(args: Args) -> Result<()> {
 
         //submit directory after completed a batch
         client
-            .submit_output(SubmitOuputDataReq::new(&id, batch.len() as u32))
+            .submit_output(SubmitOuputDataReq::new(
+                &id,
+                batch.len() as u32,
+                DataFlag::new_from_bit(0),
+                0,
+            ))
             .await
             .anyhow()?;
         info!(
@@ -193,4 +238,40 @@ async fn read_jz_fs(args: Args) -> Result<()> {
     // read all files
     client.finish().await.unwrap();
     Ok(())
+}
+
+fn get_directory_labes(file_paths: &[String]) -> Vec<String> {
+    file_paths
+        .iter()
+        .filter_map(|path| {
+            let path = Path::new(path);
+            let x: Vec<_> = path.components().collect();
+            if x.len() < 2 {
+                return None;
+            }
+            return Some(x[0].as_os_str().to_string_lossy().to_string());
+        })
+        .unique()
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_get_directory_labes() {
+        let paths = vec![
+            "aaa".to_string(),
+            "aaa.txt".to_string(),
+            "a/a.txt".to_string(),
+            "b/a.txt".to_string(),
+            "c/a.txt".to_string(),
+            "a/c/da.txt".to_string(),
+            "d/e/f/a.txt".to_string(),
+        ];
+
+        let labels = get_directory_labes(&paths);
+        assert_eq!(labels, vec!["a", "b", "c", "d"])
+    }
 }

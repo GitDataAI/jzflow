@@ -1,7 +1,6 @@
 #![feature(duration_constructors)]
 
 pub mod fs_cache;
-pub mod metadata;
 pub mod mprc;
 pub mod multi_sender;
 
@@ -15,4 +14,5 @@ use tokio::sync::{
     oneshot,
 };
 
-pub type MessageSender<REQ, RESP> = Sender<(REQ, oneshot::Sender<Result<RESP>>)>;
+pub type MessageSender<REQ, RESP, ERR = anyhow::Error> =
+    Sender<(REQ, oneshot::Sender<Result<RESP, ERR>>)>;

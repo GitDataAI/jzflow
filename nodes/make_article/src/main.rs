@@ -6,7 +6,10 @@ use compute_unit_runner::ipc::{
     SubmitOuputDataReq,
 };
 use jiaoziflow::{
-    core::db::TrackerState,
+    core::db::{
+        DataFlag,
+        TrackerState,
+    },
     utils::StdIntoAnyhowResult,
 };
 use random_word::Lang;
@@ -115,8 +118,15 @@ async fn make_article(token: CancellationToken, args: Args) -> Result<()> {
         let output_dir = tmp_path.join(&id);
         fs::create_dir_all(output_dir.clone()).await?;
         for _ in 0..30 {
+            let folder_name = random_word::gen(Lang::En);
             let file_name = random_word::gen(Lang::En);
-            let file_path = output_dir.as_path().join(file_name.to_string() + ".txt");
+            let file_path = output_dir
+                .as_path()
+                .join(folder_name)
+                .join(file_name.to_string() + ".txt");
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
             let mut tmp_file = fs::File::create(file_path).await?;
             for _ in 0..100 {
                 let word = random_word::gen(Lang::En).to_string() + "\n";
@@ -127,7 +137,12 @@ async fn make_article(token: CancellationToken, args: Args) -> Result<()> {
         info!("generate new data spent {:?}", instant.elapsed());
         //submit directory after completed a batch
         client
-            .submit_output(SubmitOuputDataReq::new(&id, 30))
+            .submit_output(SubmitOuputDataReq::new(
+                &id,
+                30,
+                DataFlag::new_from_bit(0),
+                0,
+            ))
             .await
             .anyhow()?;
         info!("submit new data({count}) {:?}", instant.elapsed());

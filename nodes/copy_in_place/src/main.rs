@@ -7,7 +7,10 @@ use compute_unit_runner::ipc::{
     IPCError,
     SubmitOuputDataReq,
 };
-use jiaoziflow::utils::StdIntoAnyhowResult;
+use jiaoziflow::{
+    core::db::DataFlag,
+    utils::StdIntoAnyhowResult,
+};
 use std::{
     path::Path,
     str::FromStr,
@@ -109,7 +112,12 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
 
                 //submit directory after completed a batch
                 client
-                    .submit_output(SubmitOuputDataReq::new(&new_id, 30))
+                    .submit_output(SubmitOuputDataReq::new(
+                        &new_id,
+                        30,
+                        DataFlag::new_from_bit(0),
+                        0,
+                    ))
                     .await
                     .anyhow()?;
                 info!("submit new data {:?}", instant.elapsed());
@@ -127,7 +135,7 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
                     sleep(Duration::from_secs(2)).await;
                     continue;
                 }
-                ErrorNumber::DataNotFound => {
+                ErrorNumber::NoAvaiableData => {
                     sleep(Duration::from_secs(2)).await;
                     continue;
                 }
@@ -136,6 +144,7 @@ async fn copy_in_place(token: CancellationToken, args: Args) -> Result<()> {
                     info!("all data finish");
                     return Ok(());
                 }
+                ErrorNumber::DataMissing => panic!("no this error without specific id"),
             },
             Err(IPCError::UnKnown(msg)) => {
                 error!("got unknow error {msg}");

@@ -1,6 +1,8 @@
 use crate::ipc::{
     AvaiableDataResponse,
     CompleteDataReq,
+    ErrorNumber,
+    IPCError,
     RequetDataReq,
     SubmitOuputDataReq,
 };
@@ -12,6 +14,7 @@ use anyhow::{
 use chrono::Utc;
 use jiaoziflow::{
     core::db::{
+        DataFlag,
         DataRecord,
         DataState,
         Direction,
@@ -22,6 +25,7 @@ use jiaoziflow::{
         common::Empty,
         datatransfer::data_stream_client::DataStreamClient,
     },
+    utils::k8s_helper::get_machine_name,
 };
 use std::{
     sync::Arc,
@@ -42,7 +46,6 @@ use tracing::{
 
 use nodes_sdk::{
     fs_cache::FileCache,
-    metadata::is_metadata,
     multi_sender::MultiSender,
     MessageSender,
 };
@@ -86,7 +89,7 @@ where
 
     // channel for process avaiable data request
     pub(crate) ipc_process_data_req_tx:
-        Option<MessageSender<RequetDataReq, Option<AvaiableDataResponse>>>,
+        Option<MessageSender<RequetDataReq, Option<AvaiableDataResponse>, IPCError>>,
 
     // channel for response complete data. do clean work when receive this request
     pub(crate) ipc_process_completed_data_tx: Option<MessageSender<CompleteDataReq, ()>>,
@@ -198,6 +201,7 @@ where
         let (ipc_process_finish_state_tx, mut ipc_process_finish_state_rx) = mpsc::channel(1);
         self.ipc_process_finish_state_tx = Some(ipc_process_finish_state_tx);
 
+        let machine_name = get_machine_name();
         let mut join_set: JoinSet<Result<()>> = JoinSet::new();
 
         let new_data_tx = broadcast::Sender::new(1);
@@ -228,6 +232,7 @@ where
                 let token = token.clone();
                 let node_name = self.name.clone();
                 let db_repo = self.repo.clone();
+                let machine_name = machine_name.clone();
 
                 let mut new_data_rx = new_data_tx.subscribe();
 
@@ -246,9 +251,9 @@ where
                                 //TODO combine multiple batch
                                 loop {
                                     let now = Instant::now();
-                                    match db_repo.find_data_and_mark_state(&node_name, &Direction::Out, &DataState::SelectForSend).await {
+                                    match db_repo.find_data_and_mark_state(&node_name, &Direction::Out, true, &DataState::SelectForSend, Some(machine_name.clone())).await {
                                        Ok(Some(req)) =>{
-                                            let new_batch = match data_cache.read(&req.id).await {
+                                            let mut new_batch = match data_cache.read(&req.id).await {
                                                Ok(batch) => batch,
                                                 Err(err) => {
                                                     warn!("failed to read batch: {}", err);
@@ -259,6 +264,9 @@ where
                                                     break;
                                                 }
                                             };
+                                            //TODO keep this data
+                                            new_batch.data_flag = req.flag.to_bit();
+                                            new_batch.priority = req.priority as u32;
 
                                             //write outgoing
                                             if new_batch.size >0 && !downstreams.is_empty() {
@@ -278,10 +286,11 @@ where
                                             match db_repo.update_state(&node_name, &req.id,  &Direction::Out, &DataState::Sent, Some(downstreams.iter().map(|key|key.as_str()).collect())).await{
                                                Ok(_) =>{
                                                         //remove input data
-                                                        if let Err(err) =  data_cache.remove(&req.id).await {
-                                                            error!("remove template batch fail {}", err);
+                                                        if !req.flag.is_keep_data {
+                                                            if let Err(err) =  data_cache.remove(&req.id).await {
+                                                                error!("remove template batch fail {}", err);
+                                                            }
                                                         }
-
                                                 },
                                                 Err(err) => {
                                                     error!("update state to process fail {} {}", &req.id, err)
@@ -325,23 +334,22 @@ where
                             resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
                             continue;
                         }
-                        let is_metadata = is_metadata(&req.id);
-                        if !is_metadata {
-                            loop {
-                                if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], Some(&Direction::Out)).await.and_then(|count|{
-                                    if count > buf_size {
-                                        Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
-                                    } else {
-                                        Ok(())
-                                    }
-                                }){
-                                    warn!("fail with limit {err}");
-                                    sleep(Duration::from_secs(10)).await;
-                                    continue;
+
+                        loop {
+                            if let Err(err) =  db_repo.count(&node_name, &[&DataState::Received, &DataState::PartialSent], Some(&Direction::Out)).await.and_then(|count|{
+                                if count > buf_size {
+                                    Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
+                                } else {
+                                    Ok(())
                                 }
-                                break;
+                            }){
+                                warn!("fail with limit {err}");
+                                sleep(Duration::from_secs(10)).await;
+                                continue;
                             }
+                            break;
                         }
+
 
                         info!("start to insert data {}", &req.id);
                         // respose with nothing
@@ -351,7 +359,9 @@ where
                             id:req.id.clone(),
                             size: req.size,
                             sent: vec![],
-                            is_metadata,
+                            machine: "".to_string(),
+                            flag: req.data_flag,
+                            priority: req.priority,
                             state: DataState::Received,
                             direction: Direction::Out,
                             created_at:tm,
@@ -406,6 +416,7 @@ where
 
             let local_state = self.local_state.clone();
             let mut incoming_data_rx = incoming_data_tx.subscribe();
+            let outgoing_stream = self.downstreams.clone();
             join_set.spawn(async move {
                 let mut client: Option<DataStreamClient<Channel>> = None;
                 loop {
@@ -420,8 +431,6 @@ where
                                 return anyhow::Ok(());
                             }
 
-                            //select a unassgined data
-                            info!("try to find avaiable data");
                             if client.is_none() {
                                 match DataStreamClient::connect(url.clone()).await{
                                    Ok(new_client)=>{
@@ -452,20 +461,62 @@ where
                                        _=>{}
                                     }
 
+                                    let data_flag = DataFlag::new_from_bit(data.data_flag);
+                                    let priority  = data.priority as u8;
                                     if let Err(err) = data_cache.write(data).await {
                                         error!("write cache files {err}");
                                         continue;
                                     }
-                                    //mark data as received
-                                    //TODO bellow can combined
-                                    //node_name, &res_data.id, Direction::In, DataState::Received
+
+                                    //mark data as received, 
+                                    //TODO transaction
                                     let tm =Utc::now().timestamp();
-                                    if let Err(err) =  db_repo.insert_new_path(&DataRecord{
+                                     if data_flag.is_transparent_data {
+                                        //record as output, skip process
+                                        if !outgoing_stream.is_empty() {
+                                            if let Err(err) =  db_repo.insert_new_path(&DataRecord{
+                                                node_name:node_name.clone(),
+                                                id : id.clone(),
+                                                size,
+                                                sent: vec![],
+                                                machine: "".to_string(),
+                                                flag: data_flag.clone(),
+                                                priority,
+                                                state: DataState::Received,
+                                                direction: Direction::Out,
+                                                updated_at:tm,
+                                                created_at:tm,
+                                            }).await{
+                                                error!("mark data as client receive {err}");
+                                                continue;
+                                            }
+                                        }
+
+                                        if let Err(err) =  db_repo.insert_new_path(&DataRecord{
+                                            node_name:node_name.clone(),
+                                            id : id.clone(),
+                                            size,
+                                            sent: vec![],
+                                            flag: data_flag.clone(),
+                                            machine: "".to_string(),
+                                            priority,
+                                            state: DataState::Processed,
+                                            direction: Direction::In,
+                                            updated_at:tm,
+                                            created_at:tm,
+                                        }).await{
+                                            error!("mark data as client receive {err}");
+                                            continue;
+                                        };
+                                        info!("transparent data received");
+                                    } else if let Err(err) =  db_repo.insert_new_path(&DataRecord{
                                         node_name:node_name.clone(),
                                         id : id.clone(),
                                         size,
-                                        is_metadata: is_metadata(&id),
                                         sent: vec![],
+                                        machine: "".to_string(),
+                                        flag: data_flag.clone(),
+                                        priority,
                                         state: DataState::Received,
                                         direction: Direction::In,
                                         updated_at:tm,
@@ -474,6 +525,8 @@ where
                                         error!("mark data as client receive {err}");
                                         continue;
                                     }
+
+
 
                                     //insert a new incoming data record
                                     if let Err(err) =  db_repo.update_state(&(node_name.clone() +"-channel"), &id, &Direction::In, &DataState::EndRecieved, None).await{
@@ -510,6 +563,8 @@ where
             let data_cache = self.data_cache.clone();
             let token = token.clone();
             let local_state = self.local_state.clone();
+            let machine_name = machine_name.clone();
+
             let incoming_data_tx = incoming_data_tx.clone();
             join_set.spawn(async move {
                 loop {
@@ -519,32 +574,47 @@ where
                       }
                      Some((req, resp)) = ipc_process_data_req_rx.recv() => {
                             //check finish state
-                            if matches!(*local_state.read().await, TrackerState::Finish) {
-                                resp.send(Err(anyhow!("node was finished"))).expect("channel only read once");
+                            if let Some(id) = req.id {
+                                let result = match db_repo.find_by_node_id(&node_name, &id, &Direction::In).await {
+                                    Ok(Some(record)) => match data_cache.exit(&id).await {
+                                        Ok(true) => Ok(Some(AvaiableDataResponse {
+                                            id: record.id.clone(),
+                                            size: record.size,
+                                        })),
+                                        Ok(false) => Err(IPCError::NodeError {
+                                            code: ErrorNumber::DataMissing,
+                                            msg: "".to_string(),
+                                        }),
+                                        Err(err) => Err(IPCError::UnKnown(err.to_string())),
+                                    },
+                                    Ok(None) => Ok(None),
+                                    Err(err) => Err(IPCError::UnKnown(err.to_string())),
+                                };
+                                resp.send(result).expect("channel send failed: channel can only be read once");
                                 continue;
                             }
-                            if let Some(metadata_id) = req.metadata_id {
-                                if is_metadata(&metadata_id) {
-                                    let result = match db_repo.find_by_node_id(&node_name,&metadata_id, &Direction::In).await  {
-                                        Ok(Some(record))=>{
-                                          Ok(Some(AvaiableDataResponse {
-                                                id: record.id.clone(),
-                                                size: record.size,
-                                            }))
-                                         },
-                                         Ok(None)=> Ok(None),
-                                         Err(err)=>Err(err),
-                                     };
-                                    resp.send(result).expect("channel send failed: channel can only be read once");
-                                    continue;
-                                }
-                                resp.send(Err(anyhow!("expect a metadata id with metadata suffix"))).expect("channel only read once");
+
+                            if *local_state.read().await == TrackerState::Finish {
+                                resp.send(Err(IPCError::NodeError {
+                                    code: ErrorNumber::AlreadyFinish,
+                                    msg: "node is already finish".to_string(),
+                                })).expect("channel send failed: channel can only be read once");
+                                continue;
+                            }
+
+                            if *local_state.read().await == TrackerState::InComingFinish {
+                                resp.send(Err(IPCError::NodeError {
+                                    code: ErrorNumber::InComingFinish,
+                                    msg: "node is already finish".to_string(),
+                                })).expect("channel send failed: channel can only be read once");
                                 continue;
                             }
 
                             let result = {
+                                // if a pod take a task but crash or some reason not complete it, this data will hang up.
+                                // TODO, also record who take this task, pod must pick this task first when restart.
                                 let record = db_repo
-                                    .find_data_and_mark_state(&node_name, &Direction::In, &DataState::Assigned)
+                                    .find_data_and_mark_state(&node_name, &Direction::In, false, &DataState::Assigned, Some(machine_name.clone()))
                                     .await
                                     .map_err(|err| anyhow!("query available data failed: {}", err))?;
                                 if record.is_none() {
@@ -552,13 +622,6 @@ where
                                     Ok(None)
                                 } else {
                                     let record = record.unwrap();
-                                    if let Err(err) =  data_cache.read(&record.id).await {
-                                        error!("read files {} {err}, try to find another data", record.id);
-                                        if let Err(err) = db_repo.update_state(&node_name,&record.id, &Direction::In, &DataState::Error, None).await {
-                                            error!("mark data {} to error {err}", &record.id);
-                                        }
-                                        continue;
-                                    }
                                     let res_data = AvaiableDataResponse {
                                         id: record.id.clone(),
                                         size: record.size,
@@ -594,7 +657,6 @@ where
         }
 
         {
-            //receive event from pod
             //inputs nodes need to tell its finish
             let db_repo = self.repo.clone();
             let node_name = self.name.clone();

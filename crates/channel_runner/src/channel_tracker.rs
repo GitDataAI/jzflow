@@ -6,6 +6,7 @@ use chrono::Utc;
 use futures::future::try_join_all;
 use jiaoziflow::{
     core::db::{
+        DataFlag,
         DataRecord,
         DataState,
         Direction,
@@ -13,10 +14,10 @@ use jiaoziflow::{
         TrackerState,
     },
     network::datatransfer::MediaDataBatchResponse,
+    utils::k8s_helper::get_machine_name,
 };
 use nodes_sdk::{
     fs_cache::FileCache,
-    metadata::is_metadata,
     MessageSender,
 };
 use std::{
@@ -117,17 +118,17 @@ where
                             match db_repo.list_by_node_name_and_state(&node_name, &DataState::EndRecieved).await {
                                 Ok(datas) => {
                                     for data in datas {
-                                        if data.is_metadata {
-                                            if let Err(err) =  db_repo.update_state(&node_name, &data.id, &Direction::In, &DataState::KeeptForMetadata, None).await{
-                                                error!("mark metadata data as client receive {err}");
+                                        if data.flag.is_keep_data {
+                                            if let Err(err) =  db_repo.update_state(&node_name, &data.id, &Direction::In, &DataState::CleanButKeepData, None).await{
+                                                error!("mark data as clean but keep data {err}");
                                                 continue;
                                             }
-                                            info!("mark metadata as cleint received")
+                                            info!("mark keep data as clean")
                                         }else {
                                             match data_cache.remove(&data.id).await {
                                                 Ok(_)=>{
                                                     if let Err(err) =  db_repo.update_state(&node_name, &data.id, &Direction::In, &DataState::Clean, None).await{
-                                                        error!("mark data as client receive {err}");
+                                                        error!("mark data as clean {err}");
                                                         continue;
                                                     }
                                                     debug!("remove data {}", &data.id);
@@ -183,6 +184,7 @@ where
             return Err(anyhow!("no upstream"));
         }
 
+        let machine_name = get_machine_name();
         let (incoming_tx, mut incoming_rx) = mpsc::channel(1);
         self.incoming_tx = Some(incoming_tx);
 
@@ -196,6 +198,7 @@ where
             let node_name = self.name.clone();
             let data_cache = self.data_cache.clone();
             let token = token.clone();
+            let machine_name = machine_name.clone();
 
             join_set.spawn(async move {
                 loop {
@@ -203,14 +206,17 @@ where
                         _ = token.cancelled() => {
                             return Ok(());
                          }
-                     Some((_, resp)) = request_rx.recv() => { //make this params
+                     Some((_, resp)) = request_rx.recv() => {
                         loop {
-                            match db_repo.find_data_and_mark_state(&node_name, &Direction::In, &DataState::SelectForSend).await {
+                            match db_repo.find_data_and_mark_state(&node_name, &Direction::In, true,&DataState::SelectForSend, Some(machine_name.clone())).await {
                                 std::result::Result::Ok(Some(record)) =>{
                                     info!("return downstream's datarequest and start response data {}", &record.id);
                                     match data_cache.read(&record.id).await {
-                                        Ok(databatch)=>{
+                                        Ok(mut databatch)=>{
                                             //response this data's position
+                                            //TODO keep this data
+                                            databatch.data_flag = record.flag.to_bit();
+                                            databatch.priority = record.priority as u32;
                                             resp.send(Ok(Some(databatch))).expect("channel only read once");
                                             break;
                                         },
@@ -248,7 +254,6 @@ where
             let buf_size = self.buf_size;
             let data_cache = self.data_cache.clone();
             let token = token.clone();
-
             join_set.spawn(async move {
                 loop {
                     select!{
@@ -261,8 +266,10 @@ where
                         let now = Instant::now();
                         let id = data_batch.id.clone();
                         let size = data_batch.size;
+                        let data_flag = data_batch.data_flag;
+                        let priority = data_batch.priority;
 
-                        // processed before
+                        // is processed before
                         match db_repo.find_by_node_id(&node_name,&id, &Direction::In).await  {
                             Ok(Some(_))=>{
                                 warn!("data {} processed before", &id);
@@ -276,22 +283,18 @@ where
                             }
                             _=>{}
                         }
-                        let is_data_metadata = if is_metadata(&id) {
-                            //check limit for plain data
-                            if let Err(err) =  db_repo.count(&node_name,&[&DataState::Received], Some(&Direction::In)).await.and_then(|count|{
-                                if count > buf_size {
-                                    Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
-                                } else {
-                                    Ok(())
-                                }
-                            }){
-                                resp.send(Err(anyhow!("cannt query limit from mongo {err}"))).expect("request alread listen this channel");
-                                continue;
+
+                        //check limit for plain data
+                        if let Err(err) =  db_repo.count(&node_name,&[&DataState::Received], Some(&Direction::In)).await.and_then(|count|{
+                            if count > buf_size {
+                                Err(anyhow!("has reach limit current:{count} limit:{buf_size}"))
+                            } else {
+                                Ok(())
                             }
-                            true
-                        }else {
-                            false
-                        };
+                        }){
+                            resp.send(Err(anyhow!("cannt query limit from mongo {err}"))).expect("request alread listen this channel");
+                            continue;
+                        }
 
                         //write batch files
                         if let Err(err) = data_cache.write(data_batch).await {
@@ -306,7 +309,9 @@ where
                             node_name: node_name.clone(),
                             id:id.clone(),
                             size,
-                            is_metadata:is_data_metadata,
+                            machine: "".to_string(),
+                            flag: DataFlag::new_from_bit(data_flag),
+                            priority: priority as u8,
                             state: DataState::Received,
                             sent: vec![],
                             direction:Direction::In,
