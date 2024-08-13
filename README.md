@@ -42,7 +42,6 @@ build-jz
 
 ```
 ./dist/jz-flow job create --name simple --path ./script/example_dag.json  # Create a job and deploy all pods
-./dist/jz-flow job run <job id>                                           # Start the job
 ```
 
 ### 4. Monitor the Job

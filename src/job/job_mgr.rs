@@ -125,19 +125,17 @@ where
                                     {
                                         error!("set job to deploy state {err}");
                                     }
-                                    if !job.manual_run {
-                                        if controller.start().await.is_ok() {
-                                            if let Err(err) = db
-                                                .update(
-                                                    &job.id,
-                                                    &JobUpdateInfo {
-                                                        state: Some(JobState::Running),
-                                                    },
-                                                )
-                                                .await
-                                            {
-                                                error!("start job {err}");
-                                            }
+                                    if !job.manual_run && controller.start().await.is_ok() {
+                                        if let Err(err) = db
+                                            .update(
+                                                &job.id,
+                                                &JobUpdateInfo {
+                                                    state: Some(JobState::Running),
+                                                },
+                                            )
+                                            .await
+                                        {
+                                            error!("start job {err}");
                                         }
                                     }
                                 }
