@@ -37,10 +37,42 @@ pub struct JobUpdateInfo {
 pub struct ListJobParams {
     pub state: Option<JobState>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetJobParams {
+    pub name: Option<String>,
+    pub id: Option<ObjectId>,
+}
+
+impl Default for GetJobParams {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GetJobParams {
+    pub fn new() ->Self {
+        GetJobParams{
+            name:None,
+            id:None,
+        }
+    }
+
+    pub fn set_id(mut self, id: ObjectId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn set_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+}
+
 pub trait JobRepo {
     fn insert(&self, job: &Job) -> impl std::future::Future<Output = Result<Job>> + Send;
 
-    fn get(&self, id: &ObjectId) -> impl std::future::Future<Output = Result<Option<Job>>> + Send;
+    fn get(&self, id: &GetJobParams) -> impl std::future::Future<Output = Result<Option<Job>>> + Send;
 
     fn delete(&self, id: &ObjectId) -> impl std::future::Future<Output = Result<()>> + Send;
 

@@ -12,9 +12,9 @@ use clap::{
 };
 use jiaoziflow::{
     api::client::JzFlowClient,
-    core::db::Job,
+    core::db::{GetJobParams, Job},
     dag::Dag,
-    utils::sizefmt::SmartSize,
+    utils::{sizefmt::SmartSize, IntoAnyhowResult},
 };
 use mongodb::bson::oid::ObjectId;
 use prettytable::{
@@ -117,8 +117,8 @@ pub(super) async fn list_job(global_opts: GlobalOptions, args: ListJobArgs) -> R
 
 #[derive(Debug, Args)]
 pub(super) struct JobDetailArgs {
-    #[arg(index = 1, help = "job name, must be unique")]
-    pub(super) id: String,
+    #[arg(index = 1, help = "job name or id")]
+    pub(super) name_or_id: String,
 
     #[arg(long, default_value = "table", help = "format json/table")]
     pub(super) format: String,
@@ -126,8 +126,13 @@ pub(super) struct JobDetailArgs {
 
 pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailArgs) -> Result<()> {
     let client = JzFlowClient::new(&global_opts.listen)?.job();
-    let id: ObjectId = ObjectId::from_str(&args.id)?;
-    let job_detail = client.get_job_detail(&id).await?;
+    let get_job_params = match  ObjectId::from_str(&args.name_or_id){
+        Ok(id)=> GetJobParams::new().set_id(id),
+        Err(_)=> GetJobParams::new().set_name(args.name_or_id)
+    };
+
+    let job: Job = client.get(&get_job_params).await?.anyhow("job not exit")?;
+    let job_detail = client.get_job_detail(&job.id).await?;
 
     if args.format == "json" {
         println!("{}", serde_json::to_string_pretty(&job_detail)?);
@@ -194,30 +199,42 @@ pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailA
 
 #[derive(Debug, Args)]
 pub(super) struct RunJobArgs {
-    #[arg(index = 1, help = "job name, must be unique")]
-    pub(super) id: String,
+    #[arg(index = 1, help = "job name or id")]
+    pub(super) name_or_id: String,
 }
 
 pub(super) async fn run_job(global_opts: GlobalOptions, args: RunJobArgs) -> Result<()> {
     let client = JzFlowClient::new(&global_opts.listen)?.job();
-    let id: ObjectId = ObjectId::from_str(&args.id)?;
-    client.run_job(&id).await?;
 
-    println!("Run job successfully, job ID: {}", args.id);
+    let get_job_params = match  ObjectId::from_str(&args.name_or_id){
+        Ok(id)=> GetJobParams::new().set_id(id),
+        Err(_)=> GetJobParams::new().set_name(args.name_or_id)
+    };
+    let job = client.get(&get_job_params).await?.anyhow("job not exit")?;
+
+    client.run_job(&job.id).await?;
+
+    println!("Run job successfully, job ID: {}", job.id);
     Ok(())
 }
 
 #[derive(Debug, Args)]
 pub(super) struct CleanJobArgs {
-    #[arg(index = 1, help = "job name, must be unique")]
-    pub(super) id: String,
+    #[arg(index = 1, help = "job name or id")]
+    pub(super) name_or_id: String,
 }
 
 pub(super) async fn clean_job(global_opts: GlobalOptions, args: CleanJobArgs) -> Result<()> {
     let client = JzFlowClient::new(&global_opts.listen)?.job();
-    let id: ObjectId = ObjectId::from_str(&args.id)?;
-    client.clean_job(&id).await?;
 
-    println!("Clean job successfully, job ID: {}", args.id);
+    let get_job_params = match  ObjectId::from_str(&args.name_or_id){
+        Ok(id)=> GetJobParams::new().set_id(id),
+        Err(_)=> GetJobParams::new().set_name(args.name_or_id)
+    };
+    let job = client.get(&get_job_params).await?.anyhow("job not exit")?;
+
+    client.clean_job(&job.id).await?;
+
+    println!("Clean job successfully, job ID: {}", job.id);
     Ok(())
 }

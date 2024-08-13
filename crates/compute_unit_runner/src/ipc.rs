@@ -631,7 +631,7 @@ impl IPCClient for IPCClientImpl {
         &self,
         id: Option<&str>,
     ) -> Result<Option<AvaiableDataResponse>, IPCError> {
-        let qs = QueryString::new().with_opt_value("id", id);
+        let qs = QueryString::dynamic().with_opt_value("id", id);
         let url: hyper::Uri = Uri::new(
             self.unix_socket_addr.clone(),
             format!("/api/v1/data{qs}").as_str(),

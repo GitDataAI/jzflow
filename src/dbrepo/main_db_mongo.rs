@@ -1,10 +1,6 @@
 use crate::{
     core::db::{
-        Job,
-        JobRepo,
-        JobState,
-        JobUpdateInfo,
-        ListJobParams,
+        GetJobParams, Job, JobRepo, JobState, JobUpdateInfo, ListJobParams
     },
     utils::{
         IntoAnyhowResult,
@@ -155,8 +151,20 @@ impl JobRepo for MongoMainDbRepo {
         self.job_col.find(query).await?.try_collect().await.anyhow()
     }
 
-    async fn get(&self, id: &ObjectId) -> Result<Option<Job>> {
-        self.job_col.find_one(doc! {"_id": id}).await.anyhow()
+    async fn get(&self, get_params: &GetJobParams) -> Result<Option<Job>> {
+        let mut query = doc! {};
+        if let Some(id) = get_params.id.as_ref() {
+            query.insert("_id", id);
+        }
+        if let Some(name) = get_params.name.as_ref() {
+            query.insert("name", name);
+        }
+
+        if query.is_empty() {
+            return Ok(None);
+        }
+
+        self.job_col.find_one(query).await.anyhow()
     }
 
     async fn delete(&self, id: &ObjectId) -> Result<()> {

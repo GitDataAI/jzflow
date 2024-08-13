@@ -1,11 +1,6 @@
 use crate::{
     core::db::{
-        Job,
-        JobDbRepo,
-        JobState,
-        JobUpdateInfo,
-        ListJobParams,
-        MainDbRepo,
+        GetJobParams, Job, JobDbRepo, JobState, JobUpdateInfo, ListJobParams, MainDbRepo
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
@@ -26,7 +21,6 @@ use anyhow::{
 };
 use futures::future::try_join_all;
 use kube::Client;
-use mongodb::bson::oid::ObjectId;
 use serde::{
     Deserialize,
     Serialize,
@@ -202,8 +196,8 @@ where
         Ok(())
     }
 
-    pub async fn get_job_details(&self, id: &ObjectId) -> Result<JobDetails> {
-        let job = self.db.get(id).await?.anyhow("job not found")?;
+    pub async fn get_job_details(&self, params: &GetJobParams) -> Result<JobDetails> {
+        let job = self.db.get(params).await?.anyhow("job not found")?;
 
         let node_status = if job.state == JobState::Running {
             let dag = Dag::from_json(job.graph_json.as_str())?;
@@ -225,8 +219,8 @@ where
         Ok(JobDetails { job, node_status })
     }
 
-    pub async fn start_job(&self, id: &ObjectId) -> Result<()> {
-        let job = self.db.get(id).await?.anyhow("job not found")?;
+    pub async fn start_job(&self, params: &GetJobParams) -> Result<()> {
+        let job = self.db.get(params).await?.anyhow("job not found")?;
         if job.state != JobState::Deployed {
             return Err(anyhow!("only can run a deployed job"));
         }
@@ -248,12 +242,12 @@ where
             })
     }
 
-    pub async fn clean_job(&self, id: &ObjectId) -> Result<()> {
-        let job = self.db.get(id).await?.anyhow("job not found")?;
+    pub async fn clean_job(&self, params: &GetJobParams) -> Result<()> {
+        let job = self.db.get(params).await?.anyhow("job not found")?;
         //clean k8s
         self.db
             .update(
-                id,
+                &job.id,
                 &JobUpdateInfo {
                     state: Some(JobState::Finish),
                 },
@@ -265,7 +259,7 @@ where
         MongoRunDbRepo::drop(&db_url).await?;
         self.db
             .update(
-                id,
+                &job.id,
                 &JobUpdateInfo {
                     state: Some(JobState::Clean),
                 },
