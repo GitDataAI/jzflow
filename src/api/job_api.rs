@@ -2,7 +2,12 @@ use std::str::FromStr;
 
 use crate::{
     core::db::{
-        GetJobParams, Job, JobDbRepo, JobUpdateInfo, ListJobParams, MainDbRepo
+        GetJobParams,
+        Job,
+        JobDbRepo,
+        JobUpdateInfo,
+        ListJobParams,
+        MainDbRepo,
     },
     driver::Driver,
     job::job_mgr::JobManager,
@@ -28,7 +33,10 @@ async fn get_by_id<MAINR>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) 
 where
     MAINR: MainDbRepo,
 {
-    match db_repo.get(&GetJobParams::new().set_id(path.into_inner())).await {
+    match db_repo
+        .get(&GetJobParams::new().set_id(path.into_inner()))
+        .await
+    {
         Ok(Some(inserted_result)) => HttpResponse::Ok().json(&inserted_result),
         Ok(None) => HttpResponse::NotFound().finish(),
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
@@ -100,7 +108,10 @@ where
     JOBR: JobDbRepo,
 {
     let id = ObjectId::from_str(&path.into_inner()).unwrap();
-    match job_manager.get_job_details(&GetJobParams::new().set_id(id)).await {
+    match job_manager
+        .get_job_details(&GetJobParams::new().set_id(id))
+        .await
+    {
         Ok(detail) => HttpResponse::Ok().json(detail),
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
@@ -129,19 +140,17 @@ where
     JOBR: JobDbRepo,
 {
     cfg.service(
-                web::resource("/job")
-                .route(web::post().to(create::<MAINR>))
-                .route(web::get().to(get::<MAINR>))
-        )
-        .service(
-            web::resource("/job/{id}")
-                .route(web::get().to(get_by_id::<MAINR>))
-                .route(web::post().to(update::<MAINR>))
-                .route(web::delete().to(clean_job::<D, MAINR, JOBR>)),
-        )
-        .service(web::resource("/jobs").route(web::get().to(list::<MAINR>)))
-        .service(
-            web::resource("/job/detail/{id}").route(web::get().to(job_details::<D, MAINR, JOBR>)),
-        )
-        .service(web::resource("/job/run/{id}").route(web::post().to(run_job::<D, MAINR, JOBR>)));
+        web::resource("/job")
+            .route(web::post().to(create::<MAINR>))
+            .route(web::get().to(get::<MAINR>)),
+    )
+    .service(
+        web::resource("/job/{id}")
+            .route(web::get().to(get_by_id::<MAINR>))
+            .route(web::post().to(update::<MAINR>))
+            .route(web::delete().to(clean_job::<D, MAINR, JOBR>)),
+    )
+    .service(web::resource("/jobs").route(web::get().to(list::<MAINR>)))
+    .service(web::resource("/job/detail/{id}").route(web::get().to(job_details::<D, MAINR, JOBR>)))
+    .service(web::resource("/job/run/{id}").route(web::post().to(run_job::<D, MAINR, JOBR>)));
 }

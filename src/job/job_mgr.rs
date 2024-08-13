@@ -1,6 +1,12 @@
 use crate::{
     core::db::{
-        GetJobParams, Job, JobDbRepo, JobState, JobUpdateInfo, ListJobParams, MainDbRepo
+        GetJobParams,
+        Job,
+        JobDbRepo,
+        JobState,
+        JobUpdateInfo,
+        ListJobParams,
+        MainDbRepo,
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
@@ -107,7 +113,7 @@ where
                         while let Some(job) = db.get_job_for_running().await? {
                             let dag = Dag::from_json(job.graph_json.as_str())?;
                             match driver.deploy(job.name.as_str(), &dag).await {
-                                Ok(_) => {
+                                Ok(controller) => {
                                     if let Err(err) = db
                                         .update(
                                             &job.id,
@@ -118,6 +124,21 @@ where
                                         .await
                                     {
                                         error!("set job to deploy state {err}");
+                                    }
+                                    if !job.manual_run {
+                                        if controller.start().await.is_ok() {
+                                            if let Err(err) = db
+                                                .update(
+                                                    &job.id,
+                                                    &JobUpdateInfo {
+                                                        state: Some(JobState::Running),
+                                                    },
+                                                )
+                                                .await
+                                            {
+                                                error!("start job {err}");
+                                            }
+                                        }
                                     }
                                 }
                                 Err(err) => {

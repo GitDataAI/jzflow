@@ -12,9 +12,15 @@ use clap::{
 };
 use jiaoziflow::{
     api::client::JzFlowClient,
-    core::db::{GetJobParams, Job},
+    core::db::{
+        GetJobParams,
+        Job,
+    },
     dag::Dag,
-    utils::{sizefmt::SmartSize, IntoAnyhowResult},
+    utils::{
+        sizefmt::SmartSize,
+        IntoAnyhowResult,
+    },
 };
 use mongodb::bson::oid::ObjectId;
 use prettytable::{
@@ -54,6 +60,9 @@ pub(super) struct JobCreateArgs {
 
     #[arg(long, help = "dag pipline definition")]
     pub(super) path: String,
+
+    #[arg(long, help = "only deploy not run immediately")]
+    pub(super) manual_run: bool,
 }
 
 pub(super) async fn create_job(global_opts: GlobalOptions, args: JobCreateArgs) -> Result<()> {
@@ -66,6 +75,7 @@ pub(super) async fn create_job(global_opts: GlobalOptions, args: JobCreateArgs) 
         graph_json: dag_config,
         created_at: tm,
         updated_at: tm,
+        manual_run: args.manual_run,
         ..Default::default()
     };
 
@@ -126,9 +136,9 @@ pub(super) struct JobDetailArgs {
 
 pub(super) async fn get_job_details(global_opts: GlobalOptions, args: JobDetailArgs) -> Result<()> {
     let client = JzFlowClient::new(&global_opts.listen)?.job();
-    let get_job_params = match  ObjectId::from_str(&args.name_or_id){
-        Ok(id)=> GetJobParams::new().set_id(id),
-        Err(_)=> GetJobParams::new().set_name(args.name_or_id)
+    let get_job_params = match ObjectId::from_str(&args.name_or_id) {
+        Ok(id) => GetJobParams::new().set_id(id),
+        Err(_) => GetJobParams::new().set_name(args.name_or_id),
     };
 
     let job: Job = client.get(&get_job_params).await?.anyhow("job not exit")?;
@@ -206,9 +216,9 @@ pub(super) struct RunJobArgs {
 pub(super) async fn run_job(global_opts: GlobalOptions, args: RunJobArgs) -> Result<()> {
     let client = JzFlowClient::new(&global_opts.listen)?.job();
 
-    let get_job_params = match  ObjectId::from_str(&args.name_or_id){
-        Ok(id)=> GetJobParams::new().set_id(id),
-        Err(_)=> GetJobParams::new().set_name(args.name_or_id)
+    let get_job_params = match ObjectId::from_str(&args.name_or_id) {
+        Ok(id) => GetJobParams::new().set_id(id),
+        Err(_) => GetJobParams::new().set_name(args.name_or_id),
     };
     let job = client.get(&get_job_params).await?.anyhow("job not exit")?;
 
@@ -227,9 +237,9 @@ pub(super) struct CleanJobArgs {
 pub(super) async fn clean_job(global_opts: GlobalOptions, args: CleanJobArgs) -> Result<()> {
     let client = JzFlowClient::new(&global_opts.listen)?.job();
 
-    let get_job_params = match  ObjectId::from_str(&args.name_or_id){
-        Ok(id)=> GetJobParams::new().set_id(id),
-        Err(_)=> GetJobParams::new().set_name(args.name_or_id)
+    let get_job_params = match ObjectId::from_str(&args.name_or_id) {
+        Ok(id) => GetJobParams::new().set_id(id),
+        Err(_) => GetJobParams::new().set_name(args.name_or_id),
     };
     let job = client.get(&get_job_params).await?.anyhow("job not exit")?;
 

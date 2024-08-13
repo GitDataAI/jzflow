@@ -59,10 +59,7 @@ where
         }
     }
 
-    async fn request_media_data(
-        &self,
-        _: Request<Empty>,
-    ) -> Result<Response<DataBatch>, Status> {
+    async fn request_media_data(&self, _: Request<Empty>) -> Result<Response<DataBatch>, Status> {
         todo!();
     }
 }

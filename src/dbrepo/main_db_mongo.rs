@@ -1,6 +1,11 @@
 use crate::{
     core::db::{
-        GetJobParams, Job, JobRepo, JobState, JobUpdateInfo, ListJobParams
+        GetJobParams,
+        Job,
+        JobRepo,
+        JobState,
+        JobUpdateInfo,
+        ListJobParams,
     },
     utils::{
         IntoAnyhowResult,

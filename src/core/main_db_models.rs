@@ -24,6 +24,7 @@ pub struct Job {
     pub name: String,
     pub graph_json: String,
     pub state: JobState,
+    pub manual_run: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -51,10 +52,10 @@ impl Default for GetJobParams {
 }
 
 impl GetJobParams {
-    pub fn new() ->Self {
-        GetJobParams{
-            name:None,
-            id:None,
+    pub fn new() -> Self {
+        GetJobParams {
+            name: None,
+            id: None,
         }
     }
 
@@ -72,7 +73,10 @@ impl GetJobParams {
 pub trait JobRepo {
     fn insert(&self, job: &Job) -> impl std::future::Future<Output = Result<Job>> + Send;
 
-    fn get(&self, id: &GetJobParams) -> impl std::future::Future<Output = Result<Option<Job>>> + Send;
+    fn get(
+        &self,
+        id: &GetJobParams,
+    ) -> impl std::future::Future<Output = Result<Option<Job>>> + Send;
 
     fn delete(&self, id: &ObjectId) -> impl std::future::Future<Output = Result<()>> + Send;
 

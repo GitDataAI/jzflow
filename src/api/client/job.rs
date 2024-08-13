@@ -1,6 +1,8 @@
 use crate::{
     core::db::{
-        GetJobParams, Job, JobUpdateInfo
+        GetJobParams,
+        Job,
+        JobUpdateInfo,
     },
     job::job_mgr::JobDetails,
     utils::StdIntoAnyhowResult,
@@ -84,24 +86,18 @@ impl JobClient {
     }
 
     pub async fn get(&self, get_job_params: &GetJobParams) -> Result<Option<Job>> {
-        let mut uri = self.base_uri
-        .clone()
-        .join("job")?;
-        
+        let mut uri = self.base_uri.clone().join("job")?;
+
         if let Some(id) = get_job_params.id.as_ref() {
-            uri.query_pairs_mut().append_pair("id", id.to_string().as_str());
+            uri.query_pairs_mut()
+                .append_pair("id", id.to_string().as_str());
         }
 
         if let Some(name) = get_job_params.name.as_ref() {
             uri.query_pairs_mut().append_pair("name", name.as_str());
         }
 
-        let resp = self
-            .client
-            .get(uri)
-            .send()
-            .await
-            .anyhow()?;
+        let resp = self.client.get(uri).send().await.anyhow()?;
 
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(None);
