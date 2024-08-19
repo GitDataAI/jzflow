@@ -5,13 +5,14 @@
     "name": "{{{name}}}"
   },
   "spec": {
-    "storageClassName": "jz-flow-fs",
+    "storageClassName": "{{{node.spec.storage.class_name}}}",
     "accessModes": [
-      "ReadWriteMany"
+      "ReadWriteMany",
+      "ReadWriteOnce"
     ],
     "resources": {
       "requests": {
-        "storage": "1Gi"
+        "storage": "{{{node.spec.storage.capacity}}}"
       }
     }
   }

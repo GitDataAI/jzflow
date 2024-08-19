@@ -358,7 +358,8 @@ where
 }
 
 #[derive(Serialize)]
-struct ClaimRenderParams {
+struct ClaimRenderParams<'a> {
+    node: &'a ComputeUnit,
     name: String,
 }
 
@@ -419,6 +420,7 @@ where
             let claim_string = self.reg.render(
                 "claim",
                 &ClaimRenderParams {
+                    node,
                     name: node.name.clone() + "-node-claim",
                 },
             )?;

@@ -15,10 +15,11 @@ pub struct DataPoint {
 pub struct ComputeUnit {
     pub name: String,
 
+    #[serde(default)]
     pub spec: MachineSpec,
 
     #[serde(default)]
-    pub(crate) dependency: Vec<String>,
+    pub dependency: Vec<String>,
 }
 
 #[cfg(test)]
