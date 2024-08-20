@@ -1,14 +1,22 @@
+use std::str::FromStr;
+
 use anyhow::Result;
 use clap::Args;
 
 use jiaoziflow::{
     api::server::start_rpc_server,
-    core::db::MainDbRepo,
+    core::{
+        db::MainDbRepo,
+        AccessMode,
+    },
     dbrepo::{
         MongoMainDbRepo,
         MongoRunDbRepo,
     },
-    driver::kube::KubeDriver,
+    driver::kube::{
+        KubeDriver,
+        KubeOptions,
+    },
 };
 use kube::Client;
 use tokio::{
@@ -37,6 +45,20 @@ pub(super) struct DaemonArgs {
         help = "mongo connection string"
     )]
     mongo_url: String,
+
+    #[arg(
+        long,
+        default_value = "ReadWriteMany",
+        help = "specify storage class type(ReadWriteMany, ReadWriteOnce)"
+    )]
+    access_mode: String,
+
+    #[arg(
+        long,
+        default_value = "jz-flow-fs",
+        help = "specify storage class name"
+    )]
+    storage_class_name: String,
 }
 
 pub(super) async fn run_daemon(global_opts: GlobalOptions, args: DaemonArgs) -> Result<()> {
@@ -47,7 +69,12 @@ pub(super) async fn run_daemon(global_opts: GlobalOptions, args: DaemonArgs) -> 
     let db_repo = MongoMainDbRepo::new(db_url.as_str()).await?;
     let client = Client::try_default().await.unwrap();
 
-    let driver = KubeDriver::new(client.clone(), args.mongo_url.as_str()).await?;
+    let kube_opts = KubeOptions::default()
+        .set_db_url(&args.mongo_url)
+        .set_storage_class(&args.storage_class_name)
+        .set_access_mode(AccessMode::from_str(&args.access_mode)?);
+
+    let driver = KubeDriver::new(client.clone(), kube_opts).await?;
     let job_manager =
         JobManager::<KubeDriver<MongoRunDbRepo>, MongoMainDbRepo, MongoRunDbRepo>::new(
             client,

@@ -15,7 +15,9 @@ use crate::{
             NodeType,
             TrackerState,
         },
+        AccessMode,
         ComputeUnit,
+        StorageOptions,
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
@@ -287,6 +289,65 @@ fn join_array(
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct KubeOptions {
+    db_url: String,
+    storage: StorageOptions,
+}
+
+impl Default for KubeOptions {
+    fn default() -> Self {
+        Self {
+            db_url: "".to_string(),
+            storage: StorageOptions {
+                class_name: Some("jz-flow-fs".to_string()),
+                capacity: Some("1Gi".to_string()),
+                access_mode: Some(AccessMode::ReadWriteMany),
+            },
+        }
+    }
+}
+
+fn merge_storage_options(opt1: &StorageOptions, opt2: &StorageOptions) -> StorageOptions {
+    let mut opts = StorageOptions {
+        class_name: opt1.class_name.clone(),
+        capacity: opt1.capacity.clone(),
+        access_mode: opt1.access_mode.clone(),
+    };
+    if let Some(class_name) = opt2.class_name.as_ref() {
+        opts.class_name = Some(class_name.clone());
+    }
+    if let Some(capacity) = opt2.capacity.as_ref() {
+        opts.capacity = Some(capacity.clone());
+    }
+    if let Some(access_mode) = opt2.access_mode.as_ref() {
+        opts.access_mode = Some(access_mode.clone());
+    }
+    opts
+}
+
+impl KubeOptions {
+    pub fn set_db_url(mut self, db_url: &str) -> Self {
+        self.db_url = db_url.to_string();
+        self
+    }
+
+    pub fn set_storage_class(mut self, class_name: &str) -> Self {
+        self.storage.class_name = Some(class_name.to_string());
+        self
+    }
+
+    pub fn set_capacity(mut self, capacity: &str) -> Self {
+        self.storage.capacity = Some(capacity.to_string());
+        self
+    }
+
+    pub fn set_access_mode(mut self, mode: AccessMode) -> Self {
+        self.storage.access_mode = Some(mode);
+        self
+    }
+}
+
 #[derive(Clone)]
 pub struct KubeDriver<R>
 where
@@ -294,7 +355,8 @@ where
 {
     reg: Handlebars<'static>,
     client: Client,
-    db_url: String,
+
+    options: KubeOptions,
     _phantom_data: PhantomData<R>,
 }
 
@@ -302,7 +364,7 @@ impl<R> KubeDriver<R>
 where
     R: JobDbRepo,
 {
-    pub async fn new(client: Client, db_url: &str) -> Result<KubeDriver<R>> {
+    pub async fn new(client: Client, options: KubeOptions) -> Result<KubeDriver<R>> {
         let mut reg = Handlebars::new();
         reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
 
@@ -312,7 +374,7 @@ where
         Ok(KubeDriver {
             reg,
             client,
-            db_url: db_url.to_string(),
+            options,
             _phantom_data: PhantomData,
         })
     }
@@ -358,8 +420,8 @@ where
 }
 
 #[derive(Serialize)]
-struct ClaimRenderParams<'a> {
-    node: &'a ComputeUnit,
+struct ClaimRenderParams {
+    storage: StorageOptions,
     name: String,
 }
 
@@ -383,7 +445,7 @@ where
     ) -> Result<KubePipelineController<MongoRunDbRepo>> {
         Self::ensure_namespace_exit_and_clean(&self.client, run_id).await?;
 
-        let db_url = self.db_url.to_string() + "/" + run_id;
+        let db_url = self.options.db_url.clone() + "/" + run_id;
         let repo = MongoRunDbRepo::new(db_url.as_str())
             .await
             .map_err(|err| anyhow!("create database fail {err}"))?;
@@ -420,7 +482,7 @@ where
             let claim_string = self.reg.render(
                 "claim",
                 &ClaimRenderParams {
-                    node,
+                    storage: merge_storage_options(&self.options.storage, &node.spec.storage),
                     name: node.name.clone() + "-node-claim",
                 },
             )?;
@@ -497,7 +559,7 @@ where
         run_id: &str,
         graph: &Dag,
     ) -> Result<KubePipelineController<MongoRunDbRepo>> {
-        let db_url = self.db_url.to_string() + "/" + run_id;
+        let db_url = self.options.db_url.clone() + "/" + run_id;
         let repo = MongoRunDbRepo::new(db_url.as_str())
             .await
             .map_err(|err| anyhow!("create database fail {err}"))?;
@@ -622,7 +684,9 @@ mod tests {
         client.database("ntest").drop().await.unwrap();
 
         let client = Client::try_default().await.unwrap();
-        let kube_driver = KubeDriver::<MongoRunDbRepo>::new(client, &db_url)
+
+        let options = KubeOptions::default().set_db_url(&db_url);
+        let kube_driver = KubeDriver::<MongoRunDbRepo>::new(client, options)
             .await
             .unwrap();
         kube_driver.deploy("ntest", &dag).await.unwrap();

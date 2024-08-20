@@ -5,14 +5,13 @@
     "name": "{{{name}}}"
   },
   "spec": {
-    "storageClassName": "{{{node.spec.storage.class_name}}}",
+    "storageClassName": "{{{storage.class_name}}}",
     "accessModes": [
-      "ReadWriteMany",
-      "ReadWriteOnce"
+     "{{{storage.access_mode}}}"
     ],
     "resources": {
       "requests": {
-        "storage": "{{{node.spec.storage.capacity}}}"
+        "storage": "{{{storage.capacity}}}"
       }
     }
   }

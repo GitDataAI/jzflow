@@ -27,8 +27,9 @@ jiaoziflow is a versatile pipeline framework designed for the concurrent preproc
 ### 1. Build
 
 ```
+sudo apt-get install -y protobuf-compiler pkg-config libssl-dev
 git clone https://github.com/GitDataAI/jiaoziflow.git
-build-jz
+make build-jz
 ```
 
 ### 2. Run Daemon

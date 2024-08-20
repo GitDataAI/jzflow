@@ -1,7 +1,9 @@
+use anyhow::anyhow;
 use serde::{
     Deserialize,
     Serialize,
 };
+use std::str::FromStr;
 
 #[derive(Serialize, PartialEq, Deserialize, Debug, Clone, Default)]
 pub enum CacheType {
@@ -11,33 +13,44 @@ pub enum CacheType {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StorageOptions {
-    #[serde(default = "default_storage_class_name")]
-    pub class_name: String,
 
-    #[serde(default = "default_capacity")]
-    pub capacity: String,
+pub enum AccessMode {
+    ReadWriteMany,
+    ReadWriteOnce,
 }
 
-impl Default for StorageOptions {
-    fn default() -> Self {
-        Self {
-            class_name: default_storage_class_name(),
-            capacity: default_capacity(),
+impl FromStr for AccessMode {
+    type Err = anyhow::Error;
+
+    fn from_str(input: &str) -> Result<AccessMode, Self::Err> {
+        match input {
+            "ReadWriteMany" => Ok(AccessMode::ReadWriteMany),
+            "ReadWriteOnce" => Ok(AccessMode::ReadWriteOnce),
+            _ => Err(anyhow!("unsupport acess mode {input}")),
         }
     }
 }
 
-fn default_storage_class_name() -> String {
-    "jz-flow-fs".to_string()
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StorageOptions {
+    pub class_name: Option<String>,
+    pub capacity: Option<String>,
+    pub access_mode: Option<AccessMode>,
 }
 
-fn default_capacity() -> String {
-    "1Gi".to_string()
+impl Default for StorageOptions {
+    #[allow(unconditional_recursion)]
+    fn default() -> Self {
+        Self {
+            class_name: None,
+            capacity: None,
+            access_mode: None,
+        }
+    }
 }
 
 // MachineSpec container information for deploy and running in cloud
-#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Default, Deserialize, Debug, Clone)]
 pub struct MachineSpec {
     #[serde(default)]
     pub image: String,
@@ -45,7 +58,7 @@ pub struct MachineSpec {
     #[serde(default)]
     pub cache_type: CacheType,
 
-    #[serde(default = "default_replicas")]
+    #[serde(default)]
     pub replicas: u32,
 
     #[serde(default)]
@@ -58,10 +71,6 @@ pub struct MachineSpec {
     pub storage: StorageOptions,
 }
 
-fn default_replicas() -> u32 {
-    1
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,7 +80,7 @@ mod tests {
         let spec: MachineSpec = serde_json::from_str("{}").unwrap();
         assert_eq!(spec.replicas, 1);
         assert_eq!(spec.cache_type, CacheType::Disk);
-        assert_eq!(spec.storage.class_name, default_storage_class_name());
-        assert_eq!(spec.storage.capacity, default_capacity());
+        assert!(spec.storage.class_name.is_none());
+        assert!(spec.storage.capacity.is_none());
     }
 }
