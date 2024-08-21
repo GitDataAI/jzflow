@@ -100,18 +100,21 @@ def main():
                     data, features, targets = load_data(filename, args.target_col)
                     create_pairplot(data)
                     plt.savefig(path.join(output_dir, experiment_name + '_pairplot.png'))
-                    logger.info("save 1")
+                    logger.info("save : {}".format(path.join(output_dir, experiment_name + '_pairplot.sav')))
+                    
                     create_corr_matrix(data)
                     plt.savefig(path.join(output_dir, experiment_name + '_corr_matrix.png'))
-                    logger.info("save 1")
+                    logger.info("save : {}".format(path.join(output_dir, experiment_name + '_corr_matrix.sav')))
+                    
                     # Fit model
                     reg = train_model(features, targets)
                     create_learning_curve(reg, features, targets)
                     plt.savefig(path.join(output_dir, experiment_name + '_cv_reg_output.png'))
-                    logger.info("save 1")
+                    logger.info("save : {}".format(path.join(output_dir, experiment_name + '_cv_reg_output.sav')))
+                    
                     # Save model
                     joblib.dump(reg, path.join(output_dir, experiment_name + '_model.sav'))
-                    logger.info("save 1: {}".format(path.join(output_dir, experiment_name + '_model.sav')))
+                    logger.info("save : {}".format(path.join(output_dir, experiment_name + '_model.sav')))
 
 
                 logger.info("process data %s", time.time() - instant)
