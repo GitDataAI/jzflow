@@ -58,7 +58,7 @@ pub struct MachineSpec {
     #[serde(default)]
     pub cache_type: CacheType,
 
-    #[serde(default)]
+    #[serde(default = "default_replicas")]
     pub replicas: u32,
 
     #[serde(default)]
@@ -69,6 +69,10 @@ pub struct MachineSpec {
 
     #[serde(default)]
     pub storage: StorageOptions,
+}
+
+fn default_replicas() -> u32 {
+    1
 }
 
 #[cfg(test)]

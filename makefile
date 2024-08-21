@@ -43,6 +43,9 @@ docker_nodes: build-nodes
 	docker build -f ./nodes/list_files/dockerfile -t gitdatateam/list_files:latest .
 	docker build -f ./nodes/copy_in_place/dockerfile -t gitdatateam/copy_in_place:latest .
 
+docker_examples:
+	cd ./script/housing-prices && docker build -t gitdatateam/housing-prices:latest .
+
 ################## minikube
 docker: docker_cd docker_nodes
 

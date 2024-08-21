@@ -143,8 +143,11 @@ async fn main() -> Result<()> {
                 program: program_safe,
             };
 
+            let server = DataStreamServer::new(data_stream)
+                .max_encoding_message_size(usize::MAX)
+                .max_decoding_message_size(usize::MAX);
             Server::builder()
-                .add_service(DataStreamServer::new(data_stream))
+                .add_service(server)
                 .serve(addr)
                 .await
                 .anyhow()

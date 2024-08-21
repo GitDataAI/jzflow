@@ -35,7 +35,10 @@ impl MultiSender {
 
             if stream.is_none() {
                 match DataStreamClient::connect(url.to_string()).await {
-                    Ok(client) => {
+                    Ok(mut client) => {
+                        client = client
+                            .max_decoding_message_size(usize::MAX)
+                            .max_encoding_message_size(usize::MAX);
                         *stream = Some(client);
                     }
                     Err(err) => {

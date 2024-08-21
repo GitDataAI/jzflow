@@ -2,7 +2,6 @@ use crate::data_tracker::MediaDataTracker;
 use actix_web::{
     dev::Server,
     error,
-    http::StatusCode,
     middleware,
     web::{
         self,
@@ -646,9 +645,6 @@ impl IPCClient for IPCClientImpl {
             .map_err(IPCError::from)?;
 
         let resp = self.client.request(req).await.map_err(IPCError::from)?;
-        if resp.status().as_u16() == StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
 
         if !resp.status().is_success() {
             let resp_bytes = resp

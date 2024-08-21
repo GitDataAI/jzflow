@@ -13,7 +13,7 @@
                     "--username=jimmy",
                     "--password=12345678", 
                     "--owner=jimmy",
-                    "--repo=images",
+                    "--repo=house-price",
                     "--ref-type=branch",
                     "--ref-name=main"
                 ]

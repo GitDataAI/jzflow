@@ -12,6 +12,7 @@ use itertools::Itertools;
 use jiaoziflow::{
     core::db::{
         DataFlag,
+        TrackerState,
         KEEP_DATA,
         TRANSPARENT_DATA,
     },
@@ -142,6 +143,7 @@ async fn read_jz_fs(args: Args) -> Result<()> {
         ..Default::default()
     };
 
+    info!("try to list files");
     let file_paths = apis::objects_api::get_files(
         &configuration,
         &args.owner,
@@ -156,6 +158,10 @@ async fn read_jz_fs(args: Args) -> Result<()> {
     let client = ipc::IPCClientImpl::new(args.unix_socket_addr);
     let tmp_path = Path::new(&args.tmp_path);
     let status = client.status().await.anyhow()?;
+
+    if status.state == TrackerState::Finish {
+        return Ok(());
+    }
 
     //write label
     if args.enable_directory_labeling {
@@ -237,6 +243,7 @@ async fn read_jz_fs(args: Args) -> Result<()> {
     }
     // read all files
     client.finish().await.unwrap();
+    info!("read jiaozifs successfully");
     Ok(())
 }
 

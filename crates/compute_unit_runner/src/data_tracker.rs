@@ -430,7 +430,7 @@ where
                             if *local_state.read().await == TrackerState::InComingFinish {
                                 resp.send(Err(IPCError::NodeError {
                                     code: ErrorNumber::InComingFinish,
-                                    msg: "node is already finish".to_string(),
+                                    msg: "node is incoming finish".to_string(),
                                 })).expect("channel send failed: channel can only be read once");
                                 continue;
                             }
