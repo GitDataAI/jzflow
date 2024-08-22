@@ -142,14 +142,14 @@ def main():
                 continue 
             elif e.code == 3: 
                 client.finish()
-                logger.info("incoming data finish")
+                logger.info(f"incoming data finish {e.msg}")
                 return 
             elif e.code == 4:
-                logger.info("receive AlreadyFinish")
+                logger.info(f"receive AlreadyFinish {e.msg}")
                 time.sleep(60*60*24*365) # alway wait here to provent container restart
                 return   
             elif e.code == 5:        
-                logger.info("no avaiable data")
+                logger.info(f"no avaiable data {e.msg}")
                 time.sleep(2)
                 continue
             else:
