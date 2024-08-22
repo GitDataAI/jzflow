@@ -1,6 +1,5 @@
 import argparse
 import os
-import time
 from os import path
 import numpy as np
 import pandas as pd
@@ -8,9 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 import logging
-import uuid
 from utils import plot_learning_curve
-from ipc import IPCClient, IPCError
 from jzflowsdk import simple_loop
 
 from sklearn.model_selection import ShuffleSplit

@@ -1,9 +1,8 @@
 import os
 import time
 from os import path
-import joblib
 import uuid
-from ipc import IPCClient, IPCError
+from . import IPCClient, IPCError
 import logging
 
 logging.basicConfig(level=logging.INFO)
