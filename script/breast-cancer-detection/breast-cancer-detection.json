@@ -1,0 +1,59 @@
+{
+    "name": "house price",
+    "version": "v1",
+    "dag": [
+        {
+            "name": "read-jiaozifs",
+            "spec": {
+                "image": "gitdatateam/jz_reader:latest",
+                "command": "/jz_reader",
+                "args": [
+                    "--log-level=debug",
+                    "--jiaozifs-url=http://47.236.139.99:34913/api/v1",
+                    "--username=jimmy",
+                    "--password=12345678", 
+                    "--owner=jimmy",
+                    "--repo=breast-cancer-detection",
+                    "--ref-type=branch",
+                    "--ref-name=main"
+                ]
+            }
+        },
+        {
+            "name": "crop-mammograms",
+            "node_type": "ComputeUnit",
+            "dependency": [
+                "read-jiaozifs"
+            ],
+            "spec": {
+                "image": "gitdatateam/breast-cancer-detection:latest",
+                "command": "python",
+                "args": [
+                    "main.py", "sh", "crop_mammogram.sh"
+                ]
+            }
+        },
+        {
+            "name": "write-jiaozifs",
+            "node_type": "ComputeUnit",
+            "dependency": [
+                "crop-mammograms"
+            ],
+            "spec": {
+                "image": "gitdatateam/jz_writer:latest",
+                "command": "/jz_writer",
+           
+                "args": [
+                    "--log-level=debug",
+                    "--jiaozifs-url=http://47.236.139.99:34913/api/v1",
+                    "--username=jimmy",
+                    "--password=12345678", 
+                    "--owner=jimmy",
+                    "--repo=breast-cancer-detection",
+                    "--ref-name=main",
+                    "--create-if-not-exit"
+                ]
+            }
+        }
+    ]
+}

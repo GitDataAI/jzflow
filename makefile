@@ -37,6 +37,7 @@ build-nodes: $(OUTPUT)
 	cp target/release/copy_in_place $(OUTPUT)/copy_in_place
 
 docker_nodes: build-nodes
+	docker build -f ./nodes/shell_run/dockerfile -t gitdatateam/shell_run:latest .
 	docker build -f ./nodes/jz_reader/dockerfile -t gitdatateam/jz_reader:latest .
 	docker build -f ./nodes/jz_writer/dockerfile -t gitdatateam/jz_writer:latest .
 	docker build -f ./nodes/make_article/dockerfile -t gitdatateam/make_article:latest .
@@ -45,6 +46,7 @@ docker_nodes: build-nodes
 
 docker_examples:
 	cd ./script/housing-prices && docker build -t gitdatateam/housing-prices:latest .
+	cd ./script/breast-cancer-detection && docker build -t gitdatateam/breast-cancer-detection:latest .
 
 ################## minikube
 docker: docker_cd docker_nodes

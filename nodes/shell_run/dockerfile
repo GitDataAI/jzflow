@@ -1,0 +1,7 @@
+FROM python:3
+
+RUN pip config set global.index-url https://mirrors.ustc.edu.cn/pypi/simple
+RUN pip install git+https://github.com/GitDataAI/jiaoziflow.git
+
+WORKDIR /workdir/
+COPY *.py /workdir/

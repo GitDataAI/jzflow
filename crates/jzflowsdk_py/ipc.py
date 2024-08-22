@@ -32,6 +32,7 @@ class IPCClient:
         if response.status_code != 200:
             try:
                 error_data = response.json()
+                logger.info(error_data)
                 code = error_data.get("code", 0)
                 message = error_data.get("msg", response.text)
                 raise IPCError(code, message)

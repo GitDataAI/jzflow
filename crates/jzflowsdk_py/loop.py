@@ -4,6 +4,7 @@ from os import path
 import uuid
 from . import IPCClient, IPCError
 import logging
+import subprocess
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,10 +35,10 @@ def simple_loop(callback):
                 if data is not None:
                     if isinstance(data, list):
                         for item in data:
-                            data.id = new_id
+                            data["id"] = new_id
                             client.submit_output(item)
                     else:
-                        data.id = new_id
+                        data["id"] = new_id
                         client.submit_output(data)
                 logger.info("submit new data %s", time.time() - instant)
             else:
