@@ -9,7 +9,7 @@
                 "command": "/jz_reader",
                 "args": [
                     "--log-level=debug",
-                    "--jiaozifs-url=http://47.236.139.99:34913/api/v1",
+                    "--jiaozifs-url=http://127.0.0.1:34913/api/v1",
                     "--username=jimmy",
                     "--password=12345678", 
                     "--owner=jimmy",

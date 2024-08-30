@@ -14,7 +14,8 @@ def run_shell(root_input_dir, output):
     os.environ["OUTPUT"] = output
     
     print(sys.argv[1:])
-    subprocess.Popen(sys.argv[1:])
+    process = subprocess.Popen(sys.argv[1:])
+    process.wait()
     
     filecount = count_files_in_directory(output)
     # Submit directory after completing a batch

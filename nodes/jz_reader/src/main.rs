@@ -212,12 +212,13 @@ async fn read_jz_fs(args: Args) -> Result<()> {
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent).await?;
             }
-            let mut tmp_file = fs::File::create(file_path).await?;
+            let mut tmp_file = fs::File::create(&file_path).await?;
             while let Some(item) = byte_stream.next().await {
                 tokio::io::copy(&mut item.unwrap().as_ref(), &mut tmp_file)
                     .await
                     .unwrap();
             }
+            info!("read file {:?} successfully", file_path);
         }
         info!(
             "read a batch files {} spent {:?}",
