@@ -22,10 +22,7 @@ use job::{
     JobCommands,
 };
 
-use jiaoziflow::{
-    core::db::MainDbRepo,
-    utils::StdIntoAnyhowResult,
-};
+use jiaoziflow::utils::StdIntoAnyhowResult;
 
 use std::str::FromStr;
 use tracing::Level;

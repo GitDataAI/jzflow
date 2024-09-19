@@ -2,16 +2,14 @@ use crate::{
     core::db::{
         GetJobParams,
         Job,
-        JobDbRepo,
         JobState,
         JobUpdateInfo,
         ListJobParams,
-        MainDbRepo,
+        JobRepo,
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
     driver::{
-        Driver,
         NodeStatus,
         PipelineController,
         UnitHandler,
@@ -44,6 +42,8 @@ use tracing::{
     error,
     info,
 };
+use crate::core::db::Repo;
+use crate::driver::Driver;
 
 #[derive(Serialize, Deserialize)]
 pub struct JobDetails {
@@ -55,8 +55,8 @@ pub struct JobDetails {
 pub struct JobManager<D, MAINR, JOBR>
 where
     D: Driver,
-    JOBR: JobDbRepo,
-    MAINR: MainDbRepo,
+    JOBR: Repo,
+    MAINR: JobRepo,
 {
     driver: D,
     db: MAINR,
@@ -67,8 +67,8 @@ where
 impl<D, MAINR, JOBR> JobManager<D, MAINR, JOBR>
 where
     D: Driver,
-    JOBR: JobDbRepo,
-    MAINR: MainDbRepo,
+    JOBR: Repo,
+    MAINR: JobRepo,
 {
     pub async fn new(
         _client: Client,
@@ -88,15 +88,15 @@ where
 impl<D, MAINR, JOBR> JobManager<D, MAINR, JOBR>
 where
     D: Driver,
-    JOBR: JobDbRepo,
-    MAINR: MainDbRepo,
+    JOBR: Repo,
+    MAINR: JobRepo,
 {
     pub fn run_backend(
         &self,
         join_set: &mut JoinSet<Result<()>>,
         token: CancellationToken,
     ) -> Result<()> {
-        let db = self.db.clone();
+        let db: MAINR = self.db.clone();
         let driver = self.driver.clone();
         let connect_string = self.connection_string.clone();
 

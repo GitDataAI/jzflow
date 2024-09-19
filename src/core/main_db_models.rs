@@ -70,7 +70,7 @@ impl GetJobParams {
     }
 }
 
-pub trait JobRepo {
+pub trait JobRepo: Clone + Send + Sync + 'static {
     fn insert(&self, job: &Job) -> impl std::future::Future<Output = Result<Job>> + Send;
 
     fn get(
@@ -94,4 +94,4 @@ pub trait JobRepo {
     ) -> impl std::future::Future<Output = Result<Vec<Job>>> + Send;
 }
 
-pub trait MainDbRepo = JobRepo + Clone + Send + Sync + 'static;
+// pub trait JobRepo = JobRepo + Clone + Send + Sync + 'static;

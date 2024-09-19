@@ -1,4 +1,9 @@
+pub mod kube_derive;
+pub mod kube_option;
+pub mod kube_pipe;
+pub mod kube_util;
 pub mod kube;
+
 
 use crate::{
     core::db::TrackerState,
@@ -32,9 +37,9 @@ pub struct NodeStatus {
 }
 
 pub trait UnitHandler: Send {
-    fn name(&self) -> &str;
+    fn name(&self) -> String;
 
-    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn start(&self) -> impl Future<Output = Result<()>> + Send;
     //pause graph running for now
     fn status(&self) -> impl Future<Output = Result<NodeStatus>> + Send;
 
@@ -47,20 +52,20 @@ pub trait UnitHandler: Send {
     //stop resource about this graph
     fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
 }
-pub trait PipelineController: Send {
+pub trait PipelineController: Send  {
     type Output: UnitHandler;
 
-    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn start(&self) -> impl Future<Output = Result<()>> + Send;
 
     fn nodes_in_order(&self) -> Result<Vec<String>>;
 
     fn get_node(&self, id: &str)
-        -> impl std::future::Future<Output = Result<&Self::Output>> + Send;
+        -> impl Future<Output = Result<&Self::Output>> + Send;
 
     fn get_node_mut(
         &mut self,
         id: &str,
-    ) -> impl std::future::Future<Output = Result<&mut Self::Output>> + Send;
+    ) -> impl Future<Output = Result<&mut Self::Output>> + Send;
 }
 
 pub trait Driver: 'static + Clone + Send + Sync {
