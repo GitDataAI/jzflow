@@ -21,7 +21,6 @@ use std::{
     collections::HashMap,
     default::Default,
 };
-use std::future::Future;
 use tracing::{
     error,
     warn,
@@ -74,34 +73,27 @@ where T: Repo
         self.node_name.clone()
     }
 
-    fn start(&self) -> impl Future<Output=Result<()>> + Send {
-        self.inner_start()
+    async fn start(&self) -> Result<()>{
+        self.inner_start().await?;
+        Ok(())
     }
 
-    fn status(&self) -> impl Future<Output=Result<NodeStatus>> + Send {
-        async {
-            self.inner_status().await.anyhow()
-        }
+    async fn status(&self) -> Result<NodeStatus> {
+        self.inner_status().await.anyhow()
     }
 
-    fn pause(&mut self) -> impl Future<Output=Result<()>> + Send {
-        async {
+    async fn pause(&mut self) -> Result<()> {
             self.inner_pause().await?;
             Ok(())
-        }
     }
 
-    fn restart(&mut self) -> impl Future<Output=Result<()>> + Send {
-        async {
+    async fn restart(&mut self) -> Result<()> {
             self.inner_restart().await?;
             Ok(())
-        }
     }
 
-    fn stop(&mut self) -> impl Future<Output=Result<()>> + Send {
-        async {
-            self.inner_stop().await?;
-            Ok(())
-        }
+    async fn stop(&mut self) -> Result<()>{
+        self.inner_stop().await?;
+        Ok(())
     }
 }

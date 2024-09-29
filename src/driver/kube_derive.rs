@@ -129,7 +129,7 @@ where
             reg: self.reg.clone(),
             client: self.client.clone(),
             options: self.options.clone(),
-            _phantom_data: self._phantom_data.clone(),
+            _phantom_data: self._phantom_data,
         }
     }
 }
