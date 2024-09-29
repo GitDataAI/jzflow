@@ -93,14 +93,14 @@ where T: Repo
 
     fn restart(&mut self) -> impl Future<Output=Result<()>> + Send {
         async {
-            self.inner_restart().await;
+            self.inner_restart().await?;
             Ok(())
         }
     }
 
     fn stop(&mut self) -> impl Future<Output=Result<()>> + Send {
         async {
-            self.inner_stop().await;
+            self.inner_stop().await?;
             Ok(())
         }
     }

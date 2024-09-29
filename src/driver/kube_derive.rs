@@ -48,7 +48,7 @@ use tokio_retry::{
     Retry,
 };
 use tracing::debug;
-use crate::driver::Driver;
+use crate::driver::{Driver, CLAIM, JOIN_ARRAY, SERVICE, STATEFULSET};
 
 pub struct KubeDriver<R>
 where
@@ -67,11 +67,11 @@ where
 {
     pub async fn new(client: Client, options: KubeOptions) -> anyhow::Result<KubeDriver<R>> {
         let mut reg = Handlebars::new();
-        reg.register_template_string("claim", include_str!("kubetpl/claim.tpl"))?;
+        reg.register_template_string(CLAIM, include_str!("kubetpl/claim.tpl"))?;
 
-        reg.register_template_string("statefulset", include_str!("kubetpl/statefulset.tpl"))?;
-        reg.register_template_string("service", include_str!("kubetpl/service.tpl"))?;
-        reg.register_helper("join_array", Box::new(join_array));
+        reg.register_template_string(STATEFULSET, include_str!("kubetpl/statefulset.tpl"))?;
+        reg.register_template_string(SERVICE, include_str!("kubetpl/service.tpl"))?;
+        reg.register_helper(JOIN_ARRAY, Box::new(join_array));
         Ok(KubeDriver {
             reg,
             client,

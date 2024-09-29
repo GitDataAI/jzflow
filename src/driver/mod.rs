@@ -19,6 +19,11 @@ use std::{
     future::Future,
 };
 
+pub const CLAIM:&str = "claim";
+pub const STATEFULSET: &str = "statefulset";
+pub const SERVICE: &str = "service";
+pub const JOIN_ARRAY: &str = "join_array";
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PodStauts {
     pub state: String,
