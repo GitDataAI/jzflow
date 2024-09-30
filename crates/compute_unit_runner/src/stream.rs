@@ -1,12 +1,11 @@
+use crate::data_tracker::MediaDataTracker;
 use anyhow::Result;
-use jiaoziflow::{
-    core::db::JobRepo,
-    network::{
-        common::Empty,
-        datatransfer::{
-            data_stream_server::DataStream,
-            DataBatch,
-        },
+use jiaoziflow::core::db::Repo;
+use jiaoziflow::network::{
+    common::Empty,
+    datatransfer::{
+        data_stream_server::DataStream,
+        DataBatch,
     },
 };
 use std::sync::Arc;
@@ -20,11 +19,9 @@ use tonic::{
     Status,
 };
 
-use crate::data_tracker::MediaDataTracker;
-
 pub struct ChannelDataStream<R>
 where
-    R: JobRepo,
+    R: Repo,
 {
     pub program: Arc<RwLock<MediaDataTracker<R>>>,
 }
@@ -32,7 +29,7 @@ where
 #[tonic::async_trait]
 impl<R> DataStream for ChannelDataStream<R>
 where
-    R: JobRepo,
+    R: Repo,
 {
     async fn transfer_media_data(
         &self,

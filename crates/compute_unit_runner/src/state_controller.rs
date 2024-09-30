@@ -1,9 +1,6 @@
 use actix_web::dev::ServerHandle;
 use anyhow::Result;
-use jiaoziflow::core::db::{
-    JobRepo,
-    TrackerState,
-};
+use jiaoziflow::core::db::{JobRepo, Repo, TrackerState};
 use std::sync::Arc;
 use tokio::{
     select,
@@ -24,7 +21,7 @@ use crate::data_tracker::MediaDataTracker;
 
 pub struct StateController<R>
 where
-    R: JobRepo,
+    R: Repo,
 {
     pub program: Arc<RwLock<MediaDataTracker<R>>>,
     pub _handler: ServerHandle,
@@ -32,7 +29,7 @@ where
 
 impl<R> StateController<R>
 where
-    R: JobRepo,
+    R: Repo,
 {
     pub async fn apply_db_state(
         &self,

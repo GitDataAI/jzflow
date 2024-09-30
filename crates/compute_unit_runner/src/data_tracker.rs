@@ -18,7 +18,6 @@ use jiaoziflow::{
         DataRecord,
         DataState,
         Direction,
-        JobRepo,
         TrackerState,
     },
     network::datatransfer::DataBatch,
@@ -59,10 +58,11 @@ use tokio::{
 
 use futures::future::try_join_all;
 use tokio_util::sync::CancellationToken;
+use jiaoziflow::core::db::Repo;
 
 pub struct MediaDataTracker<R>
 where
-    R: JobRepo,
+    R: Repo,
 {
     pub(crate) name: String,
 
@@ -95,7 +95,7 @@ where
 }
 impl<R> MediaDataTracker<R>
 where
-    R: JobRepo,
+    R: Repo,
 {
     pub fn new(
         repo: R,
@@ -125,7 +125,7 @@ where
 
 impl<R> MediaDataTracker<R>
 where
-    R: JobRepo,
+    R: Repo,
 {
     pub fn run_backend(
         &mut self,
