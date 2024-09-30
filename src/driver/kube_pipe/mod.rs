@@ -2,13 +2,14 @@ use crate::{
     core::db::Repo,
     driver::{
         kube::KubeHandler,
+        PipelineController,
+        UnitHandler,
     },
     utils::IntoAnyhowResult,
 };
 use futures::future;
 use kube::Client;
 use std::collections::HashMap;
-use crate::driver::{PipelineController, UnitHandler};
 
 pub struct KubePipelineController<R>
 where
@@ -20,9 +21,10 @@ where
     pub(crate) handlers: HashMap<String, KubeHandler<R>>,
 }
 impl<R> KubePipelineController<R>
-where R: Repo
+where
+    R: Repo,
 {
-    pub fn new(db_repo: R,client: Client,topo_sort_nodes: Vec<String>) -> Self {
+    pub fn new(db_repo: R, client: Client, topo_sort_nodes: Vec<String>) -> Self {
         Self {
             _client: client,
             _db_repo: db_repo,

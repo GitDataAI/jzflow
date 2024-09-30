@@ -129,7 +129,6 @@ pub struct DataRecord {
     pub updated_at: i64,
 }
 
-
 /*
     Unified interface for subsequent unified calls and extensions (for different storage systems)
 */

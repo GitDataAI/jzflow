@@ -57,8 +57,8 @@ use tokio::{
 };
 
 use futures::future::try_join_all;
-use tokio_util::sync::CancellationToken;
 use jiaoziflow::core::db::Repo;
+use tokio_util::sync::CancellationToken;
 
 pub struct MediaDataTracker<R>
 where

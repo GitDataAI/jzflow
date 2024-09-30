@@ -15,7 +15,11 @@ use actix_web::{
 use anyhow::Result;
 use core::str;
 use http_body_util::Collected;
-use jiaoziflow::core::db::{DataFlag, Repo, TrackerState};
+use jiaoziflow::core::db::{
+    DataFlag,
+    Repo,
+    TrackerState,
+};
 use serde::{
     ser::SerializeStruct,
     Deserialize,

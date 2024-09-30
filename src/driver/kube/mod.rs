@@ -1,4 +1,8 @@
-use super::{NodeStatus, PodStauts, UnitHandler};
+use super::{
+    NodeStatus,
+    PodStauts,
+    UnitHandler,
+};
 use crate::{
     core::db::Repo,
     utils::{
@@ -67,13 +71,14 @@ where
 }
 
 impl<T> UnitHandler for KubeHandler<T>
-where T: Repo
+where
+    T: Repo,
 {
     fn name(&self) -> String {
         self.node_name.clone()
     }
 
-    async fn start(&self) -> Result<()>{
+    async fn start(&self) -> Result<()> {
         self.inner_start().await?;
         Ok(())
     }
@@ -83,16 +88,16 @@ where T: Repo
     }
 
     async fn pause(&mut self) -> Result<()> {
-            self.inner_pause().await?;
-            Ok(())
+        self.inner_pause().await?;
+        Ok(())
     }
 
     async fn restart(&mut self) -> Result<()> {
-            self.inner_restart().await?;
-            Ok(())
+        self.inner_restart().await?;
+        Ok(())
     }
 
-    async fn stop(&mut self) -> Result<()>{
+    async fn stop(&mut self) -> Result<()> {
         self.inner_stop().await?;
         Ok(())
     }

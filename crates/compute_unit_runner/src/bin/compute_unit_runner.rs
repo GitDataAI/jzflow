@@ -5,7 +5,6 @@ use compute_unit_runner::{
     stream::ChannelDataStream,
 };
 use jiaoziflow::{
-    core::db::NodeRepo,
     dbrepo::MongoRunDbRepo,
     network::datatransfer::data_stream_server::DataStreamServer,
     utils::StdIntoAnyhowResult,
@@ -33,6 +32,7 @@ use tokio::{
 };
 use tonic::transport::Server;
 
+use jiaoziflow::core::db::Repo;
 use nodes_sdk::monitor_tasks;
 use tokio_util::sync::CancellationToken;
 use tracing::{

@@ -1,5 +1,5 @@
-use k8s_openapi::api::core::v1::Pod;
 use super::*;
+use k8s_openapi::api::core::v1::Pod;
 
 impl<T> KubeHandler<T>
 where

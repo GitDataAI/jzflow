@@ -1,6 +1,9 @@
 use actix_web::dev::ServerHandle;
 use anyhow::Result;
-use jiaoziflow::core::db::{JobRepo, Repo, TrackerState};
+use jiaoziflow::core::db::{
+    Repo,
+    TrackerState,
+};
 use std::sync::Arc;
 use tokio::{
     select,

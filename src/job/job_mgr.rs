@@ -2,14 +2,16 @@ use crate::{
     core::db::{
         GetJobParams,
         Job,
+        JobRepo,
         JobState,
         JobUpdateInfo,
         ListJobParams,
-        JobRepo,
+        Repo,
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
     driver::{
+        Driver,
         NodeStatus,
         PipelineController,
         UnitHandler,
@@ -42,8 +44,6 @@ use tracing::{
     error,
     info,
 };
-use crate::core::db::Repo;
-use crate::driver::Driver;
 
 #[derive(Serialize, Deserialize)]
 pub struct JobDetails {

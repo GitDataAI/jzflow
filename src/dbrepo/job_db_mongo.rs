@@ -351,4 +351,3 @@ impl Repo for MongoRunDbRepo {
         self.data_col.insert_one(record).await.map(|_| ()).anyhow()
     }
 }
-

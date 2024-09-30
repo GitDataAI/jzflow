@@ -1,16 +1,15 @@
 use crate::{
-    core::{
-        db::{
-            Graph,
-            Node,
-            NodeType,
-            Repo,
-            TrackerState,
-        },
+    core::db::{
+        Graph,
+        Node,
+        NodeType,
+        Repo,
+        TrackerState,
     },
     dag::Dag,
     dbrepo::MongoRunDbRepo,
     driver::{
+        kube::KubeHandler,
         kube_option::KubeOptions,
         kube_pipe::KubePipelineController,
         kube_util::{
@@ -19,7 +18,11 @@ use crate::{
             ClaimRenderParams,
             NodeRenderParams,
         },
-        kube::KubeHandler,
+        Driver,
+        CLAIM,
+        JOIN_ARRAY,
+        SERVICE,
+        STATEFULSET,
     },
 };
 use anyhow::anyhow;
@@ -48,7 +51,6 @@ use tokio_retry::{
     Retry,
 };
 use tracing::debug;
-use crate::driver::{Driver, CLAIM, JOIN_ARRAY, SERVICE, STATEFULSET};
 
 pub struct KubeDriver<R>
 where
@@ -125,7 +127,7 @@ where
     R: Repo,
 {
     fn clone(&self) -> Self {
-        Self{
+        Self {
             reg: self.reg.clone(),
             client: self.client.clone(),
             options: self.options.clone(),

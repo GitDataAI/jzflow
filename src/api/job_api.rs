@@ -4,11 +4,12 @@ use crate::{
     core::db::{
         GetJobParams,
         Job,
-        Repo,
+        JobRepo,
         JobUpdateInfo,
         ListJobParams,
-        JobRepo,
+        Repo,
     },
+    driver::Driver,
     job::job_mgr::JobManager,
 };
 use actix_web::{
@@ -16,7 +17,6 @@ use actix_web::{
     HttpResponse,
 };
 use mongodb::bson::oid::ObjectId;
-use crate::driver::Driver;
 
 //TODO change to use route macro after https://github.com/actix/actix-web/issues/2866  resolved
 async fn create<MAINR>(db_repo: web::Data<MAINR>, data: web::Json<Job>) -> HttpResponse

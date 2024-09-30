@@ -1,8 +1,10 @@
+use super::job_api::job_route_config;
 use crate::{
     core::db::{
-        Repo,
         JobRepo,
+        Repo,
     },
+    driver::Driver,
     job::job_mgr::JobManager,
     utils::IntoAnyhowResult,
 };
@@ -21,8 +23,6 @@ use actix_web::{
 };
 use anyhow::Result;
 use reqwest::Url;
-use crate::driver::Driver;
-use super::job_api::job_route_config;
 
 fn v1_route<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
 where

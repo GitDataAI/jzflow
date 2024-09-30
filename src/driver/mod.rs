@@ -1,9 +1,8 @@
+pub mod kube;
 pub mod kube_derive;
 pub mod kube_option;
 pub mod kube_pipe;
 pub mod kube_util;
-pub mod kube;
-
 
 use crate::{
     core::db::TrackerState,
@@ -19,7 +18,7 @@ use std::{
     future::Future,
 };
 
-pub const CLAIM:&str = "claim";
+pub const CLAIM: &str = "claim";
 pub const STATEFULSET: &str = "statefulset";
 pub const SERVICE: &str = "service";
 pub const JOIN_ARRAY: &str = "join_array";
@@ -57,20 +56,16 @@ pub trait UnitHandler: Send {
     //stop resource about this graph
     fn stop(&mut self) -> impl Future<Output = Result<()>> + Send;
 }
-pub trait PipelineController: Send  {
+pub trait PipelineController: Send {
     type Output: UnitHandler;
 
     fn start(&self) -> impl Future<Output = Result<()>> + Send;
 
     fn nodes_in_order(&self) -> Result<Vec<String>>;
 
-    fn get_node(&self, id: &str)
-        -> impl Future<Output = Result<&Self::Output>> + Send;
+    fn get_node(&self, id: &str) -> impl Future<Output = Result<&Self::Output>> + Send;
 
-    fn get_node_mut(
-        &mut self,
-        id: &str,
-    ) -> impl Future<Output = Result<&mut Self::Output>> + Send;
+    fn get_node_mut(&mut self, id: &str) -> impl Future<Output = Result<&mut Self::Output>> + Send;
 }
 
 pub trait Driver: 'static + Clone + Send + Sync {

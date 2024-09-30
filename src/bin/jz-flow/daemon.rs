@@ -5,35 +5,38 @@ use clap::Args;
 
 use jiaoziflow::{
     api::server::start_rpc_server,
-    core::{
-        AccessMode,
-    },
+    core::AccessMode,
     dbrepo::{
         MongoMainDbRepo,
         MongoRunDbRepo,
     },
+    driver::{
+        kube_derive::KubeDriver,
+        kube_option::KubeOptions,
+    },
+    job::job_mgr::JobManager,
 };
 use kube::Client;
+#[cfg(target_os = "linux")]
+use tokio::signal::unix::{
+    signal,
+    SignalKind,
+};
+#[cfg(target_os = "windows")]
+use tokio::signal::windows::{
+    ctrl_break,
+    ctrl_c,
+    ctrl_shutdown,
+};
 use tokio::{
     select,
     task::JoinSet,
 };
-#[cfg(target_os = "windows")]
-use tokio::signal::windows::{
-    ctrl_c,
-    ctrl_break,
-    ctrl_shutdown,
-};
-#[cfg(target_os = "linux")]
-use tokio::signal::unix::{signal,SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
     info,
 };
-use jiaoziflow::driver::kube_derive::KubeDriver;
-use jiaoziflow::driver::kube_option::KubeOptions;
-use jiaoziflow::job::job_mgr::JobManager;
 
 use crate::global::GlobalOptions;
 
