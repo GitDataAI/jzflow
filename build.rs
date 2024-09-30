@@ -10,12 +10,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "src/network/protos/nodecontroller.proto",
     ];
 
+    // fix use of deprecated method `tonic_build::Builder::compile`: renamed to `compile_protos()`
+    //
     // let proto_dir = "src/network/protos";
     // tonic_build::configure()
-    //     .build_client(true)
-    //     .build_server(true)
-    //     .out_dir(proto_dir)
     //     .compile(&protos, &[proto_dir])?;
-    compile_protos(&protos)?;
+    compile_protos(&protos[0])?;
+    compile_protos(&protos[1])?;
+    compile_protos(&protos[2])?;
+    compile_protos(&protos[3])?;
     Ok(())
 }
