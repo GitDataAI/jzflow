@@ -1,4 +1,8 @@
 pub mod kube;
+pub mod kube_derive;
+pub mod kube_option;
+pub mod kube_pipe;
+pub mod kube_util;
 
 use crate::{
     core::db::TrackerState,
@@ -13,6 +17,11 @@ use std::{
     collections::HashMap,
     future::Future,
 };
+
+pub const CLAIM: &str = "claim";
+pub const STATEFULSET: &str = "statefulset";
+pub const SERVICE: &str = "service";
+pub const JOIN_ARRAY: &str = "join_array";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PodStauts {
@@ -32,9 +41,9 @@ pub struct NodeStatus {
 }
 
 pub trait UnitHandler: Send {
-    fn name(&self) -> &str;
+    fn name(&self) -> String;
 
-    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn start(&self) -> impl Future<Output = Result<()>> + Send;
     //pause graph running for now
     fn status(&self) -> impl Future<Output = Result<NodeStatus>> + Send;
 
@@ -50,17 +59,13 @@ pub trait UnitHandler: Send {
 pub trait PipelineController: Send {
     type Output: UnitHandler;
 
-    fn start(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn start(&self) -> impl Future<Output = Result<()>> + Send;
 
     fn nodes_in_order(&self) -> Result<Vec<String>>;
 
-    fn get_node(&self, id: &str)
-        -> impl std::future::Future<Output = Result<&Self::Output>> + Send;
+    fn get_node(&self, id: &str) -> impl Future<Output = Result<&Self::Output>> + Send;
 
-    fn get_node_mut(
-        &mut self,
-        id: &str,
-    ) -> impl std::future::Future<Output = Result<&mut Self::Output>> + Send;
+    fn get_node_mut(&mut self, id: &str) -> impl Future<Output = Result<&mut Self::Output>> + Send;
 }
 
 pub trait Driver: 'static + Clone + Send + Sync {

@@ -5,26 +5,31 @@ use clap::Args;
 
 use jiaoziflow::{
     api::server::start_rpc_server,
-    core::{
-        db::MainDbRepo,
-        AccessMode,
-    },
+    core::AccessMode,
     dbrepo::{
         MongoMainDbRepo,
         MongoRunDbRepo,
     },
-    driver::kube::{
-        KubeDriver,
-        KubeOptions,
+    driver::{
+        kube_derive::KubeDriver,
+        kube_option::KubeOptions,
     },
+    job::job_mgr::JobManager,
 };
 use kube::Client;
+#[cfg(target_os = "linux")]
+use tokio::signal::unix::{
+    signal,
+    SignalKind,
+};
+#[cfg(target_os = "windows")]
+use tokio::signal::windows::{
+    ctrl_break,
+    ctrl_c,
+    ctrl_shutdown,
+};
 use tokio::{
     select,
-    signal::unix::{
-        signal,
-        SignalKind,
-    },
     task::JoinSet,
 };
 use tokio_util::sync::CancellationToken;
@@ -32,8 +37,6 @@ use tracing::{
     error,
     info,
 };
-
-use jiaoziflow::job::job_mgr::JobManager;
 
 use crate::global::GlobalOptions;
 
@@ -105,12 +108,30 @@ pub(super) async fn run_daemon(global_opts: GlobalOptions, args: DaemonArgs) -> 
 
     {
         //catch signal
+        #[cfg(target_os = "linux")]
         tokio::spawn(async move {
             let mut sig_term = signal(SignalKind::terminate()).unwrap();
             let mut sig_int = signal(SignalKind::interrupt()).unwrap();
+            #[cfg(target_os = "linux")]
             select! {
-                _ = sig_term.recv() => info!("Recieve SIGTERM"),
-                _ = sig_int.recv() => info!("Recieve SIGTINT"),
+                _ = sig_term.recv() => info!("Receive SIGTERM"),
+                _ = sig_int.recv() => info!("Receive SIGINT"),
+            };
+            token.cancel();
+        });
+        #[cfg(target_os = "windows")]
+        tokio::spawn(async move {
+            let mut ctrl_c = ctrl_c().unwrap();
+            let ctrl_c = ctrl_c.recv();
+            let mut ctrl_break = ctrl_break().unwrap();
+            let ctrl_break = ctrl_break.recv();
+            let mut ctrl_shutdown = ctrl_shutdown().unwrap();
+            let ctrl_shutdown = ctrl_shutdown.recv();
+            #[cfg(target_os = "windows")]
+            select! {
+                _ = ctrl_c => info!("Receive Ctrl-C"),
+                _ = ctrl_break => info!("Receive Ctrl-Break"),
+                _ = ctrl_shutdown => info!("Receive Ctrl-Shutdown"),
             };
             token.cancel();
         });

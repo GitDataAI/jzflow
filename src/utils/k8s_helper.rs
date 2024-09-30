@@ -31,11 +31,10 @@ pub fn get_pod_status(pod: &Pod) -> String {
 }
 
 pub fn get_machine_name() -> String {
-    match env::var("MACHINE_NAME") {
-        Ok(val) => val,
-        Err(_) => hostname::get()
+    env::var("MACHINE_NAME").unwrap_or_else(|_| {
+        hostname::get()
             .expect("os provide host name")
             .to_string_lossy()
-            .to_string(),
-    }
+            .to_string()
+    })
 }

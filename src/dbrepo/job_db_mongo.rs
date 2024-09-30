@@ -1,20 +1,14 @@
 use crate::{
     core::db::{
         DataRecord,
-        DataRepo,
         DataState,
         Direction,
         Graph,
-        GraphRepo,
         Node,
-        NodeRepo,
+        Repo,
         TrackerState,
     },
     utils::StdIntoAnyhowResult,
-};
-use anyhow::{
-    anyhow,
-    Result,
 };
 use chrono::{
     Duration,
@@ -49,7 +43,7 @@ pub struct MongoRunDbRepo {
 }
 
 impl MongoRunDbRepo {
-    pub async fn new(connectstring: &str) -> Result<Self> {
+    pub async fn new(connectstring: &str) -> anyhow::Result<Self> {
         let options = ClientOptions::parse(connectstring).await?;
         let database = options
             .default_database
@@ -67,7 +61,7 @@ impl MongoRunDbRepo {
             keys: Document,
             name: &str,
             unique: bool,
-        ) -> Result<()>
+        ) -> anyhow::Result<()>
         where
             T: Send + Sync,
         {
@@ -80,7 +74,7 @@ impl MongoRunDbRepo {
             if let Err(err) = collection.create_index(index).await {
                 match *err.kind {
                     ErrorKind::Command(ref command_error) if command_error.code == 85 => Ok(()),
-                    err => Err(anyhow!("create index error {err}")),
+                    err => Err(anyhow::anyhow!("create index error {err}")),
                 }
             } else {
                 Ok(())
@@ -130,7 +124,7 @@ impl MongoRunDbRepo {
         })
     }
 
-    pub async fn drop(connectstring: &str) -> Result<()> {
+    pub async fn drop(connectstring: &str) -> anyhow::Result<()> {
         let options = ClientOptions::parse(connectstring).await?;
         let database = options
             .default_database
@@ -142,34 +136,31 @@ impl MongoRunDbRepo {
     }
 }
 
-impl GraphRepo for MongoRunDbRepo {
-    async fn insert_global_state(&self, graph: &Graph) -> Result<()> {
+impl Repo for MongoRunDbRepo {
+    async fn insert_global_state(&self, graph: &Graph) -> anyhow::Result<()> {
         self.graph_col.insert_one(graph).await.map(|_| ()).anyhow()
     }
 
-    async fn get_global_state(&self) -> Result<Graph> {
+    async fn get_global_state(&self) -> anyhow::Result<Graph> {
         match self.graph_col.find_one(doc! {}).await {
-            Ok(None) => Err(anyhow!("global state not exit")),
+            Ok(None) => Err(anyhow::anyhow!("global state not exit")),
             Ok(Some(val)) => Ok(val),
             Err(err) => Err(err.into()),
         }
     }
-}
-
-impl NodeRepo for MongoRunDbRepo {
-    async fn insert_node(&self, state: &Node) -> Result<()> {
+    async fn insert_node(&self, state: &Node) -> anyhow::Result<()> {
         self.node_col.insert_one(state).await.map(|_| ()).anyhow()
     }
 
-    async fn get_node_by_name(&self, name: &str) -> Result<Node> {
+    async fn get_node_by_name(&self, name: &str) -> anyhow::Result<Node> {
         match self.node_col.find_one(doc! {"node_name":name}).await {
-            Ok(None) => Err(anyhow!("node not exit")),
+            Ok(None) => Err(anyhow::anyhow!("node not exit")),
             Ok(Some(val)) => Ok(val),
             Err(err) => Err(err.into()),
         }
     }
 
-    async fn update_node_by_name(&self, name: &str, state: TrackerState) -> Result<()> {
+    async fn update_node_by_name(&self, name: &str, state: TrackerState) -> anyhow::Result<()> {
         let update = doc! {
             "$set": {
                 "state": to_variant_name(&state)?,
@@ -184,7 +175,7 @@ impl NodeRepo for MongoRunDbRepo {
             .anyhow()
     }
 
-    async fn mark_incoming_finish(&self, name: &str) -> Result<()> {
+    async fn mark_incoming_finish(&self, name: &str) -> anyhow::Result<()> {
         let update = doc! {
             "$set": {
                 "state": to_variant_name(&TrackerState::InComingFinish)?,
@@ -208,16 +199,13 @@ impl NodeRepo for MongoRunDbRepo {
             .anyhow()
     }
 
-    async fn is_all_node_finish(&self) -> Result<bool> {
+    async fn is_all_node_finish(&self) -> anyhow::Result<bool> {
         Ok(self
             .node_col
             .count_documents(doc! {"state": {"$ne": to_variant_name(&TrackerState::Finish)?}})
             .await?
             == 0)
     }
-}
-
-impl DataRepo for MongoRunDbRepo {
     async fn find_data_and_mark_state(
         &self,
         node_name: &str,
@@ -225,7 +213,7 @@ impl DataRepo for MongoRunDbRepo {
         include_transparent_data: bool,
         state: &DataState,
         machine_name: Option<String>,
-    ) -> Result<Option<DataRecord>> {
+    ) -> anyhow::Result<Option<DataRecord>> {
         let mut set = doc! {
             "state": to_variant_name(&state)?,
             "updated_at":Utc::now().timestamp(),
@@ -253,7 +241,11 @@ impl DataRepo for MongoRunDbRepo {
             .anyhow()
     }
 
-    async fn revert_no_success_sent(&self, node_name: &str, direction: &Direction) -> Result<u64> {
+    async fn revert_no_success_sent(
+        &self,
+        node_name: &str,
+        direction: &Direction,
+    ) -> anyhow::Result<u64> {
         let update = doc! {
             "$set": {
                 "state": to_variant_name(&DataState::Received)?,
@@ -284,7 +276,7 @@ impl DataRepo for MongoRunDbRepo {
         node_name: &str,
         id: &str,
         direction: &Direction,
-    ) -> Result<Option<DataRecord>> {
+    ) -> anyhow::Result<Option<DataRecord>> {
         self.data_col
             .find_one(
                 doc! {"id": id,"node_name":node_name, "direction": to_variant_name(&direction)?},
@@ -297,7 +289,7 @@ impl DataRepo for MongoRunDbRepo {
         &self,
         node_name: &str,
         state: &DataState,
-    ) -> Result<Vec<DataRecord>> {
+    ) -> anyhow::Result<Vec<DataRecord>> {
         self.data_col
             .find(doc! {"node_name":node_name, "state": to_variant_name(&state)?})
             .await?
@@ -311,7 +303,7 @@ impl DataRepo for MongoRunDbRepo {
         node_name: &str,
         states: &[&DataState],
         direction: Option<&Direction>,
-    ) -> Result<usize> {
+    ) -> anyhow::Result<usize> {
         let mut query = doc! {"node_name":node_name};
         if !states.is_empty() {
             let states: Vec<&str> = states.iter().map(to_variant_name).try_collect()?;
@@ -335,7 +327,7 @@ impl DataRepo for MongoRunDbRepo {
         direction: &Direction,
         state: &DataState,
         sent: Option<Vec<&str>>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let mut update_fields = doc! {
             "state":  to_variant_name(&state)?,
             "updated_at":Utc::now().timestamp()
@@ -355,7 +347,7 @@ impl DataRepo for MongoRunDbRepo {
             .anyhow()
     }
 
-    async fn insert_new_path(&self, record: &DataRecord) -> Result<()> {
+    async fn insert_new_path(&self, record: &DataRecord) -> anyhow::Result<()> {
         self.data_col.insert_one(record).await.map(|_| ()).anyhow()
     }
 }

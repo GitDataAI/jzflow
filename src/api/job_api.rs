@@ -4,10 +4,10 @@ use crate::{
     core::db::{
         GetJobParams,
         Job,
-        JobDbRepo,
+        JobRepo,
         JobUpdateInfo,
         ListJobParams,
-        MainDbRepo,
+        Repo,
     },
     driver::Driver,
     job::job_mgr::JobManager,
@@ -21,7 +21,7 @@ use mongodb::bson::oid::ObjectId;
 //TODO change to use route macro after https://github.com/actix/actix-web/issues/2866  resolved
 async fn create<MAINR>(db_repo: web::Data<MAINR>, data: web::Json<Job>) -> HttpResponse
 where
-    MAINR: MainDbRepo,
+    MAINR: JobRepo,
 {
     match db_repo.insert(&data.0).await {
         Ok(inserted_result) => HttpResponse::Ok().json(&inserted_result),
@@ -31,7 +31,7 @@ where
 
 async fn get_by_id<MAINR>(db_repo: web::Data<MAINR>, path: web::Path<ObjectId>) -> HttpResponse
 where
-    MAINR: MainDbRepo,
+    MAINR: JobRepo,
 {
     match db_repo
         .get(&GetJobParams::new().set_id(path.into_inner()))
@@ -45,7 +45,7 @@ where
 
 async fn get<MAINR>(db_repo: web::Data<MAINR>, query: web::Query<GetJobParams>) -> HttpResponse
 where
-    MAINR: MainDbRepo,
+    MAINR: JobRepo,
 {
     match db_repo.get(&query.into_inner()).await {
         Ok(Some(inserted_result)) => HttpResponse::Ok().json(&inserted_result),
@@ -56,7 +56,7 @@ where
 
 async fn list<MAINR>(db_repo: web::Data<MAINR>) -> HttpResponse
 where
-    MAINR: MainDbRepo,
+    MAINR: JobRepo,
 {
     let list_job_params = &ListJobParams { state: None };
     match db_repo.list_jobs(list_job_params).await {
@@ -71,8 +71,8 @@ async fn clean_job<D, MAINR, JOBR>(
 ) -> HttpResponse
 where
     D: Driver,
-    MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
+    MAINR: JobRepo,
+    JOBR: Repo,
 {
     let id = ObjectId::from_str(&path.into_inner()).unwrap();
     match job_manager.clean_job(&GetJobParams::new().set_id(id)).await {
@@ -87,7 +87,7 @@ async fn update<MAINR>(
     query: web::Query<JobUpdateInfo>,
 ) -> HttpResponse
 where
-    MAINR: MainDbRepo,
+    MAINR: JobRepo,
 {
     match db_repo
         .update(&path.into_inner(), &query.into_inner())
@@ -104,8 +104,8 @@ async fn job_details<D, MAINR, JOBR>(
 ) -> HttpResponse
 where
     D: Driver,
-    MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
+    MAINR: JobRepo,
+    JOBR: Repo,
 {
     let id = ObjectId::from_str(&path.into_inner()).unwrap();
     match job_manager
@@ -123,8 +123,8 @@ async fn run_job<D, MAINR, JOBR>(
 ) -> HttpResponse
 where
     D: Driver,
-    MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
+    MAINR: JobRepo,
+    JOBR: Repo,
 {
     let id = ObjectId::from_str(&path.into_inner()).unwrap();
     match job_manager.start_job(&GetJobParams::new().set_id(id)).await {
@@ -136,8 +136,8 @@ where
 pub(super) fn job_route_config<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
 where
     D: Driver,
-    MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
+    MAINR: JobRepo,
+    JOBR: Repo,
 {
     cfg.service(
         web::resource("/job")

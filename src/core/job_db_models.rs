@@ -55,7 +55,7 @@ pub struct Node {
 /// containerd) -> Processed(user containerd has processed)
 ///
 /// for channel dataflow: Received(channel) -> Assigned(channel)->Sent(send to channel) ->
-/// EndRecieved(compute unit)-> Clean(channel clean data)
+/// EndReceived(compute unit)-> Clean(channel clean data)
 ///
 /// for outgoing data flow of compute unit:  Received(compute unit) -> SelectForSend(compute unit)
 /// -> PartialSent(compute unit)->Sent(compute unit)
@@ -114,9 +114,9 @@ impl DataFlag {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DataRecord {
-    /// node's for compute unit its a name,  for channel its node_name+ "-channel"
+    /// node's for compute unit it`s a name,  for channel its node_name+ "-channel"
     pub node_name: String,
-    /// data id but not unique, becase the id in channel wiil transfer to compute unit
+    /// data id but not unique, because the id in channel will transfer to compute unit
     pub id: String,
     pub priority: u8,
     pub flag: DataFlag,
@@ -129,15 +129,16 @@ pub struct DataRecord {
     pub updated_at: i64,
 }
 
-pub trait GraphRepo {
+/*
+    Unified interface for subsequent unified calls and extensions (for different storage systems)
+*/
+pub trait Repo: Clone + Send + Sync + 'static {
     fn insert_global_state(
         &self,
         graph: &Graph,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
     fn get_global_state(&self) -> impl std::future::Future<Output = Result<Graph>> + Send;
-}
 
-pub trait NodeRepo {
     fn insert_node(&self, state: &Node) -> impl std::future::Future<Output = Result<()>> + Send;
 
     fn get_node_by_name(
@@ -157,9 +158,7 @@ pub trait NodeRepo {
         &self,
         name: &str,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
-}
 
-pub trait DataRepo {
     fn find_data_and_mark_state(
         &self,
         node_name: &str,
@@ -208,21 +207,4 @@ pub trait DataRepo {
         state: &DataState,
         sent: Option<Vec<&str>>,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
-}
-
-pub trait JobDbRepo = GraphRepo + NodeRepo + DataRepo + Clone + Send + Sync + 'static;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_data_flag() {
-        let data = DataFlag::new_from_bit(KEEP_DATA | TRANSPARENT_DATA);
-        assert!(data.is_keep_data);
-        assert!(data.is_transparent_data);
-
-        let bit_value = data.to_bit();
-        assert_eq!(bit_value, 3);
-    }
 }

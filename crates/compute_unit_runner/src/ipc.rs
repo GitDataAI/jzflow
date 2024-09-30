@@ -17,7 +17,7 @@ use core::str;
 use http_body_util::Collected;
 use jiaoziflow::core::db::{
     DataFlag,
-    JobDbRepo,
+    Repo,
     TrackerState,
 };
 use serde::{
@@ -263,7 +263,7 @@ pub struct Status {
 
 async fn status<R>(program_mutex: web::Data<Arc<RwLock<MediaDataTracker<R>>>>) -> HttpResponse
 where
-    R: JobDbRepo + Clone,
+    R: Repo + Clone,
 {
     info!("receive status request");
     let status = {
@@ -282,7 +282,7 @@ async fn process_data_request<R>(
     req: web::Query<RequetDataReq>,
 ) -> HttpResponse
 where
-    R: JobDbRepo + Clone,
+    R: Repo + Clone,
 {
     let req = req.into_inner();
     info!("receive avaiable data reqeust {:?}", req.id.as_ref());
@@ -330,7 +330,7 @@ async fn process_completed_request<R>(
     data: web::Json<CompleteDataReq>,
 ) -> HttpResponse
 where
-    R: JobDbRepo + Clone,
+    R: Repo + Clone,
 {
     info!("receive data completed request");
     let sender = loop {
@@ -380,7 +380,7 @@ async fn process_submit_output_request<R>(
     //body: web::Bytes,
 ) -> HttpResponse
 where
-    R: JobDbRepo + Clone,
+    R: Repo + Clone,
 {
     // let data: SubmitOuputDataReq = serde_json::from_slice(&body).unwrap();
 
@@ -430,7 +430,7 @@ async fn process_finish_state_request<R>(
     program_mutex: web::Data<Arc<RwLock<MediaDataTracker<R>>>>,
 ) -> HttpResponse
 where
-    R: JobDbRepo + Clone,
+    R: Repo + Clone,
 {
     info!("receive finish state request");
     let sender = loop {
@@ -478,7 +478,7 @@ pub fn start_ipc_server<R>(
     program: Arc<RwLock<MediaDataTracker<R>>>,
 ) -> Result<Server>
 where
-    R: JobDbRepo + Clone + Send + Sync + 'static,
+    R: Repo + Clone + Send + Sync + 'static,
 {
     let server = HttpServer::new(move || {
         fn json_error_handler(err: error::JsonPayloadError, _req: &HttpRequest) -> error::Error {

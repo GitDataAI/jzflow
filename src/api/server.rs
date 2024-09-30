@@ -1,7 +1,8 @@
+use super::job_api::job_route_config;
 use crate::{
     core::db::{
-        JobDbRepo,
-        MainDbRepo,
+        JobRepo,
+        Repo,
     },
     driver::Driver,
     job::job_mgr::JobManager,
@@ -23,13 +24,11 @@ use actix_web::{
 use anyhow::Result;
 use reqwest::Url;
 
-use super::job_api::job_route_config;
-
 fn v1_route<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
 where
     D: Driver,
-    MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
+    MAINR: JobRepo,
+    JOBR: Repo,
 {
     job_route_config::<D, MAINR, JOBR>(cfg);
 }
@@ -37,8 +36,8 @@ where
 fn config<D, MAINR, JOBR>(cfg: &mut web::ServiceConfig)
 where
     D: Driver,
-    MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
+    MAINR: JobRepo,
+    JOBR: Repo,
 {
     cfg.service(web::scope("/api/v1").configure(v1_route::<D, MAINR, JOBR>));
 }
@@ -50,8 +49,8 @@ pub fn start_rpc_server<D, MAINR, JOBR>(
 ) -> Result<Server>
 where
     D: Driver,
-    MAINR: MainDbRepo,
-    JOBR: JobDbRepo,
+    MAINR: JobRepo,
+    JOBR: Repo,
 {
     let main_db_repo = main_db_repo;
     let uri = Url::parse(addr)?;
