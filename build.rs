@@ -1,3 +1,5 @@
+use tonic_build::compile_protos;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
@@ -8,11 +10,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "src/network/protos/nodecontroller.proto",
     ];
 
-    let proto_dir = "src/network/protos";
-    tonic_build::configure()
-        .build_client(true)
-        .build_server(true)
-        .out_dir(proto_dir)
-        .compile(&protos, &[proto_dir])?;
+    // let proto_dir = "src/network/protos";
+    // tonic_build::configure()
+    //     .build_client(true)
+    //     .build_server(true)
+    //     .out_dir(proto_dir)
+    //     .compile(&protos, &[proto_dir])?;
+    compile_protos(&protos)?;
     Ok(())
 }
