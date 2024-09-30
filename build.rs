@@ -9,6 +9,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let proto_dir = "src/network/protos";
-    tonic_build::configure().compile(&protos, &[proto_dir])?;
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(true)
+        .out_dir(proto_dir)
+        .compile(&protos, &[proto_dir])?;
     Ok(())
 }
