@@ -15,9 +15,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let proto_dir = "src/network/protos";
     // tonic_build::configure()
     //     .compile(&protos, &[proto_dir])?;
-    compile_protos(&protos[0])?;
-    compile_protos(&protos[1])?;
-    compile_protos(&protos[2])?;
-    compile_protos(&protos[3])?;
+    compile_protos(protos[0])?;
+    compile_protos(protos[1])?;
+    compile_protos(protos[2])?;
+    compile_protos(protos[3])?;
     Ok(())
 }
